@@ -19,7 +19,44 @@ function register(overrides = {}) {
       expectedPathCount: 2
     }),
     loadExistingMessage: async () => null,
-    assertReservation: async () => ({ ok: true, ref: { id: "reservation" } })
+    assertReservation: async () => ({ ok: true, ref: { id: "reservation" } }),
+    preflightV2: async () => ({
+      ok: true,
+      contractVersion: 2,
+      uploadID: "upload-v2",
+      processingStatus: "uploading",
+      attachmentIDs: ["attachment-v2"],
+      quarantinePaths: ["room/user/upload-v2/attachment-v2/source"]
+    }),
+    finalizeV2: async () => ({
+      ok: true,
+      contractVersion: 2,
+      uploadID: "upload-v2",
+      processingStatus: "queued",
+      messageID: null,
+      seq: null,
+      retryable: true
+    }),
+    statusV2: async () => ({
+      ok: true,
+      contractVersion: 2,
+      uploadID: "upload-v2",
+      processingStatus: "processing"
+    }),
+    refreshUploadTargetsV2: async () => ({
+      ok: true,
+      contractVersion: 2,
+      uploadID: "upload-v2",
+      processingStatus: "uploading",
+      completedParts: [],
+      uploads: []
+    }),
+    cancelV2: async () => ({
+      ok: true,
+      contractVersion: 2,
+      uploadID: "upload-v2",
+      processingStatus: "canceled"
+    })
   };
   registerMediaHandlers({
     socket: fakeSocket.socket,
@@ -83,6 +120,103 @@ test("media preflight는 service 결과 ACK를 그대로 반환한다", async ()
   assert.equal(ack.ok, true);
   assert.equal(ack.status, "pending");
   assert.equal(ack.storagePrefix, "rooms/room/messages/message");
+});
+
+test("v2 preflight/finalize는 quarantine queued 계약만 반환하고 message를 만들지 않는다", async () => {
+  const fixture = register();
+  const preflightCalls = [];
+  const finalizeCalls = [];
+  fixture.mediaUploadService.preflightV2 = async (input) => {
+    preflightCalls.push(input);
+    return {
+      ok: true,
+      contractVersion: 2,
+      uploadID: input.uploadID,
+      processingStatus: "uploading",
+      attachmentIDs: ["a"],
+      quarantinePaths: ["room/user/upload-v2/a/source"]
+    };
+  };
+  fixture.mediaUploadService.finalizeV2 = async (input) => {
+    finalizeCalls.push(input);
+    return {
+      ok: true,
+      contractVersion: 2,
+      uploadID: input.uploadID,
+      processingStatus: "queued",
+      messageID: null,
+      seq: null,
+      retryable: true
+    };
+  };
+  let preflightACK;
+  await fixture.fakeSocket.handlers.get("chat:mediaPreflight")({
+    contractVersion: 2,
+    roomID: "room",
+    uploadID: "upload-v2",
+    clientMutationID: "00000000-0000-4000-8000-000000000001",
+    kind: "video",
+    attachmentCount: 1,
+    expectedPathCount: 1
+  }, (value) => { preflightACK = value; });
+  let finalizeACK;
+  await fixture.fakeSocket.handlers.get("chat:mediaFinalize")({
+    contractVersion: 2,
+    roomID: "room",
+    uploadID: "upload-v2",
+    clientMutationID: "00000000-0000-4000-8000-000000000001",
+    kind: "video",
+    attachments: [{ attachmentID: "a" }]
+  }, (value) => { finalizeACK = value; });
+
+  assert.equal(preflightACK.processingStatus, "uploading");
+  assert.equal(finalizeACK.processingStatus, "queued");
+  assert.equal(finalizeACK.messageID, null);
+  assert.equal(finalizeACK.seq, null);
+  assert.equal(preflightCalls[0].moderationPrincipalID, "principal-1");
+  assert.equal(finalizeCalls[0].moderationPrincipalID, "principal-1");
+  assert.equal(fixture.roomEmits.length, 0);
+  assert.deepEqual(fixture.timeline, []);
+});
+
+test("v2 processing status와 cancel은 소유 principal identity를 전달한다", async () => {
+  const fixture = register();
+  const calls = [];
+  fixture.mediaUploadService.statusV2 = async (input) => {
+    calls.push(["status", input]);
+    return { ok: true, processingStatus: "processing" };
+  };
+  fixture.mediaUploadService.cancelV2 = async (input) => {
+    calls.push(["cancel", input]);
+    return { ok: true, processingStatus: "canceled" };
+  };
+  const payload = {
+    roomID: "room",
+    uploadID: "upload-v2",
+    clientMutationID: "00000000-0000-4000-8000-000000000001"
+  };
+  await fixture.fakeSocket.handlers.get("chat:mediaProcessingStatus")(payload, () => {});
+  await fixture.fakeSocket.handlers.get("chat:mediaCancel")(payload, () => {});
+
+  assert.deepEqual(calls.map(([kind]) => kind), ["status", "cancel"]);
+  assert.equal(calls.every(([, input]) => input.senderUID === "user"), true);
+  assert.equal(calls.every(([, input]) => input.moderationPrincipalID === "principal-1"), true);
+});
+
+test("v2 upload target refresh는 room access와 소유 principal을 검증한다", async () => {
+  const fixture = register();
+  let received;
+  fixture.mediaUploadService.refreshUploadTargetsV2 = async (input) => {
+    received = input;
+    return {ok: true, processingStatus: "uploading", uploads: []};
+  };
+  await fixture.fakeSocket.handlers.get("chat:mediaRefreshUploadTargets")({
+    roomID: "room",
+    uploadID: "upload-v2",
+    clientMutationID: "00000000-0000-4000-8000-000000000001"
+  }, () => {});
+  assert.equal(received.senderUID, "user");
+  assert.equal(received.moderationPrincipalID, "principal-1");
 });
 
 test("media limiter는 principal/room/kind와 messageID를 사용한다", async () => {

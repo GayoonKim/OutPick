@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";
 import {DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL} from "./auth/runtime.js";
+import {chatMediaServiceAccountEmailForProject} from "./chat/media/runtime.js";
 
 process.env.GCLOUD_PROJECT ??= "outpick-test";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -155,6 +156,18 @@ const firestoreEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  onChatMediaUploadQueued: {
+    eventType: "google.cloud.firestore.document.v1.updated",
+    document: "Rooms/{roomID}/MediaUploads/{uploadID}",
+    timeoutSeconds: null,
+    availableMemoryMb: null,
+  },
+  onChatMediaWorkerCompleted: {
+    eventType: "google.cloud.firestore.document.v1.updated",
+    document: "Rooms/{roomID}/MediaUploads/{uploadID}",
+    timeoutSeconds: 120,
+    availableMemoryMb: 512,
+  },
 } as const;
 
 const scheduleEndpoints = {
@@ -212,6 +225,18 @@ const scheduleEndpoints = {
     timeoutSeconds: null,
     availableMemoryMb: null,
   },
+  reconcileChatMediaProcessing: {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 300,
+    availableMemoryMb: 512,
+  },
+  reconcileChatMediaObjectCleanup: {
+    schedule: "every 15 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 300,
+    availableMemoryMb: 512,
+  },
 } as const;
 
 const callableOverrides = {
@@ -237,7 +262,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 100개를 유지한다", () => {
+test("Firebase deployment export 이름 105개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -245,8 +270,9 @@ test("Firebase deployment export 이름 100개를 유지한다", () => {
     "lookbookExtractionIssueOpsRead",
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
+    "dispatchChatMediaProcessing",
   ].sort();
-  assert.equal(expected.length, 100);
+  assert.equal(expected.length, 105);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -266,6 +292,33 @@ test("extraction issue 운영 HTTP API는 private invoker를 유지한다", () =
   assert.deepEqual(release.httpsTrigger?.invoker, ["private"]);
   assert.equal(runtimeNumber(release.timeoutSeconds), 300);
   assert.equal(runtimeNumber(release.availableMemoryMb), 1024);
+});
+
+test("chat media dispatcher HTTP API는 private invoker를 유지한다", () => {
+  const value = endpoint("dispatchChatMediaProcessing");
+  assertCommonMetadata("dispatchChatMediaProcessing", value);
+  assert.deepEqual(value.httpsTrigger?.invoker, ["private"]);
+  assert.equal(runtimeNumber(value.timeoutSeconds), 3600);
+  assert.equal(runtimeNumber(value.availableMemoryMb), 256);
+  assert.equal(
+    value.serviceAccountEmail,
+    chatMediaServiceAccountEmailForProject("outpick-test", "orchestrator")
+  );
+});
+
+test("chat media trigger와 scheduler는 전용 identity 경계를 유지한다", () => {
+  const orchestrator = chatMediaServiceAccountEmailForProject(
+    "outpick-test", "orchestrator"
+  );
+  const cleanup = chatMediaServiceAccountEmailForProject("outpick-test", "cleanup");
+  assert.equal(endpoint("onChatMediaUploadQueued").serviceAccountEmail, orchestrator);
+  for (const name of [
+    "onChatMediaWorkerCompleted",
+    "reconcileChatMediaProcessing",
+    "reconcileChatMediaObjectCleanup",
+  ]) {
+    assert.equal(endpoint(name).serviceAccountEmail, cleanup, name);
+  }
 });
 
 test("callable runtime metadata를 유지한다", () => {
@@ -417,6 +470,50 @@ test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () =>
   }
   assert.ok(config.fieldOverrides?.some((override) =>
     override.collectionGroup === "roomClosureNotices" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+});
+
+test("chat media v2 watchdog query와 terminal TTL 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+    fieldOverrides?: Array<{
+      collectionGroup?: string;
+      fieldPath?: string;
+      ttl?: boolean;
+    }>;
+  };
+  for (const dueField of [
+    "uploadExpiresAt",
+    "processingDeadlineAt",
+    "leaseExpiresAt",
+  ]) {
+    assert.ok(config.indexes?.some((index) =>
+      index.collectionGroup === "MediaUploads" &&
+      index.queryScope === "COLLECTION_GROUP" &&
+      index.fields?.[0]?.fieldPath === "contractVersion" &&
+      index.fields?.[1]?.fieldPath === "processingStatus" &&
+      index.fields?.[2]?.fieldPath === dueField
+    ), `MediaUploads ${dueField} watchdog index가 필요합니다.`);
+  }
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "MediaUploads" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+  assert.ok(config.indexes?.some((index) =>
+    index.collectionGroup === "MediaUploads" &&
+    index.queryScope === "COLLECTION_GROUP" &&
+    index.fields?.[0]?.fieldPath === "contractVersion" &&
+    index.fields?.[1]?.fieldPath === "cleanupStatus"
+  ));
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "chatMediaDeliveryJobs" &&
     override.fieldPath === "expiresAt" && override.ttl === true
   ));
 });
