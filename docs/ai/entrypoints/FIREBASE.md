@@ -466,10 +466,10 @@ git diff --check -- firebase.json storage.rules
 
 ### Phase 2 신고·관리자 처리 경계
 
-- 일반 사용자 callable: `submitUserReport`, `submitRoomReport` → `functions/src/moderation/reports/`.
+- 일반 사용자 callable: `submitMessageReport`, `submitUserReport`, `submitRoomReport` → `functions/src/moderation/reports/`. Phase 7.4 구현 후 메시지 신고는 attachment 선택 없이 서버가 전체 manifest를 파생해 canonical message incident, review revision reporter, sender `reportedMessages`/`messageReporters` marker와 공통 evidence bundle을 함께 기록한다.
 - 플랫폼 관리자 callable: `listModerationReports`, `getModerationReportDetail`, `mutateModerationReview`, `mutateAccountModeration` → `functions/src/moderation/admin/`.
 - 모든 callable은 App Check와 account capability를 확인한다. 관리자 API는 active `platformAdmins/{uid}`를 추가 확인하고 계정 제재는 5분 이내 `auth_time`을 요구한다.
-- 신고 transaction은 aggregate/submission/reporter/rate bucket을 원자적으로 갱신한다. 동일 submission을 먼저 확인하므로 retry는 quota를 소비하지 않는다.
+- 기존 사용자·방 신고 transaction은 aggregate/submission/reporter/rate bucket을 원자적으로 갱신한다. Phase 7.4 메시지 신고는 preparation transaction이 `moderationMessageGuards/{incidentID}`를 삭제 transaction과 함께 읽고 써 first-commit-wins를 보장하고, evidence available 뒤 accepted 확정 transaction만 incident/reporter/aggregate를 갱신한다. transport replay, processing preparation 재사용, 같은 reporter/message/revision semantic duplicate, 삭제 우선 결과는 quota를 중복 소비하지 않는다.
 - 관리자 mutation은 `caseVersion`/`stateVersion`, deterministic audit ID와 append-only audit으로 동시 처리와 재전송을 수렴시킨다.
 - index/TTL: `firestore.indexes.json`; client deny: `firestore.rules`; transaction 회귀: `firestore-tests/moderation-reports.emulator.test.mjs`.
 - 2026-08-10 Production 승인으로 Phase 2 index/rules와 exact Function 6개를 `outpick-664ae`에 배포했다. 기존 원격 index/TTL은 유지됐고 신규 신고 index 2개는 `READY`, Function 6개는 `ACTIVE`, 무인증 direct POST는 401이다. 별도 승인된 임시 Token Creator/App Check debug token 절차로 활성 Kakao 관리자의 목록 성공과 Google 비관리자의 `PERMISSION_DENIED`를 확인했다. smoke rate bucket은 원복했고 임시 debug token·IAM binding과 최근 ERROR 로그 잔존은 모두 0건이다.
@@ -516,11 +516,12 @@ git diff --check -- firebase.json storage.rules
 
 ### Index·retention
 
-- 신고 queue: reviewState + priorityClass + slaDueAt + lastReportedAt.
+- 관리자 신고 조회: 별도 queue projection 없이 `moderationMessageIncidents`, `moderationUserReports`, `moderationRoomReports` 원장을 `reviewState + queueClass/priorityClass + reviewDueAt/slaDueAt + lastReportedAt`으로 직접 필터·정렬한다.
+- Phase 7.4A 순수 계약은 `functions/src/moderation/messageEvidence/contracts.ts`와 `contracts.test.ts`에서 확인한다. versioned canonical tuple ID, 최초 revision 0, `processing → evidence available → accepted`, queue/24시간 전역 비노출/7일 작성자 패턴, 처리 결과별 retention을 Firebase SDK 없이 계산한다. 실제 preparation transaction과 Storage copy는 Phase 7.4B/C 범위다.
 - 제한 만료 정규화: moderationStatus + restrictedUntil.
 - 미디어 cleanup: collection group MediaUploads의 processing/terminal 상태 + expiresAt, 실패한 로컬 outbox 7일 계약과 서버 quarantine cleanup을 분리한다.
 - message/room cleanup: status + nextAttemptAt.
-- Production TTL은 개인정보 보존 목적·기간 승인 전 활성화하지 않는다. Phase 7은 신고자가 선택한 attachment만 결정적 evidence bundle로 복사하고 처리 결과별 retention cleanup을 사용한다.
+- Production TTL은 개인정보 보존 목적·기간 승인 전 활성화하지 않는다. Phase 7 메시지 신고는 attachment 선택이나 동영상 timestamp 없이 텍스트와 이미지 묶음 전체 또는 동영상 전체를 공통 evidence bundle로 복사하고 처리 결과별 retention cleanup을 사용한다. 일반 단일은 `holding`, 같은 메시지 고유 2명은 `reviewRequired`, `reviewDueAt`이 지난 holding은 scheduler 없이 관리자 조회에 포함한다. 작성자 패턴은 서로 다른 메시지 3개와 전체 고유 신고자 2명/7일을 모두 요구한다. 긴급 단일은 즉시 `urgent`, 전역 비노출은 긴급 2명 또는 전체 3명/24시간이다.
 
 ### 검증 진입점
 

@@ -2,7 +2,7 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~4 구현·자동 검증·Production rollout과 실제 앱 핵심 QA까지 완료했다. Phase 4는 전역 차단 단방향 visibility, 계정별 UID snapshot/메모리 Store, 채팅 current-window 유지, 룩북 즉시 숨김, push 제외와 앱 종료 혼합 visible unread 보정을 포함해 종료 처리한다.
+- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~6 구현·자동 검증·Development 사용자 QA와 Production backend rollout까지 완료했으며, 2026-08-18 Phase 6을 공식 완료 처리했다. PR #14 merge commit `4d69f4c85646b5db1977020842a2efbdbfba7169`가 `main`에 반영됐다. Phase 6은 자동 텍스트 필터 없이 신고·차단·방 운영·관리자 사후 제재를 유지하고, Socket 메모리 limiter, 댓글·답글 Firestore quota·UUID 멱등성, senderEmail 제거와 원문 로그 최소화를 반영했다. 길이 counter는 제거하고 상한 초과 입력 차단만 유지한다. Production 데이터 migration은 필요하지 않았다.
 - 실제 기기 background FCM/APNs 검증은 Apple Developer Program 가입·APNs 설정 후 수행하는 출시 전 외부 gate이며 Phase 4 완료를 막지 않는다.
 - Sign in with Apple은 현재 iOS 로그인 진입점이 없어 사용자 결정으로 별도 후속 작업으로 분리했다. Production moderation rollout과 개인정보 보존 gate도 Phase 1 Development 완료와 분리한다.
 - 핵심 task `lookbook-extraction-issue-operations-production-rollout`은 Production 읽기 전용 감사, contract 3 Worker candidate QA·traffic 100% 전환, backend prerequisite/Functions, exact Firestore rules, canonical 앱 E2E, 앱 원문 오류 문구 교정, QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
@@ -14,6 +14,30 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Chat UGC Safety Phase 7.4A — evidence-first 순수 계약 완료
+
+- 2026-08-21 확정한 최신 설계를 문서와 `functions/src/moderation/messageEvidence/{contracts,contracts.test}.ts`에 반영했다. 신고는 `processing` 동안 server-only preparation/request receipt/guard/bundle/job만 소유하고 text snapshot 또는 메시지 전체 media evidence가 `available`이 된 뒤에만 `accepted`와 incident/reporter/aggregate·queue·visibility를 확정한다. processing/failed는 신고 임계치에 포함하지 않는다.
+- domain/version canonical tuple SHA-256 ID, 최초 revision 0과 terminal reopen, `holding → reviewRequired → urgent` 비강등, 긴급 2명 또는 전체 3명/24시간 전역 비노출, 서로 다른 메시지 3개 + 고유 신고자 2명/7일, retention·appeal/legal hold와 evidence/copy/cleanup job 상태 전이를 순수 함수로 구현했다.
+- 신규 대상 12/12, Functions 전체 226/226, build, lint 오류 0, 계약 JSON과 diff 검증을 통과했다. 기존 moderation non-null assertion 경고 17개만 남았다. Firestore/Storage/Rules/index/iOS/외부 리소스/배포는 변경하지 않았으며 다음은 Phase 7.4B transaction이다.
+
+### Chat UGC Safety Phase 7.3 — 실패 outbox 재실행 크래시 보정
+
+- iPhone 14 crash log 3건에서 실패 메시지 복원 직후 `ChatViewController.applyInitialWindowSnapshotAndWait`의 diffable `appendItemsWithIdentifiers`가 동일하게 `SIGABRT`한 것을 확인했다.
+- server window 뒤 과거 날짜 실패 메시지가 붙을 때 같은 날짜 separator가 비연속으로 두 번 생성되는 것이 원인이었다. `ChatMessageListItem.dateSeparator` identity에 occurrence를 추가하고 현재 window occurrence를 이어받아 identifier 유일성을 보장했다.
+- 과거 날짜 실패 outbox 복원 회귀를 추가했고 관련 window/pending/action suite 26/26, Development 실기기 build·설치·재실행을 통과했다. 신규 crash log는 없으며 TR-1 재진입 육안 확인만 사용자 QA로 남는다.
+- 후속 확인에서 실패 메시지는 남지만 재시도·삭제 아이콘이 사라졌다. terminal 실패 시 signed URL session을 제거하는 보안 계약과 session을 필수로 요구하던 UI 복원 코드가 충돌한 것이 원인이었다. terminal 실패는 local/uploaded retry payload로 pending `.failed`를 복원하고 서버 진행 상태만 monitoring을 재개하도록 수정했으며 관련 34/34와 실기기 빌드·설치를 통과했다. TR-1 아이콘 육안 확인은 사용자 응답 대기다.
+- 사용자가 TR-1 아이콘 복원을 확인했다. 재시도·삭제는 각각 prominent/destructive `ConfirmView`를 거치고 확인 callback 이후에만 상태를 변경하도록 보정했으며 관련 34/34와 Development 실기기 build·설치·실행을 완료했다. 확인창 문구·취소·확인 동작의 실기기 QA만 남는다.
+- 이미지 실패와 달리 영상 일반 실패에만 남아 있던 `동영상 전송 실패` 팝업을 제거했다. 일반 실패는 버블의 재시도·삭제만 표시하고 ban으로 인한 중단 안내는 유지한다. pending/outbox 회귀 17개와 iPhone 14 Development 서명 빌드·설치를 통과했으며, 사용자가 팝업 미표시와 재시도·삭제 노출을 실기기에서 확인했다.
+
+### Chat UGC Safety Phase 5 — 방 차단·owner succession 완료
+
+- room ban은 활성 방·기존 메시지 read를 유지하고 membership 생성과 참여자 전용 Socket/message/media write를 차단한다. 내보내기 뒤 앱은 읽기 전용으로 전환하고 해당 방의 pending upload/outbox만 취소하며, 같은 provider 재로그인에도 canonical principal ban을 유지한다.
+- 방장 전용 메시지 long press `내보내기`, 참여자 프로필/별도 관리 버튼, 설정 나가기 옆 `차단 사용자` 독립 화면과 `해제` 흐름을 Production 두 계정 앱에서 확인했다.
+- 계정 삭제 최종 확정과 영구 정지는 durable membership sweep과 방별 transaction으로 적격 참여자 승계 또는 기존 종료 lifecycle에 수렴한다.
+- PR 리뷰에서 최대 시도에 도달한 succession job이 stale `processing`에 남을 수 있는 경계를 발견해 `failed`/`max_attempts_exceeded`로 종결하도록 보정하고 emulator 회귀를 추가했다.
+- 최종 Functions lint 오류 0·build/test 191/191, Socket check/test 76/76, Rules 41/41, transaction 25/25와 iOS 관련 suite·Production Simulator build를 통과했다.
+- PR #12를 리뷰 완료 후 merge commit `83ba7ca2116146e58bcddefafab1727e0f8a882c`로 `main`에 반영했다. 후속 lease 리뷰에서 유효 lease의 `processing` job 중복 claim 경계를 보정해 PR #13 merge commit `4fbdb5cc257878f0734f261507de1346c4d5892b`로 반영했고 transaction 26/26을 통과했다. 관련 Production Functions 2개만 exact-target 재배포해 `ACTIVE`, scheduler 5분·Asia/Seoul `ENABLED`, 빈 queue smoke·ERROR 0·queue 0을 확인했다. 실제 기기 background FCM/APNs는 출시 전 외부 gate로 유지한다.
 
 ### Chat UGC Safety Phase 4 — 전역 사용자 차단 완료
 
@@ -272,7 +296,8 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
-- 최우선: `chat-ugc-safety-room-moderation` Phase 4까지 완료했다. 다음 핵심 task는 사용자 우선순위 결정 후 착수한다.
+- 최우선: `chat-ugc-safety-room-moderation` Phase 7.3은 JPEG·HEIC·PNG·animated GIF, 31장 30+1, 70장 30+30+10 FIFO, 영상 앱 종료·재실행과 채팅방 화면 이탈·재진입 QA까지 통과해 완료 처리했다. silent pending 선복원, status-only 2·4·8초 reconciliation과 일반 실패 팝업 제거를 포함해 restore targeted test 26개, pending/outbox 17개 및 iPhone 14 Development build·설치가 통과했다. 정확한 350 MiB/장시간 영상 실파일과 실패 확인창 시각 점검은 Production 전 확장 QA로 분리했다. 다음은 Phase 7.4 evidence backend이며 Production은 변경하지 않았다.
+- Phase 7.4A evidence-first 순수 계약과 단위 테스트는 2026-08-21 완료했다. 텍스트·이미지 묶음 전체·동영상 전체의 공통 evidence bundle, `processing → available → accepted`, 신고 직후 자동 숨김 없음, 일반 단일 `holding`·같은 메시지 고유 2명 `reviewRequired`·기한 경과 holding 직접 조회, 같은 작성자 서로 다른 메시지 3개 + 전체 고유 신고자 2명/7일, 긴급 단일 `urgent`, 긴급 2명 또는 전체 3명/24시간 전역 비노출을 고정했다. 별도 관리자 queue projection과 72시간 scheduler는 만들지 않는다. 다음은 Phase 7.4B transaction이며 Production은 변경하지 않았다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
 2. Phase 4 실제 기기 background FCM/APNs와 답장 안내 접근성 표시는 Apple Developer Program 가입·APNs 설정 후 출시 전 외부 gate에서 확인한다.
@@ -306,6 +331,11 @@
 29. 사용자는 기존 Production Kakao 계정을 persistent custom claims로 보강하지 않고, UID 후보를 Kakao Admin API로 재검증해 메모리에서만 HMAC binding하는 migration 방식을 승인했다. Production apply는 예상 total/provider 건수와 확인 문자열을 요구하고 unresolved 시 전체 중단한다.
 
 ## 4. 수정한 파일 목록
+
+- Phase 7.1·7.2: `Socket/src/{handlers/mediaHandlers.js,media/mediaUploadService.js,media/mediaDeliveryWatcher.js,app/createProductionDependencies.js}`, `functions/src/chat/media/`, `tools/chat-media-processing-worker/`, 두 Storage Rules와 Firestore Rules/index/TTL, bucket-aware cleanup 계약을 구현했다. Development bucket/IAM/queue/Job/Functions/Rules/index/TTL을 반영했고 Production은 변경하지 않았다.
+- Development media bucket은 Quarantine `outpick-test-chat-media-quarantine`과 일반 표시용 `outpick-test-chat-media`로 분리했다. orchestrator·cleanup에는 승인된 `roles/eventarc.eventReceiver`를 부여해 두 Firestore trigger가 `ACTIVE`다. Socket 자기 계정의 self `roles/iam.serviceAccountTokenCreator`와 task identity의 dispatcher 한정 `roles/run.invoker`를 적용했다. Gen2 Functions 재배포 뒤 latter binding을 재감사해야 한다. worker digest는 `sha256:4741213f15d40de2ba8d916203df6f57523c2133fcbd4da6a4d34de687d56a4f`다.
+- 배포 감사에서 기존 cleanup scheduler가 요구하지만 Development 원격에 없던 `chatMessageCleanupJobs(status, nextAttemptAt)`와 `moderationRoomCleanupJobs(status, nextAttemptAt)` manifest index 2개를 exact 생성했다. 둘 다 `READY`이며 다음 자동 실행은 HTTP 200이다. due cleanup을 유발하는 수동 scheduler 실행은 하지 않았다.
+- Development Socket `outpick-socket-development-00013-muw`(tag `p73-350m-0819`)는 signed PUT image/video E2E와 tagged/canonical readiness 200 확인 뒤 traffic 100%로 전환했다. 이전 revision들은 0% rollback으로 보존하며 전환 후 ERROR는 0건이다.
 
 - Phase 4 tracked 변경:
   - iOS: `OutPick/Features/Moderation/`, Chat/Lookbook/Profile/MyPage visibility·block/unblock 흐름, `AppCompositionRoot`, `BannerManager`, `RealtimeSocketService`
@@ -399,6 +429,21 @@
   - `docs/ai/{ENTRYPOINTS.md,DATA_SCHEMA.md}`, 관련 Firebase/Lookbook/Test/Worker 진입점 문서와 task 하네스
 
 ## 5. 중요한 아키텍처 결정
+
+### Phase 7 transport source·즉시 cleanup·principal backpressure
+
+- 선택: iOS가 원본 byte 대신 1차 정규화한 source를 quarantine Storage에 직접 올리고, 서버가 재검증·최종 display/thumbnail을 만든다. terminal에는 source와 lease/slot을 즉시 정리하되 `MediaUploads` 최소 멱등 결과만 7일 둔다. principal별 image 2/video 1은 동시 처리 slot으로만 적용한다.
+- 이유: 원본 전송량과 worker 비용을 줄이면서 client 신뢰 경계를 만들지 않고, 응답 유실 재시도의 중복 메시지·재처리를 방지한다. 동시 slot은 한 사용자의 queue 독점과 비용 폭주를 막되 local queue로 총 전송량은 제한하지 않는다.
+- 트레이드오프: client와 server가 각각 정규화 단계를 가져 구현량이 늘고 terminal status 문서의 소액 Firestore 비용이 남는다. 대신 큰 quarantine byte는 즉시 삭제하고 1일 lifecycle을 비정상 cleanup 안전망으로 제한한다.
+- 보류한 대안: 카메라 원본 업로드는 전송·저장·처리 비용이 크고, terminal 문서 즉시 삭제는 같은 `clientMutationID` 결과를 잃어 중복 처리 위험이 있다. 사용자별 active 무제한은 전체 queue와 비용을 한 principal이 점유할 수 있어 제외했다.
+- 재검토 조건: 실제 단말 image quality, PNG 용량, 720p video 품질 또는 처리 대기 metric이 목표에 맞지 않거나 abuse/비용 지표가 확인되면 quality·slot·24시간 byte cap을 별도 조정한다.
+
+### Phase 7.3 iOS foreground upload·pending·outbox
+
+- 선택: picker 결과를 client transport source로 먼저 정규화한 뒤 30장/150 MiB로 분할한다. 이미지와 350 MiB·재생시간 제한 없는 영상은 attachment당 하나의 24시간 V4 signed PUT으로 foreground `URLSession`이 quarantine에 직접 업로드한다. 서버는 generation·크기·체크섬으로 PUT 응답 유실을 한 번 복구한다. pending은 uploading/queued/processing/failed/expired를 내부적으로 구분하되 활성 상태는 로컬 버블만 조용히 유지하고, failed/expired에서만 직접 재시도·삭제를 제공한다. GRDB outbox와 보호된 local source는 복구 가능성을 유지한다.
+- 취소는 ready 전 server cancel과 local task cancel을 함께 요청하며 server first-commit-wins 결과를 따른다. 수동 재시도는 실패 job을 재활성화하지 않고 새 `uploadID`·`clientMutationID`를 만든 뒤 새 outbox 저장 성공 후 이전 local 상태를 정리한다.
+- signed PUT URL은 bearer credential이므로 GRDB payload 외 로그에 남기지 않는다. terminal 수렴 시 target payload를 제거하고 failed local source는 7일 보존 계약을 따른다.
+- 단일 source foreground 계약의 로컬 구현·자동 검증과 Development worker/Socket rollout을 완료했다. JPEG·HEIC·PNG·GIF, 31장과 70장 30+30+10은 실기기 QA를 통과했다. 공유 image/video FIFO와 `active_upload_limit` 동일 identity backoff 자동·실기기 검증도 완료했으며 앱 종료·방 이탈, 350 MiB·장시간 video는 확장 QA gate다. Production은 변경하지 않았다.
 
 ### 전역 차단 Store와 표시 시점 admission
 
@@ -531,7 +576,7 @@
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. Phase 4 구현·최종 리뷰·검증·커밋과 PR #11 정리를 완료했다. 다음 핵심 task 우선순위를 사용자와 정한다.
+1. Phase 7.4A evidence-first 순수 계약·단위 테스트와 문서 최신화를 완료했다. 다음은 Phase 7.4B preparation/accepted 확정·신고/삭제 transaction이며, 예상 read/write set과 service 경계를 다시 점검한 뒤 구현한다. Firestore/Storage/Rules/index/iOS와 Production은 별도 범위·승인 전 변경하지 않는다.
 2. 실제 기기 background FCM/APNs는 Apple Developer Program 가입 후 출시 전 gate에서 재개한다.
 3. Phase 3.1 종료 tombstone은 14일 scheduler 만료 시 자동 정리되며 즉시 추가 조치는 없다.
 4. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.

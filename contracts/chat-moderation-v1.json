@@ -20,6 +20,14 @@
     "mediaDeliveryJob": "chatMediaDeliveryJobs/{roomID_messageID}",
     "userReport": "moderationUserReports/{targetModerationPrincipalID}",
     "roomReport": "moderationRoomReports/{roomID}",
+    "messageIncident": "moderationMessageIncidents/{incidentID}",
+    "messageReportPreparation": "moderationMessageReportPreparations/{preparationID}",
+    "messageReportPreparationRequest": "moderationMessageReportPreparations/{preparationID}/requests/{submissionID}",
+    "messageGuard": "moderationMessageGuards/{incidentID}",
+    "messageEvidence": "moderationMessageEvidence/{bundleID}",
+    "messageEvidenceCopyJob": "moderationEvidenceCopyJobs/{copyJobID}",
+    "messageEvidenceCleanupJob": "moderationEvidenceCleanupJobs/{cleanupJobID}",
+    "confirmedViolation": "moderationConfirmedViolations/{targetModerationPrincipalID}",
     "reportRateLimit": "moderationReportRateLimitBuckets/{bucketID}",
     "commentWriteRateLimit": "moderationCommentWriteRateLimitBuckets/{bucketID}",
     "adminRateLimit": "moderationAdminRateLimitBuckets/{bucketID}",
@@ -45,6 +53,38 @@
     "clientRequestID": {
       "format": "UUID string",
       "maxLength": 64
+    },
+    "messageIncidentID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-incident',1,roomID,messageID]))",
+      "clientAuthoritative": false
+    },
+    "messageReviewRevisionID": {
+      "format": "'r' + non-negative reviewRevision",
+      "clientAuthoritative": false
+    },
+    "messageReporterID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-reporter',1,reporterModerationPrincipalID]))",
+      "clientAuthoritative": false
+    },
+    "messageReportPreparationID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-report-preparation',1,incidentID,reviewRevision,reporterModerationPrincipalID]))",
+      "clientAuthoritative": false
+    },
+    "messageReportSubmissionID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-report-submission',1,incidentID,reviewRevision,reporterModerationPrincipalID,clientRequestID]))",
+      "clientAuthoritative": false
+    },
+    "messageEvidenceBundleID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-evidence-bundle',1,incidentID,reviewRevision]))",
+      "clientAuthoritative": false
+    },
+    "messageEvidenceCopyJobID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-evidence-copy-job',1,bundleID]))",
+      "clientAuthoritative": false
+    },
+    "messageEvidenceCleanupJobID": {
+      "format": "SHA-256(JSON.stringify(['outpick','message-evidence-cleanup-job',1,bundleID]))",
+      "clientAuthoritative": false
     },
     "lookbookCommentID": {
       "format": "SHA-256(moderationPrincipalID + ':' + operation + ':' + clientRequestID) within the post comments path",
@@ -92,7 +132,53 @@
       "resolved",
       "dismissed"
     ],
+    "messageQueueClass": [
+      "holding",
+      "reviewRequired",
+      "urgent"
+    ],
+    "messageReportStatus": [
+      "processing",
+      "accepted",
+      "alreadyReported",
+      "failed",
+      "messageAlreadyDeleted"
+    ],
+    "messageVisibilityState": [
+      "visible",
+      "hiddenPendingReview",
+      "deleted"
+    ],
+    "messageEvidenceState": [
+      "copyPending",
+      "copying",
+      "available",
+      "cleanupPending",
+      "deleting",
+      "deleted",
+      "failed"
+    ],
+    "messageEvidenceJobState": [
+      "pending",
+      "processing",
+      "retryPending",
+      "succeeded",
+      "failed"
+    ],
+    "messageEvidenceCleanupJobState": [
+      "awaitingEvidence",
+      "pending",
+      "processing",
+      "retryPending",
+      "succeeded",
+      "failed"
+    ],
+    "messageGuardWinner": [
+      "reportFirst",
+      "deleteFirst"
+    ],
     "reportTargetType": [
+      "message",
       "user",
       "room"
     ],
@@ -288,6 +374,10 @@
         "lastReportedAt": "timestamp",
         "updatedAt": "timestamp",
         "expiresAt": "timestamp|null"
+      },
+      "messageReportPatternFields": {
+        "messagePatternQualifiedAt": "timestamp|null",
+        "messagePatternReviewUntil": "timestamp|null"
       }
     },
     "moderationUserReports/{target}/submissions/{submissionID}": {
@@ -302,10 +392,6 @@
         "triggerMessageID": "string|null",
         "textSnapshot": "string|null, max 4000 UTF-8 bytes",
         "mediaKind": "mediaKind|null",
-        "selectedAttachmentIDs": "bounded stable attachment ID array|null",
-        "reportedAtSeconds": "non-negative number|null, video only",
-        "evidenceStatus": "pending|available|unavailable|deleting|deleted|null",
-        "evidenceUnavailableReason": "deletedBeforeSubmission|null",
         "createdAt": "timestamp",
         "expiresAt": "timestamp|null"
       },
@@ -329,7 +415,8 @@
     "moderationRoomReports/{roomID}": {
       "clientRead": false,
       "clientWrite": false,
-      "sameShapeAs": "moderationUserReports/{targetModerationPrincipalID}"
+      "sameShapeAs": "moderationUserReports/{targetModerationPrincipalID}.requiredFields",
+      "excludedExtensions": "messageReportPatternFields"
     },
     "moderationRoomReports/{roomID}/submissions/{submissionID}": {
       "clientRead": false,
@@ -536,38 +623,208 @@
         "expiresAt": "timestamp|null"
       }
     },
-    "moderationMediaSignals/{roomID_messageID}": {
+    "moderationConfirmedViolations/{targetModerationPrincipalID}": {
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "positive integer",
-        "roomID": "string",
-        "messageID": "string",
-        "reviewRevision": "positive integer",
-        "urgentDistinctReporterCount24h": "non-negative integer",
-        "generalDistinctReporterCount24h": "non-negative integer",
-        "visibilityState": "visible|hiddenPendingReview|deleted",
-        "evidenceState": "none|copyPending|available|unavailable|deleting|deleted",
+        "confirmedViolationCount90d": "non-negative integer administrator advisory projection",
+        "activeWarningCount": "non-negative integer administrator advisory projection",
         "updatedAt": "timestamp"
       }
     },
-    "moderationMediaEvidence/{bundleID}": {
+    "moderationConfirmedViolations/{targetModerationPrincipalID}/incidents/{actionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "messageID": "string|null",
+        "reportSubmissionID": "string|null",
+        "severity": "bounded administrator-confirmed severity",
+        "contentDecision": "restore|delete",
+        "accountAction": "none|warning|temporaryRestriction|permanentSuspension",
+        "confirmedAt": "timestamp",
+        "rollingWindowExpiresAt": "timestamp exactly 90 days after confirmedAt"
+      },
+      "policy": "administrator decisions only; report receipt never creates an incident; expiry removes the advisory rolling-window signal but not the append-only moderation audit"
+    },
+    "moderationMessageReportPreparations/{preparationID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "incidentID": "string",
+        "roomID": "string",
+        "messageID": "string",
+        "reviewRevision": "non-negative integer",
+        "reporterID": "deterministic opaque reporter marker ID",
+        "bundleID": "string",
+        "status": "processing|accepted|failed",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "purpose": "durable result for response loss and app termination; processing is not a canonical accepted report and does not affect queue, counts, patterns, or visibility"
+    },
+    "moderationMessageReportPreparations/{preparationID}/requests/{submissionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "clientRequestID": "UUID string",
+        "status": "processing|accepted|failed",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "purpose": "bounded per-request receipt that lets an old clientRequestID replay its original result after the semantic preparation is retried with a new request"
+    },
+    "moderationMessageIncidents/{incidentID}": {
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "positive integer",
         "roomID": "string",
         "messageID": "string",
-        "selectedAttachmentIDs": "bounded stable attachment ID array",
+        "senderModerationPrincipalID": "document ID",
+        "reviewRevision": "non-negative integer; first revision is 0",
+        "reviewState": "open|inReview|resolved|dismissed",
+        "caseVersion": "positive integer",
+        "queueClass": "holding|reviewRequired|urgent",
+        "priorityClass": "urgent|general",
+        "urgentDistinctReporterCount24h": "non-negative integer at last accepted report evaluation",
+        "totalDistinctReporterCount24h": "non-negative integer at last accepted report evaluation",
+        "reviewDueAt": "timestamp, firstReportedAt + 72 hours for a general revision",
+        "slaDueAt": "timestamp",
+        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "evidenceState": "available|cleanupPending|deleting|deleted",
+        "firstReportedAt": "timestamp",
+        "lastReportedAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "identity": "incidentID is a versioned canonical-tuple hash of roomID + messageID; reviewRevision starts at 0 and separates reopened review cycles",
+      "acceptance": "created or counted only after the complete text/media evidence bundle is available"
+    },
+    "moderationMessageIncidents/{incidentID}/revisions/{reviewRevisionID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "reviewState": "open|inReview|resolved|dismissed",
+        "queueClass": "holding|reviewRequired|urgent",
+        "openedAt": "timestamp",
+        "resolvedAt": "timestamp|null",
+        "resolutionActionID": "string|null",
+        "evidenceBundleID": "string",
+        "updatedAt": "timestamp"
+      }
+    },
+    "moderationMessageIncidents/{incidentID}/revisions/{reviewRevisionID}/reporters/{reporterID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "reason": "reportReason",
+        "detail": "string|null, max 500 Unicode scalars",
+        "clientRequestID": "UUID string",
+        "priorityClass": "urgent|general",
+        "evidenceBundleID": "string",
+        "createdAt": "timestamp"
+      },
+      "uniqueness": "one document per reporter and review revision; a new clientRequestID for the same reporter/message/revision returns alreadyReported without writes or quota"
+    },
+    "moderationUserReports/{senderModerationPrincipalID}/reportedMessages/{incidentID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "latestReviewRevision": "non-negative integer",
+        "firstReportedAt": "timestamp",
+        "lastReportedAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "purpose": "query up to 3 markers with lastReportedAt in the rolling 7-day window to prove the distinct-message half of the author pattern"
+    },
+    "moderationUserReports/{senderModerationPrincipalID}/messageReporters/{reporterID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "firstReportedAt": "timestamp",
+        "lastReportedAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "purpose": "query up to 2 markers with lastReportedAt in the rolling 7-day window to prove the distinct-reporter half of the author pattern; when both halves qualify, messagePatternReviewUntil is min(third newest message time, second newest reporter time) + 7 days"
+    },
+    "moderationMessageGuards/{incidentID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "contentState": "active|deleted",
+        "guardWinner": "reportFirst|deleteFirst",
+        "evidenceState": "none|copyPending|copying|available|failed",
+        "bundleID": "string|null",
+        "reviewRevision": "non-negative integer|null",
+        "updatedAt": "timestamp"
+      },
+      "raceAuthority": "submitMessageReport and deleteMessage read and write this server-only document in their transactions; first commit wins"
+    },
+    "moderationMessageEvidence/{bundleID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "reviewRevision": "non-negative integer",
+        "textSnapshot": "string|null, max 4000 UTF-8 bytes",
+        "attachmentIDs": "server-derived full stable attachment ID array",
+        "totalDisplayBytes": "non-negative integer",
         "objectPaths": "server-only bounded evidence object path array",
-        "reportedAtSeconds": "non-negative number|null",
-        "state": "copyPending|available|unavailable|deleting|deleted",
+        "state": "copyPending|copying|available|cleanupPending|deleting|deleted|failed",
         "retentionClass": "reviewOpen|deleteAfterDecision|sanctionAppeal30Days|appealOpen|legalHold",
         "createdAt": "timestamp",
         "deleteAfter": "timestamp|null",
         "updatedAt": "timestamp"
       },
+      "identity": "deterministic versioned canonical-tuple bundleID from incidentID + reviewRevision",
+      "scope": "one common bundle for the bounded text snapshot and every normalized display attachment shown in that message; a video contributes its one complete normalized MP4",
       "access": "active platform administrator through server-authenticated specific-object retrieval with audit; never directly exposed to clients"
+    },
+    "moderationEvidenceCopyJobs/{copyJobID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "roomID": "string",
+        "messageID": "string",
+        "reviewRevision": "non-negative integer",
+        "sourceObjects": "bounded server-derived normalized display object descriptors",
+        "status": "pending|processing|retryPending|succeeded|failed",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp",
+        "lastErrorCode": "bounded string|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "idempotency": "deterministic job and destination paths from bundleID; repeated workers verify source generation and converge"
+    },
+    "moderationEvidenceCleanupJobs/{cleanupJobID}": {
+      "clientRead": false,
+      "clientWrite": false,
+      "requiredFields": {
+        "schemaVersion": "positive integer",
+        "status": "awaitingEvidence|pending|processing|retryPending|succeeded|failed",
+        "attempt": "non-negative integer",
+        "nextAttemptAt": "timestamp",
+        "lastErrorCode": "bounded string|null",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "ordering": "when report commits before delete, ready-media cleanup remains awaitingEvidence until evidence copy reaches available or terminal failed"
     },
     "Rooms/{roomID}/MediaUploads/{uploadID}": {
       "clientRead": false,
@@ -830,7 +1087,7 @@
     "cloudRunJobRuntime": "2 vCPU; 1024 MiB memory; one task; parallelism 1; attachments processed sequentially; platform retries 0",
     "automaticRetryLimit": 3,
     "failedLocalOutboxRetentionDays": 7,
-    "reportEvidenceCopy": "selected stable attachment IDs only; deterministic dedupe; full normalized video once with reportedAtSeconds"
+    "reportEvidenceCopy": "the entire reported message; all normalized image display attachments or one full normalized video; deterministic per-message/revision dedupe; no client attachment selection or video timestamp"
   },
   "mediaProcessingCapacityPolicy": {
     "developmentSlots": {
@@ -872,7 +1129,7 @@
     "dailyByteLimit": "not set initially; decide from observed usage and abuse metrics before increasing capacity"
   },
   "mediaReportVisibilityPolicy": {
-    "reporterImmediateHide": "selected attachments only; hide whole message when every image is selected or the message is video; persists after admin dismissal",
+    "reporterImmediateHide": "none; reporting, explicit personal message hide, user block, and server global hide are separate actions",
     "globalHideState": "hiddenPendingReview on the same message ID and sequence",
     "urgentReasons": [
       "sexual",
@@ -880,13 +1137,31 @@
       "illegalDangerous"
     ],
     "urgentThreshold": "2 distinct canonical moderation principals within 24 hours in the same review revision",
-    "generalThreshold": "3 distinct canonical moderation principals within 24 hours in the same review revision",
+    "allReasonThreshold": "3 distinct canonical moderation principals across all reasons within 24 hours in the same review revision",
     "manualGlobalHide": "active platform administrator",
     "automaticSanction": false,
     "dismissalRestore": "same message ID and sequence; no new push, banner, latestSeq, read-frontier rollback, or synthetic unread",
     "confirmedViolation": "convert the existing sequence to a deleted tombstone",
     "reportDeleteRace": "first Firestore transaction commit wins",
-    "deletedBeforeSubmission": "evidence unavailable; accepted into target aggregate but excluded from global-hide thresholds and sole sanction evidence"
+    "deleteFirst": "return messageAlreadyDeleted, create no report/evidence document, consume no rate quota, and let iOS converge the local row to a deleted tombstone",
+    "reportFirst": "reserve the common evidence bundle and return processing before a later delete can commit; the message tombstones immediately, while ready-media cleanup waits for evidence copy completion or terminal failure; only available evidence finalizes accepted report/count/queue/visibility effects"
+  },
+  "reportQueuePolicy": {
+    "generalSingleReport": "stored in holding; searchable and visible from user/message detail but not placed in the primary action queue",
+    "messageReviewPromotion": "2 distinct canonical moderation principals on the same message changes queueClass to reviewRequired",
+    "overdueHolding": "the administrator query includes queueClass holding with reviewDueAt less than or equal to serverNow; no scheduler or state rewrite is required",
+    "accountPatternPromotion": "at least 3 distinct reported messages from the same author and at least 2 distinct reporters across those messages within 7 days",
+    "urgentPromotion": "the first sexual, privacy, or illegalDangerous report enters the urgent queue immediately",
+    "manualPromotion": "active platform administrator",
+    "administratorSource": "query moderationMessageIncidents, moderationUserReports, and moderationRoomReports directly; do not create a separate moderation review queue projection",
+    "relationshipToGlobalHide": "review queue promotion is lower than global hide and never hides content by itself"
+  },
+  "confirmedViolationPolicy": {
+    "source": "active platform administrator decision only; report counts never increment warnings",
+    "rollingWindowDays": 90,
+    "advisoryLadder": "1 confirmed violation suggests warning; 2 suggests temporary restriction review; 3 or more suggests long restriction or suspension review",
+    "automaticSanction": false,
+    "severityOverride": "a severe single incident may justify immediate restriction or suspension after explicit administrator review"
   },
   "storage": {
     "quarantineBucket": "environment-specific dedicated Standard bucket in asia-northeast3; soft delete and object versioning disabled; one-day lifecycle backstop",
@@ -935,6 +1210,34 @@
       "idempotency": "reporter + user target + clientRequestID",
       "rateLimit": "no daily hard cap; 10 accepted unique submissions per reporter moderation principal per UTC minute; duplicate clientRequestID does not consume quota; RATE_LIMITED includes retryAt"
     },
+    "submitMessageReport": {
+      "transport": "Firebase callable",
+      "authorization": "active or restricted reporter with active room read context; self-report denied",
+      "request": {
+        "roomID": "string",
+        "messageID": "string",
+        "reason": "reportReason",
+        "detail": "string|null",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "status": "processing|accepted|alreadyReported|failed|messageAlreadyDeleted",
+        "submissionID": "string|null",
+        "deduplicated": "boolean",
+        "alreadyReported": "boolean",
+        "queueClass": "holding|reviewRequired|urgent|null",
+        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "receivedAt": "timestamp|null",
+        "originalReceivedAt": "timestamp|null",
+        "seq": "positive integer|null"
+      },
+      "effects": "processing creates only server-only preparation/guard/bundle/job state; available evidence atomically finalizes one canonical message incident, one reporter marker for the current review revision, sender reported-message and message-reporter markers, and accepted count/queue/visibility effects",
+      "idempotency": "the same reporter + room + message + clientRequestID returns the durable processing/accepted/failed result; a new clientRequestID reuses an existing preparation and deterministic bundle while processing, returns alreadyReported after accepted, or starts a new preparation after terminal failed cleanup",
+      "acceptance": "text snapshot or every normalized display attachment must be available before status accepted; processing and failed never affect report counts, queue promotion, author pattern, or global visibility",
+      "unknownClientOutcome": "response loss or app termination creates no guessed success/failure UI; backend processing continues and a later user-initiated report resolves to processing, alreadyReported, or a new preparation",
+      "deletedMessage": "if deletion committed first, return messageAlreadyDeleted with the authoritative seq and create no report/evidence/count/quota write",
+      "rateLimit": "preparation admission uses bounded technical abuse protection, but processing/failed do not affect moderation counts; transport replay, reused preparation, semantic duplicate, and messageAlreadyDeleted do not consume an additional slot"
+    },
     "submitRoomReport": {
       "transport": "Firebase callable",
       "authorization": "active or restricted reporter with room context",
@@ -951,7 +1254,7 @@
         "receivedAt": "timestamp"
       },
       "idempotency": "reporter + room target + clientRequestID",
-      "rateLimit": "shares the reporter moderation principal UTC-minute bucket with user reports"
+      "rateLimit": "shares the reporter moderation principal UTC-minute bucket with user and message reports"
     },
     "blockUser": {
       "transport": "Firebase callable",
@@ -1083,13 +1386,15 @@
         "targetType": "reportTargetType",
         "reviewState": "reviewState|null",
         "priorityClass": "urgent|general|null",
+        "messageQueueView": "urgent|reviewRequired|overdueHolding|inReview|resolved|dismissed|null; required only when targetType is message",
         "pageSize": "1...100",
         "cursor": "opaque string|null"
       },
       "response": {
         "items": "safe report summary array",
         "nextCursor": "opaque string|null"
-      }
+      },
+      "source": "query the canonical collection selected by targetType directly; message overdueHolding means queueClass holding and reviewDueAt <= serverNow; user summaries expose messagePatternActive as messagePatternReviewUntil > serverNow; no separate queue projection or scheduler"
     },
     "getModerationReportDetail": {
       "transport": "Firebase callable",
