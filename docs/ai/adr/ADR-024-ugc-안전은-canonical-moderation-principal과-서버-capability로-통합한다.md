@@ -21,6 +21,9 @@ accepted
 - 댓글·답글 최대 길이는 기존 JavaScript `String.length`와 맞춘 trim 이후 UTF-16 code unit 1,000으로 고정하고 iOS도 `String.UTF16View.count`를 사용한다. `clientRequestID`는 동일 네트워크 재시도 동안 유지하되 입력 수정·취소·성공 후 새 작성에는 재사용하지 않는다.
 - 미디어 reservation은 ADR-016을 확장해 상태 머신으로 사용한다. 기술 검증·정규화 완료 transaction 전에는 message document와 room seq를 만들지 않는다.
 - Phase 7 미디어는 환경별 quarantine·일반 media·evidence bucket으로 분리한다. quarantine은 soft delete/versioning을 끈 1일 수명 임시 입력이며 공개·evidence에는 raw source를 사용하지 않는다.
+- 메시지 신고는 텍스트와 미디어를 하나의 결정적 evidence bundle로 보존한다. 별도 관리자 queue projection을 만들지 않고 canonical message/user/room 신고 원장을 직접 조회하며, 작성자 반복 패턴은 최근 7일 서로 다른 메시지 3개와 전체 고유 신고자 2명을 모두 요구한다.
+- 메시지 신고는 evidence 준비 중 `processing`이며 text snapshot 또는 전체 media evidence가 `available`이 된 뒤에만 `accepted` 신고와 count·queue·visibility를 확정한다. 응답 유실·앱 종료에도 서버 준비는 계속하고 같은 요청·같은 reporter의 재신고는 결정적 identity로 기존 processing/accepted 결과에 수렴한다.
+- 신고와 삭제는 server-only message guard를 같은 transaction에서 갱신한다. 삭제 우선이면 신고를 저장하지 않고, 신고 우선이면 evidence copy가 확보될 때까지 공개 media cleanup만 지연한다.
 - reservation과 processing이 1:1이므로 `MediaUploads`가 lease·attempt·execution·retry까지 통합 소유한다. kind별 Cloud Tasks와 Firestore 고정 slot으로 Production 초기 이미지 4·영상 1 execution만 허용하고 Cloud Run Job 자체 retry는 0으로 둔다.
 - exact schema, enum, API, 오류, 상태 전이와 index 계약은 `contracts/chat-moderation-v1.json`을 기준으로 한다.
 
@@ -38,7 +41,7 @@ accepted
 - 인증 시 provider identity binding과 `moderationAccounts` projection write가 추가된다.
 - Rules, Functions, Socket와 Storage가 같은 capability contract를 구현하고 회귀 테스트해야 한다.
 - 신고·제재 collection이 서버 전용이므로 앱과 관리자 웹은 callable API에 의존한다.
-- 신고된 미디어를 별도 보존하지 않으므로 작성자가 원본을 삭제한 뒤에는 관리자가 미디어를 다시 확인할 수 없다.
+- 신고가 먼저 commit된 미디어는 별도 evidence로 보존하므로 관리자 검토와 보존 비용이 추가된다. 삭제가 먼저 commit된 메시지는 신고 자체를 받지 않아 삭제된 원문을 사후 복구하지 않는다.
 - HMAC 원장과 room ban은 가명정보이므로 계정 삭제 후 보존 목적·기간과 접근 통제를 별도로 승인해야 한다.
 - ban 사용자의 active room read를 유지하므로 room ban은 기밀성 경계가 아니다. 비공개 방이나 member-only read가 필요해지면 별도 접근 제어 계약이 필요하다.
 - 계정 전체 승계는 순간적으로 원자적이지 않다. 대신 owner 중복과 부적격 owner 권한 행사를 방별 transaction·capability로 막고 bounded retry 안의 수렴을 운영 불변식으로 사용한다.
@@ -58,14 +61,14 @@ accepted
 - Socket와 동일하게 댓글·답글도 process memory로 제한하는 방식은 Functions 다중 인스턴스 간 quota가 분리되므로 선택하지 않았다.
 - 과거 내부 QA Cloud Logging 원문을 별도 삭제하는 방식은 운영 데이터가 없고 기존 retention으로 만료되므로 선택하지 않았다.
 - Phase 6에서 관리자 신고 수·과거 제재 이력의 임의 정렬 projection을 추가하는 방식은 관리자 웹 운영 task와 책임이 겹쳐 보류했다.
-- 신고 메시지의 모든 첨부를 일괄 복사하는 방식은 개인정보·보존 비용이 크므로 선택하지 않았다. 신고자가 지정한 안정적 `attachmentID`만 결정적 evidence bundle로 보존한다.
+- 사용자에게 이미지 선택이나 동영상 시점 입력을 요구하지 않고 신고 단위를 메시지 전체로 단순화한다. 이미지 묶음은 해당 메시지의 정규화 `display` 전체, 동영상은 정규화 원본 전체 1개를 결정적 evidence bundle로 보존하며 후속 신고는 같은 object를 재사용한다. 개인정보·비용 증가는 메시지당 attachment/byte 상한, client deny, 처리 결과별 retention과 Development 용량 측정으로 통제한다.
 - processing 중 message document에 pending 상태를 저장하는 방식은 서버 ready message와 로컬 pending UI 책임을 섞으므로 선택하지 않았다.
 
 ## 재검토 조건
 
 - 서로 다른 provider 계정의 명시적 연결 UX를 추가할 때 canonical principal alias 연결 계약을 확장한다.
 - 법률·개인정보 검토에서 HMAC 원장 또는 room ban 보존이 허용되지 않거나 별도 동의가 필요하다고 판단할 때 retention과 재가입 방지 범위를 조정한다.
-- 선택 미디어 evidence의 접근·삭제 경합·처리 결과별 retention을 Phase 7 계약으로 적용한다. 실제 byte 전달 방식은 관리자 웹 구현 시 재검토한다.
+- 메시지 전체 media evidence의 접근·삭제 경합·처리 결과별 retention을 Phase 7 계약으로 적용한다. 실제 byte 전달 방식은 관리자 웹 구현 시 재검토한다.
 - Socket를 다중 인스턴스로 전환하거나 단일 인스턴스 연결/CPU/메모리/latency 한계, reconnect abuse 또는 프로세스 간 limiter 불일치가 관측될 때 Socket.IO adapter/PubSub와 rate limiter를 Redis/Memorystore의 분리된 keyspace·TTL로 옮긴다.
 - App Review가 자동 필터 부재를 문제로 지적하거나 실제 운영에서 신고·차단·사후 대응만으로 안전을 유지하기 어렵다는 근거가 생기면 게시 전 필터 범위를 사용자와 다시 논의한다.
 - animated GIF의 frame/decode/memory/CPU 기술 상한은 구현 fixture 결과로 고정한다. App Review가 자동 필터 부재를 문제로 지적하면 의미 판정 도입을 별도 제품 결정으로 재논의한다.
