@@ -47,6 +47,27 @@ export type SubmitRoomReportInput = {
   clientRequestID: string;
 };
 
+export type SubmitMessageReportInput = {
+  roomID: string;
+  messageID: string;
+  reason: ReportReason;
+  detail: string | null;
+  clientRequestID: string;
+};
+
+export type MessageReportReceipt = {
+  status: "processing" | "accepted" | "alreadyReported" | "failed" |
+    "messageAlreadyDeleted";
+  submissionID: string | null;
+  deduplicated: boolean;
+  alreadyReported: boolean;
+  queueClass: "holding" | "reviewRequired" | "urgent" | null;
+  visibilityState: "visible" | "hiddenPendingReview" | "deleted";
+  receivedAt: string | null;
+  originalReceivedAt: string | null;
+  seq: number | null;
+};
+
 export type ReportReceipt = {
   submissionID: string;
   deduplicated: boolean;
@@ -113,6 +134,20 @@ export function parseSubmitRoomReportInput(data: unknown): SubmitRoomReportInput
       optionalString(record, "triggerMessageID", 128),
       "triggerMessageID",
     ),
+    clientRequestID: requiredClientRequestID(record),
+  };
+}
+
+export function parseSubmitMessageReportInput(data: unknown): SubmitMessageReportInput {
+  const record = recordData(data);
+  return {
+    roomID: requiredDocumentID(requiredString(record, "roomID", 128), "roomID"),
+    messageID: requiredDocumentID(
+      requiredString(record, "messageID", 128),
+      "messageID",
+    ),
+    reason: requiredReportReason(requiredString(record, "reason", 32)),
+    detail: optionalString(record, "detail", 500),
     clientRequestID: requiredClientRequestID(record),
   };
 }

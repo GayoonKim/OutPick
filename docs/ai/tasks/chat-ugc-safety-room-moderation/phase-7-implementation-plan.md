@@ -157,7 +157,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 - 메시지 long press는 attachment 선택이나 동영상 시점 입력 없이 전용 `submitMessageReport`로 `이 메시지 신고`를 제출한다. 서버는 message의 stable attachment ID·media kind·sender와 전체 attachment manifest를 다시 검증한다. `submitUserReport`는 프로필/참여자 사용자 신고로 유지한다.
 - 메시지 신고는 canonical message incident로 기록하고 같은 작성자 aggregate의 message/reporter marker에도 반영한다. 프로필 사용자 신고와 방 신고는 메시지 evidence를 만들지 않는다.
-- 삭제가 먼저 commit됐으면 `messageAlreadyDeleted`를 반환하고 신고 원장·evidence·count·quota를 만들지 않는다.
+- 삭제가 먼저 commit됐으면 `messageAlreadyDeleted`를 반환하고 신고 원장·evidence·moderation count는 만들지 않는다. 이전에 보지 못한 `clientRequestID`의 최상위 transport receipt와 공유 limiter slot 1개는 만든다.
 - 신고 preparation이 먼저 commit되면 server-only guard에 evidence hold를 반영해 삭제 cleanup과 transaction conflict를 만들고, evidence available 뒤에만 accepted 신고를 확정한다.
 - 관리자 report detail은 evidence 상태와 object ID만 반환하며 byte URL은 반환하지 않는다.
 
@@ -345,8 +345,8 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 - `submitMessageReport(roomID, messageID, reason, detail?, clientRequestID)`는 active/restricted reporter, App Check, active room read context와 self-report 금지를 검증한다.
 - 최초 evidence 준비는 `status=processing`이며 신고 count·queue·visibility에 반영하지 않는다. text snapshot 또는 전체 media evidence가 `available`이 된 뒤에만 `status=accepted`를 반환한다.
-- 같은 `clientRequestID` replay는 준비 중이면 동일 `processing`, 완료됐으면 기존 `accepted` receipt를 반환한다. 같은 reporter/message/reviewRevision의 새 `clientRequestID`는 준비 중이면 결정적 bundle 작업을 재사용하고, 접수 완료 뒤에는 `status=alreadyReported`, `alreadyReported=true`, `originalReceivedAt`을 반환한다. 모두 count·quota·evidence를 중복 변경하지 않는다.
-- 삭제가 먼저 확정된 message는 `status=messageAlreadyDeleted`, `messageID`, `seq`를 반환하고 신고 원장·quota·evidence를 만들지 않는다.
+- 같은 `clientRequestID` replay는 revision과 무관한 최상위 `moderationMessageReportRequests/{requestID}`를 현재 revision 선택보다 먼저 조회한다. 앱은 최초 UUID를 terminal 결과까지 유지한다. 준비 중이면 동일 `processing`, 완료됐으면 최초 terminal receipt를 반환해 관리자 종결 뒤 지연 retry도 새 revision을 만들지 않으며 transport quota도 다시 소비하지 않는다. 같은 reporter/message/reviewRevision의 새 `clientRequestID`는 새 transport receipt slot 1개를 소비하되, 준비 중이면 결정적 bundle 작업을 재사용하고 접수 완료 뒤에는 `status=alreadyReported`, `alreadyReported=true`, `originalReceivedAt`을 반환한다. 이때 moderation count·evidence는 중복 변경하지 않는다.
+- 삭제가 먼저 확정된 message는 `status=messageAlreadyDeleted`, `messageID`, `seq`를 반환하고 신고 원장·evidence·moderation count는 만들지 않는다. 새 `clientRequestID`이면 최상위 transport receipt를 만들고 공유 limiter slot 1개를 소비한다.
 - 신규 접수 성공은 `status=accepted`, incidentID/reviewRevision/submissionID, `queueClass=holding|reviewRequired|urgent`, `visibilityState`, `receivedAt`을 반환한다.
 - 기존 `listModerationReports`를 `targetType=message`일 때 `messageQueueView=urgent | reviewRequired | overdueHolding | inReview | resolved | dismissed`를 받도록 확장한다. `overdueHolding`은 `queueClass=holding && reviewDueAt<=serverNow`를 직접 조회하며 문서를 변경하지 않는다.
 - 기존 `getModerationReportDetail(targetType=message, targetID=incidentID)`은 현재 revision reporter submission, 작성자 최근 90일 확정 위반 참고값, evidence 상태와 object ID만 반환한다. byte URL은 반환하지 않는다.
@@ -364,6 +364,12 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 #### Phase 7.4B — 신고/삭제 transaction
 
+구현·활성화 경계:
+
+- parser·service·transaction과 테스트만 구현하고 root callable export·Development/Production 배포는 하지 않는다. Phase 7.4C/D와 Phase 7.5 iOS 준비 뒤 활성화한다.
+- legacy media fallback은 만들지 않는다. 신규 ready attachment에 display generation/contentType을 추가하고 테스트 데이터 cleanup 뒤 신규 schema 메시지만 신고한다.
+- 신고 대상은 user-authored text/image/video/lookbookShare다. reply/sharedContent는 target message에 이미 포함된 bounded 표시 snapshot만 보존하고 참조 원문을 따라가지 않는다.
+
 신규 신고 transaction read set:
 
 - reporter `moderationAccounts/{uid}`와 room/member
@@ -377,20 +383,28 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 신규 신고 transaction write set:
 
-- guard `reportFirst|deleteFirst`와 evidence `copyPending|copying|available|failed`
+- guard `reportFirst|deleteFirst`와 evidence `copyPending|copying|available|failed`, preparation `attemptGeneration`
 - evidence가 available인 신규 accepted 확정에서만 incident root, revision audit와 reporter doc
 - evidence가 available인 신규 accepted 확정에서만 user aggregate와 reported-message/reporter marker
 - text/manifest evidence bundle과 media가 있으면 copy job
-- evidence 준비 admission에는 중복 copy 폭주를 막는 기술적 limiter를 적용하되 moderation 신고 count/queue에는 포함하지 않는다. 신규 accepted 확정만 신고 집계에 반영한다.
+- user/room accepted 요청과 이전에 보지 못한 message `clientRequestID` transport receipt는 principal당 UTC 1분 10회 기술 limiter를 공유한다. 정확히 같은 UUID replay만 무료다. 새 UUID는 preparation 재사용·alreadyReported·messageAlreadyDeleted여도 receipt slot 1개를 소비하지만 moderation 신고 count/queue/evidence에는 포함하지 않는다. 신규 semantic preparation은 별도 관측 count만 증가시키며 같은 요청을 이중 과금하지 않는다.
 - global threshold 충족 시 message `moderationVisibilityState=hiddenPendingReview`와 server-only 복원 payload
+- `requestedAt`과 `acceptedAt`을 분리하고 canonical received/window/SLO 시각은 requestedAt을 사용한다.
+- 최초 bundle available 뒤 processing preparation을 최대 30건씩 accepted로 확정하는 동안 incident는 `draining`, 모두 끝난 뒤 `reviewable`이다. 각 preparation의 `initialRequestID` receipt만 drain에서 함께 확정하고 추가 alias receipt는 같은 UUID 재조회 시 terminal generation 결과로 개별 수렴한다. 관리자 종결은 reviewable에서만 허용한다.
 
 삭제 transaction:
 
 - 기존 room/message/job/audit과 guard를 함께 읽는다.
 - guard가 없거나 `contentState=deleted`면 delete가 guard `deleted`를 먼저 쓰고 기존 tombstone/cleanup을 진행한다. 뒤 신고는 `messageAlreadyDeleted`로 종료한다.
-- guard가 report-first hold면 message tombstone은 즉시 적용하고 cleanup job을 `awaitingEvidence`로 만든다. evidence copy 성공 뒤 cleanup을 `pending`으로 전환한다.
+- guard가 report-first hold면 message tombstone은 즉시 적용하고 public ready media용 `chatMessageCleanupJobs`를 `awaitingEvidence`로 만든다. cleanup worker는 이 상태를 claim하지 않으며 evidence copy 성공 또는 terminal failure 뒤 `pending`으로 전환한다.
 - 두 transaction이 같은 guard를 읽고 쓰므로 동시 실행은 Firestore 재시도로 한 순서에 수렴한다.
-- delete-first와 semantic duplicate는 신고 rate quota를 소비하지 않는다.
+- 이전에 보지 못한 새 `clientRequestID`의 delete-first와 semantic duplicate는 최상위 transport receipt를 만들고 공유 limiter slot 1개를 소비한다. 정확히 같은 UUID replay만 quota를 다시 소비하지 않는다.
+- 관리자 confirmed delete는 client-safe `deletionPresentation=moderationRemoved`를 tombstone에 남기고 처리 중 preparation을 messageAlreadyDeleted로 종료한다. dismiss 뒤 새 유효 신고는 reviewRevision을 증가시켜 새 bundle로 시작한다.
+
+멱등성·재시도:
+
+- 같은 reporter/message/revision은 reason/detail과 무관하게 최초 preparation 한 건을 권위로 사용한다. processing은 기존 작업, accepted는 alreadyReported이며 사유 수정 API는 두지 않는다.
+- 실패 request receipt는 원래 generation 결과를 유지한다. partial destination cleanup과 빈 `objectPaths`까지 완료된 bundle `failed`, preparation `failed`, copy job `failed`의 동일 generation을 확인한 뒤 새 clientRequestID만 같은 deterministic ID의 세 문서를 모두 증가한 attemptGeneration으로 원자 재시작하고 stale generation worker는 쓰기를 거부한다.
 
 #### Phase 7.4C — evidence copy·cleanup
 

@@ -238,6 +238,7 @@ Firebase Functions tests/build entry:
   - 미디어 technical validation retry/cancel race/ready message+seq 단일 생성, metadata 제거와 GIF resource-limit
 - Phase 7 신규 worker/Functions/Socket/Rules/iOS 검증 matrix는 `docs/ai/tasks/chat-ugc-safety-room-moderation/phase-7-implementation-plan.md`의 테스트 계획을 기준으로 추가한다.
 - Phase 7.4A `functions/src/moderation/messageEvidence/contracts.test.ts`: versioned canonical tuple ID와 revision reopen, processing/available/failed 접수 효과, queue 비강등, 24시간·7일 경계 ±1ms, distinct reporter/message, retention·appeal/legal hold를 deterministic clock으로 검증한다. 2026-08-21 신규 대상 12/12와 Functions 전체 226/226가 통과했다.
+- Phase 7.4B `firestore-tests/moderation-reports.emulator.test.mjs`: text message 최초 accepted 뒤 관리자 terminal 상태에서 동일 clientRequestID 지연 retry가 최상위 receipt의 revision 0 결과를 반환하고 새 UUID만 revision 1을 여는지 검증한다. 새 UUID receipt 10회 허용·11번째 제한, 동일 UUID 무료 replay, preparation 1회만 생성되는 기술 limiter, media `processing → available → accepted` drain과 추가 UUID receipt의 조회 시 개별 수렴, partial cleanup 완료 전 실패 재시작 거부와 preparation/bundle/copy job 동일 generation 증가, stale generation 거부, report-first 삭제의 `awaitingEvidence`, delete-first의 receipt-only 결과도 포함한다. `functions/src/chat/{media/readyService,cleanup/moderationCleanup}.test.ts`는 ready evidence descriptor와 `awaitingEvidence` claim 차단을 검증한다.
 - Socket unit test 후보:
   - restricted/suspended handshake와 기존 연결 disconnect
   - room ban 사용자의 active room read 비회귀, membership/participant Socket join/message-media write 거부, 전역 차단 recipient push 제외

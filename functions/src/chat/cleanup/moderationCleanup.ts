@@ -15,6 +15,10 @@ const MAX_ATTEMPTS = 20;
 
 type CleanupKind = "message" | "room";
 
+export function cleanupJobCanBeClaimed(status: unknown): boolean {
+  return status !== "awaitingEvidence" && status !== "completed" && status !== "failed";
+}
+
 type StorageBucket = {
   deleteFiles(options: {prefix: string; force: boolean}): Promise<unknown>;
 };
@@ -48,7 +52,7 @@ async function claimJob(
     if (!snapshot.exists || !snapshot.data()) return null;
     const data = snapshot.data();
     if (!data) return null;
-    if (data.status === "completed" || data.status === "failed") return null;
+    if (!cleanupJobCanBeClaimed(data.status)) return null;
     const nextAttemptAt = data.nextAttemptAt;
     if (nextAttemptAt instanceof Timestamp && nextAttemptAt.toMillis() > now.getTime()) {
       return null;

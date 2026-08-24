@@ -19,6 +19,7 @@ import {
   messageGuardID,
   messageIncidentID,
   messageReportPreparationID,
+  messageReportRequestID,
   messageReporterID,
   messageReportStatusForEvidence,
   messageReportSubmissionID,
@@ -46,16 +47,28 @@ test("message evidence ID는 versioned canonical tuple로 결정되고 domain별
     reporterModerationPrincipalID: "principal-1",
     clientRequestID: "123e4567-e89b-42d3-a456-426614174000",
   });
+  const request = messageReportRequestID({
+    incidentID: incident,
+    reporterModerationPrincipalID: "principal-1",
+    clientRequestID: "123e4567-e89b-42d3-a456-426614174000",
+  });
   const bundle = messageEvidenceBundleID(incident, 0);
   assert.notEqual(preparation, submission);
+  assert.notEqual(request, submission);
+  assert.equal(request, messageReportRequestID({
+    incidentID: incident,
+    reporterModerationPrincipalID: "principal-1",
+    clientRequestID: "123e4567-e89b-42d3-a456-426614174000",
+  }));
   assert.notEqual(bundle, preparation);
   const copyJob = messageEvidenceCopyJobID(bundle);
   const cleanupJob = messageEvidenceCleanupJobID(bundle);
   assert.notEqual(copyJob, cleanupJob);
-  assert.deepEqual({incident, preparation, submission, bundle, copyJob, cleanupJob}, {
+  assert.deepEqual({incident, preparation, submission, request, bundle, copyJob, cleanupJob}, {
     incident: "872cc02891649c6ac6359413fc3441eb4f60593aa81e8fe6e73d497c640b5728",
     preparation: "8dd3e21c5255e4b25ee6a3b203799f5c493f98eccc89a2348a199e34501a1b23",
     submission: "69206506a709febc3ee0e6887637bab68ab7866708aa78edd24c98fa2df70a6d",
+    request: "479c10f24af8108bf0a85a4da64fc18c0a8245c4a5825315230fd7dfe69ac5b6",
     bundle: "c54945a8a57c8ce018773da50470728e717c364d1355f36d74a1e8e4ea107128",
     copyJob: "5b384339fcdace55405f84427227a37dbddb801a3465f26cf4f24c67314174df",
     cleanupJob: "37a32e30f48a2e99764fcb7faeef180a6470ad70f57548df0123d83bad97f917",
