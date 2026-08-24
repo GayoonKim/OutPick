@@ -24,7 +24,7 @@
 - Firebase Functions flat export: `functions/src/index.ts`
 - Firebase Functions 공통 runtime/callable: `functions/src/core/`
 - Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,moderation,profile,styleMoods}/`
-- 채팅 메시지 신고 evidence 순수 계약: `functions/src/moderation/messageEvidence/contracts.ts` → `contracts/chat-moderation-v1.json` → `docs/ai/tasks/chat-ugc-safety-room-moderation/phase-7-implementation-plan.md`
+- 채팅 메시지 신고 evidence 계약·transaction: `functions/src/moderation/messageEvidence/{contracts,service}.ts` → `functions/src/moderation/reports/contracts.ts` → `contracts/chat-moderation-v1.json` → `firestore-tests/moderation-reports.emulator.test.mjs`; root callable export는 Phase 7.4C/D·7.5 전까지 보류한다.
 - Kakao custom-token 함수·전용 runtime identity: `functions/src/auth/{functions,kakaoService,runtime}.ts`
 - 계정·공개 프로필 서버 경계: `functions/src/profile/`, `functions/src/shared/accountStatus.ts`
 - 계정 삭제 서버 상태 머신·정리 worker: `functions/src/accountDeletion/` → `firestore.rules`/`storage.rules`/`firestore.indexes.json`

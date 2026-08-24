@@ -313,8 +313,11 @@ unban·명시적 재가입:
 - [ ] 두 번째 신고자가 최근 네 번째 이전 메시지에만 있어도 분리된 `messageReporters` marker로 `메시지 3개 + 신고자 2명/7일`을 놓치지 않으며, `messagePatternReviewUntil`이 지나면 scheduler 없이 관리자 조회에서 제외된다.
 - [ ] 24시간 고유 principal 기준 긴급 2명 또는 전체 사유 3명, 또는 관리자 수동 조치만 같은 review revision의 전역 임시 비노출을 만든다.
 - [ ] 전역 숨김은 동일 seq 검토 tombstone이고 기각 복원은 push·banner·latestSeq·read frontier rollback·인위적 unread를 만들지 않는다.
-- [ ] 같은 `clientRequestID` replay는 원래 성공 응답을 반환하고, 새 ID의 같은 reporter/message/revision은 `alreadyReported`를 반환하며 둘 다 count·evidence·quota를 늘리지 않는다.
-- [ ] 신고/삭제 first-commit-wins에서 삭제 우선은 `messageAlreadyDeleted`와 로컬 tombstone만 만들고 신고·evidence·count·quota write가 0건이다. 신고 우선은 source hold·copy·후속 cleanup이 멱등 수렴한다.
+- [x] 같은 `clientRequestID` replay는 revision-independent 최상위 receipt의 원래 성공 응답을 반환하고, terminal review 뒤에도 새 revision을 만들지 않는다. 새 ID의 같은 reporter/message/revision은 `alreadyReported`를 반환하며 moderation count·evidence를 늘리지 않는다.
+- [x] 동일 UUID replay는 transport quota를 재소비하지 않고, 서로 다른 새 UUID receipt는 preparation 재사용·alreadyReported·messageAlreadyDeleted와 무관하게 user/room 요청과 합산 1분 10회까지만 허용한다. `messagePreparationCount`는 실제 신규 준비만 별도로 관측한다.
+- [x] 신고/삭제 순서에서 삭제 우선은 `messageAlreadyDeleted` transport receipt와 limiter slot만 만들고 preparation·evidence·moderation count를 만들지 않는다. 신고 우선 media는 삭제 tombstone을 즉시 만들되 public cleanup을 `awaitingEvidence`로 두며, available drain이 processing receipt를 accepted로 확정한다.
+- [x] evidence drain은 preparation 최대 30건과 각 최초 receipt만 직접 확정하고 추가 UUID receipt는 동일 UUID 재조회 때 개별 수렴해 receipt 수가 transaction 크기를 무제한 증가시키지 않는다.
+- [x] 실패 재시작은 partial destination cleanup 완료·빈 objectPaths와 preparation/bundle/copy job의 동일 terminal generation을 요구하며 세 문서를 함께 `attemptGeneration + 1`로 전환하고 stale generation accept를 거부한다.
 - [ ] Evidence 원본은 일반 클라이언트와 비활성/비관리자에게 거부되고 활성 플랫폼 관리자의 서버 인증 단건 조회와 audit만 허용된다.
 - [ ] 기각·삭제만·경고만 evidence는 즉시 cleanup enqueue되고 계정 제재 evidence는 30일 이의제기 계약대로 삭제된다.
 
