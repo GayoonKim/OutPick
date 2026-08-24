@@ -13,6 +13,7 @@ import {
   moderationAuditActionID,
   ModerationAuditAction,
 } from "../../moderation/audit/contracts.js";
+import {messageIncidentID} from "../../moderation/messageEvidence/contracts.js";
 import {
   AcknowledgeRoomClosureInput,
   CloseOwnedChatRoomInput,
@@ -73,6 +74,14 @@ export function messageCleanupJobID(roomID: string, messageID: string): string {
 
 function messageTargetID(roomID: string, messageID: string): string {
   return `${roomID}:${messageID}`;
+}
+
+function cleanupStatusForEvidenceGuard(
+  guard: FirebaseFirestore.DocumentData | undefined,
+): "awaitingEvidence" | "pending" {
+  if (guard?.guardWinner !== "reportFirst") return "pending";
+  return guard.evidenceState === "available" || guard.evidenceState === "failed" ?
+    "pending" : "awaitingEvidence";
 }
 
 async function deleteActor(
@@ -148,12 +157,15 @@ export async function deleteChatMessageService(
 
   const jobRef = firestore.collection("chatMessageCleanupJobs")
     .doc(messageCleanupJobID(input.roomID, input.messageID));
+  const incidentID = messageIncidentID(input.roomID, input.messageID);
+  const guardRef = firestore.collection("moderationMessageGuards").doc(incidentID);
   return firestore.runTransaction(async (transaction) => {
-    const [audit, currentRoom, currentMessage, currentJob] = await Promise.all([
+    const [audit, currentRoom, currentMessage, currentJob, currentGuard] = await Promise.all([
       transaction.get(auditRef),
       transaction.get(roomRef),
       transaction.get(messageRef),
       transaction.get(jobRef),
+      transaction.get(guardRef),
     ]);
     if (audit.exists && audit.data()) {
       return assertAuditReplay(audit.data()!, {
@@ -181,12 +193,15 @@ export async function deleteChatMessageService(
       });
     }
     const nowTimestamp = Timestamp.fromDate(now);
+    const guardData = currentGuard.data();
+    const cleanupStatus = cleanupStatusForEvidenceGuard(guardData);
     const result = {
       messageID: input.messageID,
       seq: input.expectedSeq,
       isDeleted: true,
       cleanupStatus: currentJob.exists && currentJob.get("status") === "completed" ?
-        "completed" : "pending",
+        "completed" : currentJob.exists && currentJob.get("status") === "awaitingEvidence" ?
+          "awaitingEvidence" : cleanupStatus,
       deduplicated: message.isDeleted === true,
       deletedAt: message.deletedAt instanceof Timestamp ?
         message.deletedAt.toDate().toISOString() : now.toISOString(),
@@ -196,6 +211,9 @@ export async function deleteChatMessageService(
       transaction.update(messageRef, {
         isDeleted: true,
         deletedAt: nowTimestamp,
+        deletionPresentation: actorKind === "platformAdmin" ?
+          "moderationRemoved" : "deleted",
+        moderationVisibilityState: "deleted",
         msg: FieldValue.delete(),
         attachments: FieldValue.delete(),
         sharedContent: FieldValue.delete(),
@@ -233,9 +251,9 @@ export async function deleteChatMessageService(
           storagePrefixes: storageTargets
             .filter((target) => target.bucket === null)
             .map((target) => target.prefix),
-          status: "pending",
+          status: cleanupStatus,
           attempt: 0,
-          nextAttemptAt: nowTimestamp,
+          nextAttemptAt: cleanupStatus === "awaitingEvidence" ? null : nowTimestamp,
           leaseExpiresAt: null,
           lastErrorCode: null,
           createdAt: nowTimestamp,
@@ -243,6 +261,24 @@ export async function deleteChatMessageService(
           expiresAt: null,
         });
       }
+    }
+    if (!currentGuard.exists) {
+      transaction.create(guardRef, {
+        schemaVersion: 1,
+        roomID: input.roomID,
+        messageID: input.messageID,
+        contentState: "deleted",
+        guardWinner: "deleteFirst",
+        evidenceState: "none",
+        bundleID: null,
+        reviewRevision: null,
+        updatedAt: nowTimestamp,
+      });
+    } else if (guardData?.contentState !== "deleted") {
+      transaction.update(guardRef, {
+        contentState: "deleted",
+        updatedAt: nowTimestamp,
+      });
     }
     const reasonCode = input.reasonCode ?? "selfDelete";
     transaction.create(auditRef, {

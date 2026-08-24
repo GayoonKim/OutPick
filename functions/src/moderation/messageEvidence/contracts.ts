@@ -101,6 +101,18 @@ export function messageReportSubmissionID(input: {
   ]);
 }
 
+export function messageReportRequestID(input: {
+  incidentID: string;
+  reporterModerationPrincipalID: string;
+  clientRequestID: string;
+}): string {
+  return canonicalMessageEvidenceID("message-report-request", [
+    input.incidentID,
+    input.reporterModerationPrincipalID,
+    input.clientRequestID,
+  ]);
+}
+
 export function messageEvidenceBundleID(
   incidentID: string,
   reviewRevision: number,

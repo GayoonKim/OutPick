@@ -203,11 +203,19 @@ async function submitReport(
       transaction.get(rateRef),
     ]);
     const acceptedCount = integerValue(rateBucket.get("acceptedCount"), 0);
-    if (acceptedCount >= REPORT_BURST_LIMIT_PER_MINUTE) {
+    const messageRequestCount = integerValue(
+      rateBucket.get("messageRequestCount"),
+      0,
+    );
+    const messagePreparationCount = integerValue(
+      rateBucket.get("messagePreparationCount"),
+      0,
+    );
+    if (acceptedCount + messageRequestCount >= REPORT_BURST_LIMIT_PER_MINUTE) {
       console.warn("[moderation-report] rate limited", {
         minuteBucket: reportMinuteBucket(now),
       });
-      assertReportBurstCapacity(acceptedCount, now);
+      assertReportBurstCapacity(acceptedCount + messageRequestCount, now);
     }
 
     const aggregateData = aggregate.data();
@@ -240,6 +248,9 @@ async function submitReport(
       reporterModerationPrincipalID: reporterPrincipalID,
       minuteBucket: reportMinuteBucket(now),
       acceptedCount: acceptedCount + 1,
+      messageRequestCount,
+      messagePreparationCount,
+      technicalOperationCount: acceptedCount + messageRequestCount + 1,
       updatedAt: nowTimestamp,
       expiresAt: Timestamp.fromMillis(now.getTime() + REPORT_RATE_BUCKET_TTL_MILLIS),
     });
