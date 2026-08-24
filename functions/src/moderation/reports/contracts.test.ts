@@ -6,6 +6,7 @@ import {
   assertReportBurstCapacity,
   nextAcceptedReportAggregate,
   parseSubmitUserReportInput,
+  parseSubmitMessageReportInput,
   reopenReportState,
   reportMinuteBucket,
   reportPriority,
@@ -98,4 +99,20 @@ test("trigger message만 전달한 사용자 신고를 거부한다", () => {
     }),
     (error) => error instanceof HttpsError && error.code === "invalid-argument",
   );
+});
+
+test("메시지 신고 입력은 UUID를 정규화하고 필수 ID를 검증한다", () => {
+  assert.deepEqual(parseSubmitMessageReportInput({
+    roomID: "room-1",
+    messageID: "message-1",
+    reason: "privacy",
+    detail: "상세",
+    clientRequestID: "123E4567-E89B-42D3-A456-426614174000",
+  }), {
+    roomID: "room-1",
+    messageID: "message-1",
+    reason: "privacy",
+    detail: "상세",
+    clientRequestID: "123e4567-e89b-42d3-a456-426614174000",
+  });
 });

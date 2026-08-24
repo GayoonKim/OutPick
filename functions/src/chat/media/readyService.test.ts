@@ -109,10 +109,14 @@ test("worker 완료는 message/seq/index/preview/delivery/ready와 slot 반환�
   const attachment = (message?.attachments as Array<Record<string, unknown>>)[0];
   assert.equal(attachment.bucketOriginal, "ready");
   assert.equal(attachment.bucketThumb, "ready");
+  assert.equal(attachment.generationOriginal, "1");
+  assert.equal(attachment.contentTypeOriginal, "image/jpeg");
   assert.equal(attachment.mediaFormat, "jpeg");
   assert.equal(attachment.animated, false);
   assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.seq, 5);
   assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.bucketOriginal, "ready");
+  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.generationOriginal, "1");
+  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.contentTypeOriginal, "image/jpeg");
   assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.mediaFormat, "jpeg");
   assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.animated, false);
   assert.equal(memory.values.get("chatMediaDeliveryJobs/room_message")?.status, "pending");

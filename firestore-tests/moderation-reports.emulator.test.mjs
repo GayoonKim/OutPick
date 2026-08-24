@@ -6,6 +6,17 @@ import {
   submitUserReportService,
 } from "../functions/lib/moderation/reports/service.js";
 import {
+  acceptMessageEvidenceBundleService,
+  submitMessageReportService,
+} from "../functions/lib/moderation/messageEvidence/service.js";
+import {
+  deleteChatMessageService,
+  messageCleanupJobID,
+} from "../functions/lib/chat/moderation/service.js";
+import {
+  messageIncidentID,
+} from "../functions/lib/moderation/messageEvidence/contracts.js";
+import {
   mutateAccountModerationService,
   mutateModerationReviewService,
 } from "../functions/lib/moderation/admin/service.js";
@@ -27,6 +38,13 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("moderationUserReports")),
     db.recursiveDelete(db.collection("moderationReportRateLimitBuckets")),
     db.recursiveDelete(db.collection("moderationAuditLogs")),
+    db.recursiveDelete(db.collection("moderationMessageReportRequests")),
+    db.recursiveDelete(db.collection("moderationMessageReportPreparations")),
+    db.recursiveDelete(db.collection("moderationMessageIncidents")),
+    db.recursiveDelete(db.collection("moderationMessageEvidence")),
+    db.recursiveDelete(db.collection("moderationMessageGuards")),
+    db.recursiveDelete(db.collection("moderationEvidenceCopyJobs")),
+    db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("moderationPrincipals").doc(targetPrincipalID)),
     db.recursiveDelete(db.collection("platformAdmins").doc(targetUID)),
     db.recursiveDelete(db.collection("Rooms").doc("moderation-room")),
@@ -189,6 +207,320 @@ describe("moderation report transactions", () => {
     const audits = await db.collection("moderationAuditLogs").get();
     assert.equal(aggregate.data()?.caseVersion, 2);
     assert.equal(audits.size, 1);
+  });
+
+  test("메시지 신고의 과거 request receipt는 terminal review 뒤에도 새 revision이 되지 않는다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active"}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("message-1").set({
+        ID: "message-1",
+        roomID: "moderation-room",
+        senderUID: targetUID,
+        messageType: "Text",
+        message: "신고 증거",
+        msg: "신고 증거",
+        attachments: [],
+        isDeleted: false,
+        moderationVisibilityState: "visible",
+        seq: 1,
+      }),
+    ]);
+    const input = {
+      roomID: "moderation-room",
+      messageID: "message-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(301),
+    };
+    const first = await submitMessageReportService(reporterUID, input, now);
+    assert.equal(first.status, "accepted");
+    const incidentRef = db.collection("moderationMessageIncidents")
+      .doc(messageIncidentID(input.roomID, input.messageID));
+    await incidentRef.update({reviewState: "dismissed", acceptanceState: "reviewable"});
+
+    const replay = await submitMessageReportService(reporterUID, input, new Date(now.getTime() + 60_000));
+    assert.equal(replay.status, "accepted");
+    assert.equal(replay.deduplicated, true);
+    assert.equal((await incidentRef.get()).data()?.reviewRevision, 0);
+
+    const reopened = await submitMessageReportService(reporterUID, {
+      ...input,
+      reason: "spam",
+      clientRequestID: requestID(302),
+    }, new Date(now.getTime() + 120_000));
+    assert.equal(reopened.status, "accepted");
+    const reopenedIncident = (await incidentRef.get()).data();
+    assert.equal(reopenedIncident?.reviewRevision, 1);
+    assert.equal(reopenedIncident?.queueClass, "holding");
+    assert.deepEqual(reopenedIncident?.reasonCounts, {spam: 1});
+    assert.equal(reopenedIncident?.totalDistinctReporterCount24h, 1);
+  });
+
+  test("메시지 신고의 새 UUID receipt는 1분 10회로 제한하고 같은 UUID replay는 무료다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active"}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("message-1").set({
+        ID: "message-1",
+        roomID: "moderation-room",
+        senderUID: targetUID,
+        messageType: "Text",
+        message: "신고 증거",
+        msg: "신고 증거",
+        attachments: [],
+        isDeleted: false,
+        moderationVisibilityState: "visible",
+        seq: 1,
+      }),
+    ]);
+    const input = {
+      roomID: "moderation-room",
+      messageID: "message-1",
+      reason: "spam",
+      detail: null,
+      clientRequestID: requestID(401),
+    };
+    const first = await submitMessageReportService(reporterUID, input, now);
+    assert.equal(first.status, "accepted");
+    for (let sequence = 402; sequence <= 410; sequence += 1) {
+      const duplicate = await submitMessageReportService(reporterUID, {
+        ...input,
+        clientRequestID: requestID(sequence),
+      }, now);
+      assert.equal(duplicate.status, "alreadyReported");
+    }
+    await assert.rejects(
+      submitMessageReportService(reporterUID, {
+        ...input,
+        clientRequestID: requestID(411),
+      }, now),
+      (error) => error?.code === "resource-exhausted",
+    );
+    const replay = await submitMessageReportService(reporterUID, input, now);
+    assert.equal(replay.status, "accepted");
+    assert.equal(replay.deduplicated, true);
+    const buckets = await db.collection("moderationReportRateLimitBuckets").get();
+    assert.equal(buckets.docs[0]?.data().messageRequestCount, 10);
+    assert.equal(buckets.docs[0]?.data().messagePreparationCount, 1);
+    assert.equal(buckets.docs[0]?.data().technicalOperationCount, 10);
+    assert.equal((await db.collection("moderationMessageReportRequests").get()).size, 10);
+  });
+
+  test("미디어 evidence available drain은 processing receipt를 accepted로 확정한다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active"}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("media-1").set({
+        ID: "media-1",
+        roomID: "moderation-room",
+        senderUID: targetUID,
+        messageType: "Image",
+        message: "",
+        msg: "",
+        attachments: [{
+          attachmentID: "attachment-1",
+          bucketOriginal: "ready-bucket",
+          pathOriginal: "rooms/moderation-room/messages/media-1/attachments/attachment-1/display",
+          generationOriginal: "1",
+          bytesOriginal: 1024,
+          contentTypeOriginal: "image/jpeg",
+        }],
+        isDeleted: false,
+        moderationVisibilityState: "visible",
+        seq: 2,
+      }),
+    ]);
+    const input = {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(501),
+    };
+    const processing = await submitMessageReportService(reporterUID, input, now);
+    assert.equal(processing.status, "processing");
+    const aliasInput = {...input, clientRequestID: requestID(502)};
+    const aliasProcessing = await submitMessageReportService(
+      reporterUID,
+      aliasInput,
+      new Date(now.getTime() + 60_000),
+    );
+    assert.equal(aliasProcessing.status, "processing");
+    const preparation = (await db.collection("moderationMessageReportPreparations").get()).docs[0];
+    const bundleID = preparation.data().bundleID;
+    await db.collection("moderationMessageEvidence").doc(bundleID).update({state: "available"});
+    const accepted = await acceptMessageEvidenceBundleService(bundleID, 0, now, db);
+    assert.deepEqual(accepted, {
+      acceptedPreparationCount: 1,
+      remainingPreparationCount: 0,
+      acceptanceState: "reviewable",
+    });
+    const receiptsAfterDrain = await db.collection("moderationMessageReportRequests").get();
+    assert.equal(receiptsAfterDrain.docs.filter((document) => document.data().status === "accepted").length, 1);
+    assert.equal(receiptsAfterDrain.docs.filter((document) => document.data().status === "processing").length, 1);
+    const aliasReplay = await submitMessageReportService(reporterUID, aliasInput, now);
+    assert.equal(aliasReplay.status, "accepted");
+    assert.equal(aliasReplay.deduplicated, true);
+    const replay = await submitMessageReportService(reporterUID, input, now);
+    assert.equal(replay.status, "accepted");
+    assert.equal(replay.deduplicated, true);
+  });
+
+  test("미디어 evidence 실패 재시작은 cleanup과 동일 generation terminal 상태를 요구한다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active"}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("media-1").set({
+        ID: "media-1",
+        roomID: "moderation-room",
+        senderUID: targetUID,
+        messageType: "Image",
+        message: "",
+        msg: "",
+        attachments: [{
+          attachmentID: "attachment-1",
+          bucketOriginal: "ready-bucket",
+          pathOriginal: "rooms/moderation-room/messages/media-1/attachments/attachment-1/display",
+          generationOriginal: "1",
+          bytesOriginal: 1024,
+          contentTypeOriginal: "image/jpeg",
+        }],
+        isDeleted: false,
+        moderationVisibilityState: "visible",
+        seq: 2,
+      }),
+    ]);
+    const initialInput = {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(511),
+    };
+    const initial = await submitMessageReportService(reporterUID, initialInput, now);
+    assert.equal(initial.status, "processing");
+    const preparation = (await db.collection("moderationMessageReportPreparations").get()).docs[0];
+    const bundleRef = db.collection("moderationMessageEvidence").doc(preparation.data().bundleID);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const initialRequest = (await db.collection("moderationMessageReportRequests").get()).docs[0];
+    await Promise.all([
+      preparation.ref.update({status: "failed", failedAt: Timestamp.fromDate(now), lastErrorCode: "EVIDENCE_COPY_FAILED"}),
+      bundleRef.update({state: "failed", objectPaths: ["partial/object"]}),
+      copyJob.ref.update({status: "failed", lastErrorCode: "EVIDENCE_COPY_FAILED"}),
+      initialRequest.ref.update({status: "failed", lastErrorCode: "EVIDENCE_COPY_FAILED"}),
+    ]);
+    const retryInput = {...initialInput, clientRequestID: requestID(512)};
+    await assert.rejects(
+      submitMessageReportService(reporterUID, retryInput, new Date(now.getTime() + 60_000)),
+      (error) => error?.code === "failed-precondition",
+    );
+    assert.equal((await db.collection("moderationMessageReportRequests").get()).size, 1);
+
+    await bundleRef.update({objectPaths: []});
+    const restarted = await submitMessageReportService(
+      reporterUID,
+      retryInput,
+      new Date(now.getTime() + 60_000),
+    );
+    assert.equal(restarted.status, "processing");
+    assert.equal((await preparation.ref.get()).data()?.attemptGeneration, 1);
+    assert.equal((await bundleRef.get()).data()?.attemptGeneration, 1);
+    assert.equal((await copyJob.ref.get()).data()?.attemptGeneration, 1);
+    assert.equal((await copyJob.ref.get()).data()?.status, "pending");
+    const oldReplay = await submitMessageReportService(reporterUID, initialInput, now);
+    assert.equal(oldReplay.status, "failed");
+
+    await bundleRef.update({state: "available"});
+    await assert.rejects(
+      acceptMessageEvidenceBundleService(preparation.data().bundleID, 0, now, db),
+      (error) => error?.code === "failed-precondition",
+    );
+    const accepted = await acceptMessageEvidenceBundleService(preparation.data().bundleID, 1, now, db);
+    assert.equal(accepted.acceptedPreparationCount, 1);
+  });
+
+  test("미디어 신고가 삭제보다 먼저면 public cleanup은 evidence를 기다린다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active", creatorUID: targetUID}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("members").doc(targetUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("media-1").set({
+        ID: "media-1",
+        roomID: "moderation-room",
+        senderUID: targetUID,
+        messageType: "Image",
+        message: "",
+        msg: "",
+        attachments: [{
+          attachmentID: "attachment-1",
+          bucketOriginal: "ready-bucket",
+          pathOriginal: "rooms/moderation-room/messages/media-1/attachments/attachment-1/display",
+          generationOriginal: "1",
+          bytesOriginal: 1024,
+          contentTypeOriginal: "image/jpeg",
+        }],
+        isDeleted: false,
+        moderationVisibilityState: "visible",
+        seq: 2,
+      }),
+    ]);
+    const processing = await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(601),
+    }, now);
+    assert.equal(processing.status, "processing");
+    const deleted = await deleteChatMessageService(targetUID, null, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      expectedSeq: 2,
+      reasonCode: null,
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: requestID(602),
+    }, now, db);
+    assert.equal(deleted.cleanupStatus, "awaitingEvidence");
+    const cleanup = await db.collection("chatMessageCleanupJobs")
+      .doc(messageCleanupJobID("moderation-room", "media-1")).get();
+    assert.equal(cleanup.data()?.status, "awaitingEvidence");
+  });
+
+  test("삭제 tombstone이 먼저면 transport receipt만 만들고 evidence는 만들지 않는다", async () => {
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      roomRef.set({lifecycleStatus: "active"}),
+      roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+      roomRef.collection("Messages").doc("deleted-1").set({
+        ID: "deleted-1",
+        roomID: "moderation-room",
+        isDeleted: true,
+        moderationVisibilityState: "deleted",
+        deletionPresentation: "moderationRemoved",
+        seq: 3,
+      }),
+    ]);
+    const receipt = await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "deleted-1",
+      reason: "spam",
+      detail: null,
+      clientRequestID: requestID(701),
+    }, now);
+    assert.equal(receipt.status, "messageAlreadyDeleted");
+    assert.equal((await db.collection("moderationMessageReportRequests").get()).size, 1);
+    assert.equal((await db.collection("moderationMessageReportPreparations").get()).size, 0);
+    assert.equal((await db.collection("moderationMessageEvidence").get()).size, 0);
+    const buckets = await db.collection("moderationReportRateLimitBuckets").get();
+    assert.equal(buckets.docs[0]?.data().messageRequestCount, 1);
+    assert.equal(buckets.docs[0]?.data().messagePreparationCount, 0);
   });
 
   test("관리자 자신과 active platform admin 제재를 거부한다", async () => {

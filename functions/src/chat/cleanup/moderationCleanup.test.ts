@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  cleanupJobCanBeClaimed,
   normalizedClosureRoomName,
   ROOM_TOMBSTONE_TTL_MILLIS,
 } from "./moderationCleanup.js";
+
+test("public media cleanup은 evidence 대기 상태를 claim하지 않는다", () => {
+  assert.equal(cleanupJobCanBeClaimed("awaitingEvidence"), false);
+  assert.equal(cleanupJobCanBeClaimed("pending"), true);
+  assert.equal(cleanupJobCanBeClaimed("retryPending"), true);
+  assert.equal(cleanupJobCanBeClaimed("processing"), true);
+  assert.equal(cleanupJobCanBeClaimed("completed"), false);
+  assert.equal(cleanupJobCanBeClaimed("failed"), false);
+});
 
 test("종료 tombstone의 최대 보존 기간은 14일이다", () => {
   assert.equal(ROOM_TOMBSTONE_TTL_MILLIS, 14 * 24 * 60 * 60 * 1000);
