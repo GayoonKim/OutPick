@@ -70,6 +70,11 @@ export {
   onModerationRoomCleanupQueued,
 } from "./chat/cleanup/moderationCleanupFunctions.js";
 export {
+  drainMessageEvidenceJobs,
+  onMessageEvidenceCleanupQueued,
+  onMessageEvidenceCopyQueued,
+} from "./moderation/messageEvidence/evidenceFunctions.js";
+export {
   batchSoftDeletePosts,
   batchSoftDeleteSeasons,
   cancelBrandDeletion,

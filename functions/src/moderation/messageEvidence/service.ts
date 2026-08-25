@@ -17,6 +17,7 @@ import {
 } from "../reports/contracts.js";
 import {
   MESSAGE_EVIDENCE_CONTRACT_VERSION,
+  MESSAGE_REPORT_REQUEST_RECEIPT_TTL_MILLIS,
   MessageQueueClass,
   MessageReportStatus,
   messageEvidenceBundleID,
@@ -34,7 +35,7 @@ import {
   nextMessageReviewRevision,
 } from "./contracts.js";
 
-type SourceObject = {
+export type MessageEvidenceSourceObject = {
   attachmentID: string;
   bucket: string;
   path: string;
@@ -86,7 +87,7 @@ function boundedMap(value: unknown, maximumBytes: number): Record<string, unknow
   return JSON.parse(json) as Record<string, unknown>;
 }
 
-function sourceObjects(message: FirebaseFirestore.DocumentData): SourceObject[] {
+function sourceObjects(message: FirebaseFirestore.DocumentData): MessageEvidenceSourceObject[] {
   const attachments = Array.isArray(message.attachments) ? message.attachments : [];
   if (attachments.length < 1 || attachments.length > 30) {
     throw new HttpsError("failed-precondition", "신고할 미디어 증거 구성이 올바르지 않습니다.");
@@ -154,6 +155,7 @@ function requestDocument(input: {
     lastErrorCode: null,
     createdAt: input.requestedAt,
     updatedAt: input.requestedAt,
+    expiresAt: Timestamp.fromMillis(input.requestedAt.toMillis() + MESSAGE_REPORT_REQUEST_RECEIPT_TTL_MILLIS),
   };
 }
 
@@ -355,8 +357,8 @@ export async function submitMessageReportService(
     }
     if (restartingFailedBundle) {
       const partialObjects = Array.isArray(bundle.get("objectPaths")) ? bundle.get("objectPaths") : [];
-      if (!copyJob.exists || copyJob.get("status") !== "failed" ||
-          integer(copyJob.get("attemptGeneration")) !== bundleGeneration ||
+      if ((copyJob.exists && (copyJob.get("status") !== "failed" ||
+          integer(copyJob.get("attemptGeneration")) !== bundleGeneration)) ||
           (preparation.exists && preparation.get("status") === "failed" &&
             integer(preparation.get("attemptGeneration")) !== bundleGeneration) ||
           partialObjects.length > 0) {
@@ -432,9 +434,9 @@ export async function submitMessageReportService(
     transaction.create(requestRef, requestDoc);
     transaction.set(preparationRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, incidentID, roomID: input.roomID, messageID: input.messageID, seq, reviewRevision, reporterID, reporterModerationPrincipalID: reporterPrincipalID, senderModerationPrincipalID: senderPrincipalID, bundleID, initialRequestID: requestID, reason: input.reason, detail: input.detail, priorityClass, attemptGeneration, status, queueClass: immediatelyAccepted ? nextQueue : null, visibilityState: immediatelyAccepted ? acceptedVisibility : null, lastErrorCode: null, requestedAt: nowTimestamp, acceptedAt: immediatelyAccepted ? nowTimestamp : null, failedAt: null, createdAt: preparation.exists ? preparation.get("createdAt") ?? nowTimestamp : nowTimestamp, updatedAt: nowTimestamp});
     if (!bundle.exists) {
-      transaction.create(bundleRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, reviewRevision, textSnapshot: utf8Snapshot(messageData.message ?? messageData.msg), replyContextSnapshot: boundedMap(messageData.replyPreview, 4_000), sharedContentSnapshot: kind === "lookbookShare" ? boundedMap(messageData.sharedContent, 16_000) : null, attachmentIDs: objects.map((item) => item.attachmentID), sourceObjects: objects, attemptGeneration, acceptanceState: immediatelyAccepted ? "reviewable" : "notReady", pendingPreparationCount: immediatelyAccepted ? 0 : 1, totalDisplayBytes: objects.reduce((sum, item) => sum + item.bytes, 0), objectPaths: [], state: immediatelyAccepted ? "available" : "copyPending", retentionClass: "reviewOpen", createdAt: nowTimestamp, deleteAfter: null, updatedAt: nowTimestamp});
+      transaction.create(bundleRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, reviewRevision, textSnapshot: utf8Snapshot(messageData.message ?? messageData.msg), replyContextSnapshot: boundedMap(messageData.replyPreview, 4_000), sharedContentSnapshot: kind === "lookbookShare" ? boundedMap(messageData.sharedContent, 16_000) : null, attachmentIDs: objects.map((item) => item.attachmentID), sourceObjects: objects, evidenceObjects: [], attemptGeneration, acceptanceState: immediatelyAccepted ? "reviewable" : "notReady", pendingPreparationCount: immediatelyAccepted ? 0 : 1, totalDisplayBytes: objects.reduce((sum, item) => sum + item.bytes, 0), objectPaths: [], state: immediatelyAccepted ? "available" : "copyPending", retentionClass: "reviewOpen", createdAt: nowTimestamp, deleteAfter: null, updatedAt: nowTimestamp});
     } else if (restartingFailedBundle) {
-      transaction.set(bundleRef, {sourceObjects: objects, attemptGeneration, acceptanceState: "notReady", pendingPreparationCount: 1, totalDisplayBytes: objects.reduce((sum, item) => sum + item.bytes, 0), objectPaths: [], state: "copyPending", retentionClass: "reviewOpen", deleteAfter: null, updatedAt: nowTimestamp}, {merge: true});
+      transaction.set(bundleRef, {textSnapshot: utf8Snapshot(messageData.message ?? messageData.msg), replyContextSnapshot: boundedMap(messageData.replyPreview, 4_000), sharedContentSnapshot: null, attachmentIDs: objects.map((item) => item.attachmentID), sourceObjects: objects, evidenceObjects: [], attemptGeneration, acceptanceState: "notReady", pendingPreparationCount: 1, totalDisplayBytes: objects.reduce((sum, item) => sum + item.bytes, 0), objectPaths: [], state: "copyPending", retentionClass: "reviewOpen", deleteAfter: null, updatedAt: nowTimestamp}, {merge: true});
     } else if (!immediatelyAccepted) {
       transaction.set(bundleRef, {pendingPreparationCount: integer(bundle.get("pendingPreparationCount")) + 1, updatedAt: nowTimestamp}, {merge: true});
     }
@@ -444,7 +446,7 @@ export async function submitMessageReportService(
       transaction.set(guardRef, {guardWinner: "reportFirst", evidenceState: immediatelyAccepted ? "available" : "copyPending", bundleID, reviewRevision, updatedAt: nowTimestamp}, {merge: true});
     }
     if (!immediatelyAccepted && (!bundle.exists || restartingFailedBundle)) {
-      transaction.set(copyJobRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, bundleID, incidentID, reviewRevision, attemptGeneration, sourceObjects: objects, status: "pending", attempt: 0, nextAttemptAt: nowTimestamp, leaseToken: null, leaseExpiresAt: null, lastErrorCode: null, createdAt: copyJob.exists ? copyJob.get("createdAt") ?? nowTimestamp : nowTimestamp, updatedAt: nowTimestamp});
+      transaction.set(copyJobRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, bundleID, incidentID, reviewRevision, messageType: String(messageData.messageType).toLowerCase(), attemptGeneration, sourceObjects: objects, evidenceObjects: [], status: "pending", phase: "copying", attempt: 0, finalizationAttempt: 0, nextAttemptAt: nowTimestamp, leaseToken: null, leaseExpiresAt: null, lastErrorCode: null, createdAt: copyJob.exists ? copyJob.get("createdAt") ?? nowTimestamp : nowTimestamp, updatedAt: nowTimestamp});
     } else {
       const revisionRef = incidentRef.collection("revisions").doc(revisionID);
       transaction.set(reporterRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, reason: input.reason, detail: input.detail, clientRequestID: input.clientRequestID, priorityClass, evidenceBundleID: bundleID, createdAt: nowTimestamp});
