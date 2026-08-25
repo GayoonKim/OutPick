@@ -4,6 +4,7 @@ import {readFileSync} from "node:fs";
 import test from "node:test";
 import {DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL} from "./auth/runtime.js";
 import {chatMediaServiceAccountEmailForProject} from "./chat/media/runtime.js";
+import {messageEvidenceRuntimeForEnvironment} from "./moderation/messageEvidence/evidenceRuntime.js";
 
 process.env.GCLOUD_PROJECT ??= "outpick-test";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -168,6 +169,20 @@ const firestoreEndpoints = {
     timeoutSeconds: 120,
     availableMemoryMb: 512,
   },
+  onMessageEvidenceCopyQueued: {
+    eventType: "google.cloud.firestore.document.v1.created",
+    document: "moderationEvidenceCopyJobs/{jobID}",
+    timeoutSeconds: 540,
+    availableMemoryMb: 512,
+    maxInstances: 1,
+  },
+  onMessageEvidenceCleanupQueued: {
+    eventType: "google.cloud.firestore.document.v1.created",
+    document: "moderationEvidenceCleanupJobs/{jobID}",
+    timeoutSeconds: 540,
+    availableMemoryMb: 512,
+    maxInstances: 1,
+  },
 } as const;
 
 const scheduleEndpoints = {
@@ -237,6 +252,13 @@ const scheduleEndpoints = {
     timeoutSeconds: 300,
     availableMemoryMb: 512,
   },
+  drainMessageEvidenceJobs: {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 540,
+    availableMemoryMb: 512,
+    maxInstances: 1,
+  },
 } as const;
 
 const callableOverrides = {
@@ -252,9 +274,9 @@ function endpoint(namedExport: string): Endpoint {
   return value.__endpoint;
 }
 
-function assertCommonMetadata(namedExport: string, value: Endpoint): void {
+function assertCommonMetadata(namedExport: string, value: Endpoint, maxInstances = 10): void {
   assert.deepEqual(value.region, ["asia-northeast3"], `${namedExport} region`);
-  assert.equal(value.maxInstances, 10, `${namedExport} maxInstances`);
+  assert.equal(value.maxInstances, maxInstances, `${namedExport} maxInstances`);
 }
 
 function runtimeNumber(value: unknown): number | null {
@@ -262,7 +284,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 105개를 유지한다", () => {
+test("Firebase deployment export 이름 108개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -272,7 +294,7 @@ test("Firebase deployment export 이름 105개를 유지한다", () => {
     "verifyLookbookExtractionFix",
     "dispatchChatMediaProcessing",
   ].sort();
-  assert.equal(expected.length, 105);
+  assert.equal(expected.length, 108);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -341,7 +363,7 @@ test("callable runtime metadata를 유지한다", () => {
 test("Firestore trigger metadata를 유지한다", () => {
   for (const [name, expected] of Object.entries(firestoreEndpoints)) {
     const value = endpoint(name);
-    assertCommonMetadata(name, value);
+    assertCommonMetadata(name, value, "maxInstances" in expected ? expected.maxInstances : 10);
     assert.equal(value.eventTrigger?.eventType, expected.eventType, `${name} eventType`);
     assert.equal(
       value.eventTrigger?.eventFilterPathPatterns?.document,
@@ -356,11 +378,72 @@ test("Firestore trigger metadata를 유지한다", () => {
 test("scheduler metadata를 유지한다", () => {
   for (const [name, expected] of Object.entries(scheduleEndpoints)) {
     const value = endpoint(name);
-    assertCommonMetadata(name, value);
+    assertCommonMetadata(name, value, "maxInstances" in expected ? expected.maxInstances : 10);
     assert.equal(value.scheduleTrigger?.schedule, expected.schedule, `${name} schedule`);
     assert.equal(value.scheduleTrigger?.timeZone, expected.timeZone, `${name} timezone`);
     assert.equal(runtimeNumber(value.timeoutSeconds), expected.timeoutSeconds, `${name} timeout`);
     assert.equal(runtimeNumber(value.availableMemoryMb), expected.availableMemoryMb, `${name} memory`);
+  }
+});
+
+test("message evidence 함수는 환경별 전용 runtime identity를 사용한다", () => {
+  const development = messageEvidenceRuntimeForEnvironment({GCLOUD_PROJECT: "outpick-test"});
+  assert.equal(development.maxInstances, 1);
+  for (const name of [
+    "onMessageEvidenceCopyQueued",
+    "onMessageEvidenceCleanupQueued",
+    "drainMessageEvidenceJobs",
+  ]) {
+    assert.equal(endpoint(name).serviceAccountEmail, development.serviceAccountEmail, name);
+  }
+  assert.deepEqual(messageEvidenceRuntimeForEnvironment({GCLOUD_PROJECT: "outpick-664ae"}), {
+    projectID: "outpick-664ae",
+    serviceAccountEmail: "outpick-msg-evidence-prod@outpick-664ae.iam.gserviceaccount.com",
+    maxInstances: 2,
+  });
+  assert.throws(() => messageEvidenceRuntimeForEnvironment({GCLOUD_PROJECT: "unknown"}));
+});
+
+test("message evidence acceptance와 recovery query 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+  };
+  const expected = new Map<string, string[][]>([
+    ["moderationMessageReportPreparations", [[
+      "bundleID", "ASCENDING",
+    ], [
+      "status", "ASCENDING",
+    ], [
+      "requestedAt", "ASCENDING",
+    ]]],
+    ["moderationEvidenceCopyJobs", [[
+      "status", "ASCENDING",
+    ], [
+      "nextAttemptAt", "ASCENDING",
+    ]]],
+    ["moderationEvidenceCleanupJobs", [[
+      "status", "ASCENDING",
+    ], [
+      "nextAttemptAt", "ASCENDING",
+    ]]],
+  ]);
+  for (const [collectionGroup, fields] of expected) {
+    const matches = config.indexes?.filter((index) =>
+      index.collectionGroup === collectionGroup &&
+      index.queryScope === "COLLECTION"
+    ) ?? [];
+    assert.equal(matches.length, 1, `${collectionGroup} exact index count`);
+    assert.deepEqual(
+      matches[0].fields?.map((field) => [field.fieldPath, field.order]),
+      fields,
+      `${collectionGroup} fields`
+    );
   }
 });
 

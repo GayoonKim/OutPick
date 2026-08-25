@@ -14,6 +14,8 @@ import {
   messageEvidenceBundleID,
   messageEvidenceCleanupJobID,
   messageEvidenceCopyJobID,
+  messageEvidenceObjectPath,
+  messageEvidenceRetryDelayMillis,
   messageEvidenceRetention,
   messageGlobalVisibilityEvaluation,
   messageGuardID,
@@ -73,6 +75,24 @@ test("message evidence ID는 versioned canonical tuple로 결정되고 domain별
     copyJob: "5b384339fcdace55405f84427227a37dbddb801a3465f26cf4f24c67314174df",
     cleanupJob: "37a32e30f48a2e99764fcb7faeef180a6470ad70f57548df0123d83bad97f917",
   });
+});
+
+test("evidence object path는 실패 재시작 generation을 물리적으로 분리한다", () => {
+  assert.equal(
+    messageEvidenceObjectPath({bundleID: "bundle", attemptGeneration: 0, attachmentID: "image"}),
+    "bundle/g0/image/display",
+  );
+  assert.equal(
+    messageEvidenceObjectPath({bundleID: "bundle", attemptGeneration: 1, attachmentID: "image"}),
+    "bundle/g1/image/display",
+  );
+  assert.throws(() => messageEvidenceObjectPath({bundleID: "bad/path", attemptGeneration: 0, attachmentID: "image"}));
+});
+
+test("evidence copy는 최초 포함 3회이며 두 retry는 1분과 2분이다", () => {
+  assert.equal(messageEvidenceRetryDelayMillis(1), 60_000);
+  assert.equal(messageEvidenceRetryDelayMillis(2), 120_000);
+  assert.throws(() => messageEvidenceRetryDelayMillis(3));
 });
 
 test("review revision은 0에서 시작하고 terminal review 뒤에만 증가한다", () => {

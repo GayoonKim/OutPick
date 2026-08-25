@@ -17,6 +17,12 @@ import {
   messageIncidentID,
 } from "../functions/lib/moderation/messageEvidence/contracts.js";
 import {
+  processMessageEvidenceCopyJob,
+} from "../functions/lib/moderation/messageEvidence/evidenceCopy.js";
+import {
+  processMessageEvidenceCleanupJob,
+} from "../functions/lib/moderation/messageEvidence/evidenceCleanup.js";
+import {
   mutateAccountModerationService,
   mutateModerationReviewService,
 } from "../functions/lib/moderation/admin/service.js";
@@ -44,6 +50,7 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("moderationMessageEvidence")),
     db.recursiveDelete(db.collection("moderationMessageGuards")),
     db.recursiveDelete(db.collection("moderationEvidenceCopyJobs")),
+    db.recursiveDelete(db.collection("moderationEvidenceCleanupJobs")),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("moderationPrincipals").doc(targetPrincipalID)),
     db.recursiveDelete(db.collection("platformAdmins").doc(targetUID)),
@@ -70,6 +77,85 @@ async function seedAccounts() {
       stateVersion: 1,
     }),
   ]);
+}
+
+async function seedMediaMessage(messageID = "media-1") {
+  const roomRef = db.collection("Rooms").doc("moderation-room");
+  await Promise.all([
+    roomRef.set({lifecycleStatus: "active", creatorUID: targetUID}),
+    roomRef.collection("members").doc(reporterUID).set({joinedAt: Timestamp.fromDate(now)}),
+    roomRef.collection("members").doc(targetUID).set({joinedAt: Timestamp.fromDate(now)}),
+    roomRef.collection("Messages").doc(messageID).set({
+      ID: messageID,
+      roomID: "moderation-room",
+      senderUID: targetUID,
+      messageType: "Image",
+      message: "",
+      msg: "",
+      attachments: [{
+        attachmentID: "attachment-1",
+        bucketOriginal: "ready-bucket",
+        pathOriginal: `rooms/moderation-room/messages/${messageID}/attachments/attachment-1/display`,
+        generationOriginal: "1",
+        bytesOriginal: 1024,
+        contentTypeOriginal: "image/jpeg",
+      }],
+      isDeleted: false,
+      moderationVisibilityState: "visible",
+      seq: 2,
+    }),
+  ]);
+}
+
+function fakeEvidenceStorage({copyFailures = 0, failOnCopyCalls = []} = {}) {
+  const objects = new Map();
+  const calls = {copy: 0, deleteAttempt: 0, deleteEvidence: 0};
+  return {
+    objects,
+    calls,
+    storage: {
+      copy: async (input) => {
+        calls.copy += 1;
+        const existing = objects.get(input.destinationPath);
+        if (existing) return existing;
+        if (calls.copy <= copyFailures || failOnCopyCalls.includes(calls.copy)) {
+          throw new Error("storage unavailable");
+        }
+        const object = {
+          attachmentID: input.source.attachmentID,
+          bucket: input.destinationBucket,
+          path: input.destinationPath,
+          destinationGeneration: String(1000 + calls.copy),
+          sourceGeneration: input.source.generation,
+          bytes: input.source.bytes,
+          contentType: input.source.contentType,
+          crc32c: "crc32c",
+          attemptGeneration: input.attemptGeneration,
+          bundleID: input.bundleID,
+        };
+        objects.set(input.destinationPath, object);
+        return object;
+      },
+      deleteAttemptObject: async (input) => {
+        calls.deleteAttempt += 1;
+        const object = objects.get(input.destinationPath);
+        if (!object) return;
+        if (object.bundleID !== input.bundleID || object.attemptGeneration !== input.attemptGeneration) {
+          throw new Error("ownership mismatch");
+        }
+        objects.delete(input.destinationPath);
+      },
+      deleteEvidenceObject: async (input) => {
+        calls.deleteEvidence += 1;
+        const object = objects.get(input.object.path);
+        if (!object) return;
+        if (object.destinationGeneration !== input.object.destinationGeneration || object.bundleID !== input.bundleID) {
+          throw new Error("generation mismatch");
+        }
+        objects.delete(input.object.path);
+      },
+    },
+  };
 }
 
 function userReport(sequence, reason = "spam") {
@@ -370,7 +456,355 @@ describe("moderation report transactions", () => {
     assert.equal(replay.deduplicated, true);
   });
 
-  test("미디어 evidence 실패 재시작은 cleanup과 동일 generation terminal 상태를 요구한다", async () => {
+  test("evidence copy worker는 generation 경로 복사·accepted drain·public cleanup 해제를 한 번만 확정한다", async () => {
+    await seedMediaMessage();
+    const input = {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(503),
+    };
+    assert.equal((await submitMessageReportService(reporterUID, input, now)).status, "processing");
+    const deleted = await deleteChatMessageService(targetUID, null, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      expectedSeq: 2,
+      reasonCode: null,
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: requestID(504),
+    }, now, db);
+    assert.equal(deleted.cleanupStatus, "awaitingEvidence");
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage();
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: fake.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now,
+    }), true);
+    assert.equal(fake.calls.copy, 1);
+    const completedJob = await copyJob.ref.get();
+    assert.equal(completedJob.data()?.status, "succeeded");
+    assert.equal(completedJob.data()?.phase, "completed");
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    assert.equal(bundle.data().state, "available");
+    assert.equal(bundle.data().sourceObjects, undefined);
+    assert.match(bundle.data().evidenceObjects[0].path, /\/g0\/attachment-1\/display$/);
+    const preparation = (await db.collection("moderationMessageReportPreparations").get()).docs[0];
+    assert.equal(preparation.data().status, "accepted");
+    const cleanup = await db.collection("chatMessageCleanupJobs")
+      .doc(messageCleanupJobID("moderation-room", "media-1")).get();
+    assert.equal(cleanup.data()?.status, "pending");
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: fake.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now,
+    }), false);
+    assert.equal(fake.calls.copy, 1);
+  });
+
+  test("evidence acceptance drain은 실행당 30건만 확정하고 다음 lease에서 이어간다", async () => {
+    await seedMediaMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(510),
+    }, now);
+    const originalPreparation = (await db.collection("moderationMessageReportPreparations").get()).docs[0];
+    const originalData = originalPreparation.data();
+    const extraWrites = [];
+    for (let index = 1; index <= 30; index += 1) {
+      const preparationRef = db.collection("moderationMessageReportPreparations").doc(`extra-preparation-${index}`);
+      const receiptRef = db.collection("moderationMessageReportRequests").doc(`extra-receipt-${index}`);
+      extraWrites.push(preparationRef.set({
+        ...originalData,
+        reporterID: `extra-reporter-${index}`,
+        reporterModerationPrincipalID: `extra-principal-${index}`,
+        initialRequestID: receiptRef.id,
+        requestedAt: Timestamp.fromMillis(now.getTime() + index),
+        createdAt: Timestamp.fromMillis(now.getTime() + index),
+        updatedAt: Timestamp.fromMillis(now.getTime() + index),
+      }));
+      extraWrites.push(receiptRef.set({
+        schemaVersion: 1,
+        preparationID: preparationRef.id,
+        attemptGeneration: 0,
+        clientRequestID: requestID(510 + index),
+        status: "processing",
+        createdAt: Timestamp.fromMillis(now.getTime() + index),
+        updatedAt: Timestamp.fromMillis(now.getTime() + index),
+      }));
+    }
+    await Promise.all(extraWrites);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage();
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: fake.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now,
+    }), false);
+    const afterFirstDrain = await db.collection("moderationMessageReportPreparations").get();
+    assert.equal(afterFirstDrain.docs.filter((document) => document.data().status === "accepted").length, 30);
+    assert.equal(afterFirstDrain.docs.filter((document) => document.data().status === "processing").length, 1);
+    assert.equal((await copyJob.ref.get()).data()?.phase, "acceptanceDrain");
+    assert.equal((await copyJob.ref.get()).data()?.status, "retryPending");
+    assert.equal(fake.calls.copy, 1);
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: fake.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now: new Date(now.getTime() + 60_000),
+    }), true);
+    const afterSecondDrain = await db.collection("moderationMessageReportPreparations").get();
+    assert.equal(afterSecondDrain.docs.filter((document) => document.data().status === "accepted").length, 31);
+    assert.equal((await copyJob.ref.get()).data()?.status, "succeeded");
+    assert.equal(fake.calls.copy, 1);
+  });
+
+  test("evidence copy는 최초 포함 3회 실패 뒤 partial cleanup·failed receipt·public cleanup 해제로 수렴한다", async () => {
+    await seedMediaMessage();
+    const input = {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(505),
+    };
+    assert.equal((await submitMessageReportService(reporterUID, input, now)).status, "processing");
+    await deleteChatMessageService(targetUID, null, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      expectedSeq: 2,
+      reasonCode: null,
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: requestID(506),
+    }, now, db);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage({copyFailures: 3});
+    for (const offset of [0, 60_000, 180_000]) {
+      assert.equal(await processMessageEvidenceCopyJob({
+        jobID: copyJob.id,
+        firestore: db,
+        storage: fake.storage,
+        readyBucket: "ready-bucket",
+        evidenceBucket: "evidence-bucket",
+        now: new Date(now.getTime() + offset),
+      }), false);
+    }
+    assert.equal(fake.calls.copy, 3);
+    assert.equal(fake.calls.deleteAttempt, 1);
+    assert.equal((await copyJob.ref.get()).data()?.status, "failed");
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    assert.equal(bundle.data().state, "failed");
+    assert.equal(bundle.data().textSnapshot, undefined);
+    assert.deepEqual(bundle.data().objectPaths, []);
+    const preparation = (await db.collection("moderationMessageReportPreparations").get()).docs[0];
+    const receipt = (await db.collection("moderationMessageReportRequests").get()).docs[0];
+    assert.equal(preparation.data().status, "failed");
+    assert.equal(receipt.data().status, "failed");
+    const cleanup = await db.collection("chatMessageCleanupJobs")
+      .doc(messageCleanupJobID("moderation-room", "media-1")).get();
+    assert.equal(cleanup.data()?.status, "pending");
+  });
+
+  test("일부 attachment만 복사된 3회 실패는 generation prefix의 기존 객체까지 제거한다", async () => {
+    await seedMediaMessage();
+    const messageRef = db.collection("Rooms").doc("moderation-room").collection("Messages").doc("media-1");
+    const message = (await messageRef.get()).data();
+    await messageRef.update({
+      attachments: [...message.attachments, {
+        attachmentID: "attachment-2",
+        bucketOriginal: "ready-bucket",
+        pathOriginal: "rooms/moderation-room/messages/media-1/attachments/attachment-2/display",
+        generationOriginal: "2",
+        bytesOriginal: 2048,
+        contentTypeOriginal: "image/png",
+      }],
+    });
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(509),
+    }, now);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage({failOnCopyCalls: [2, 4, 6]});
+    for (const offset of [0, 60_000, 180_000]) {
+      await processMessageEvidenceCopyJob({jobID: copyJob.id, firestore: db, storage: fake.storage, readyBucket: "ready-bucket", evidenceBucket: "evidence-bucket", now: new Date(now.getTime() + offset)});
+    }
+    assert.equal(fake.calls.copy, 6);
+    assert.equal(fake.calls.deleteAttempt, 2);
+    assert.equal(fake.objects.size, 0);
+    assert.equal((await copyJob.ref.get()).data()?.status, "failed");
+  });
+
+  test("3회차 copy lease 중단은 만료 뒤 새 시도 없이 partial cleanup과 failed 상태로 수렴한다", async () => {
+    await seedMediaMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(541),
+    }, now);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    await Promise.all([
+      copyJob.ref.update({
+        status: "processing",
+        phase: "copying",
+        attempt: 3,
+        leaseToken: "expired-copy-lease",
+        leaseExpiresAt: Timestamp.fromMillis(now.getTime() - 1),
+        nextAttemptAt: Timestamp.fromMillis(now.getTime() - 1),
+      }),
+      bundle.ref.update({state: "copying"}),
+    ]);
+    const fake = fakeEvidenceStorage();
+    const source = copyJob.data().sourceObjects[0];
+    await fake.storage.copy({
+      source,
+      destinationBucket: "evidence-bucket",
+      destinationPath: `${bundle.id}/g0/${source.attachmentID}/display`,
+      bundleID: bundle.id,
+      attemptGeneration: 0,
+    });
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: fake.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now,
+    }), true);
+    const completedJob = await copyJob.ref.get();
+    assert.equal(completedJob.data()?.status, "failed");
+    assert.equal(completedJob.data()?.attempt, 3);
+    assert.equal((await bundle.ref.get()).data()?.state, "failed");
+    assert.equal(fake.calls.copy, 1);
+    assert.equal(fake.calls.deleteAttempt, 1);
+    assert.equal(fake.objects.size, 0);
+  });
+
+  test("retention cleanup은 generation 일치 객체와 evidence bundle을 삭제하고 비민감 영수증만 남긴다", async () => {
+    await seedMediaMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(507),
+    }, now);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage();
+    await processMessageEvidenceCopyJob({jobID: copyJob.id, firestore: db, storage: fake.storage, readyBucket: "ready-bucket", evidenceBucket: "evidence-bucket", now});
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    await bundle.ref.update({state: "cleanupPending"});
+    const cleanupRef = db.collection("moderationEvidenceCleanupJobs").doc("cleanup-1");
+    await cleanupRef.set({
+      bundleID: bundle.id,
+      status: "pending",
+      phase: "deleting",
+      attempt: 0,
+      nextAttemptAt: Timestamp.fromDate(now),
+      leaseToken: null,
+      leaseExpiresAt: null,
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now),
+    });
+    assert.equal(await processMessageEvidenceCleanupJob({jobID: cleanupRef.id, firestore: db, storage: fake.storage, evidenceBucket: "evidence-bucket", now}), true);
+    assert.equal(fake.calls.deleteEvidence, 1);
+    assert.equal(fake.objects.size, 0);
+    assert.equal((await bundle.ref.get()).exists, false);
+    const cleanup = await cleanupRef.get();
+    assert.equal(cleanup.data()?.status, "succeeded");
+    assert.equal(cleanup.data()?.phase, "completed");
+    assert.equal(cleanup.data()?.evidenceObjects, undefined);
+    assert.ok(cleanup.data()?.expiresAt instanceof Timestamp);
+  });
+
+  test("20회차 cleanup lease 중단은 만료 뒤 같은 시도 번호로 삭제를 재개한다", async () => {
+    await seedMediaMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(542),
+    }, now);
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const fake = fakeEvidenceStorage();
+    await processMessageEvidenceCopyJob({jobID: copyJob.id, firestore: db, storage: fake.storage, readyBucket: "ready-bucket", evidenceBucket: "evidence-bucket", now});
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    await bundle.ref.update({state: "deleting"});
+    const cleanupRef = db.collection("moderationEvidenceCleanupJobs").doc("cleanup-final-lease");
+    await cleanupRef.set({
+      bundleID: bundle.id,
+      status: "processing",
+      phase: "deleting",
+      attempt: 20,
+      nextAttemptAt: Timestamp.fromMillis(now.getTime() - 1),
+      leaseToken: "expired-cleanup-lease",
+      leaseExpiresAt: Timestamp.fromMillis(now.getTime() - 1),
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now),
+    });
+    assert.equal(await processMessageEvidenceCleanupJob({jobID: cleanupRef.id, firestore: db, storage: fake.storage, evidenceBucket: "evidence-bucket", now}), true);
+    const completedJob = await cleanupRef.get();
+    assert.equal(completedJob.data()?.status, "succeeded");
+    assert.equal(completedJob.data()?.attempt, 20);
+    assert.equal((await bundle.ref.get()).exists, false);
+    assert.equal(fake.calls.deleteEvidence, 1);
+  });
+
+  test("retention cleanup은 attachment보다 불완전한 object manifest를 fail closed한다", async () => {
+    await seedMediaMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(540),
+    }, now);
+    const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
+    await bundle.ref.update({state: "cleanupPending", evidenceObjects: []});
+    const cleanupRef = db.collection("moderationEvidenceCleanupJobs").doc("cleanup-incomplete");
+    await cleanupRef.set({
+      bundleID: bundle.id,
+      status: "pending",
+      phase: "deleting",
+      attempt: 0,
+      nextAttemptAt: Timestamp.fromDate(now),
+      leaseToken: null,
+      leaseExpiresAt: null,
+      createdAt: Timestamp.fromDate(now),
+      updatedAt: Timestamp.fromDate(now),
+    });
+    const fake = fakeEvidenceStorage();
+    assert.equal(await processMessageEvidenceCleanupJob({jobID: cleanupRef.id, firestore: db, storage: fake.storage, evidenceBucket: "evidence-bucket", now}), false);
+    assert.equal((await bundle.ref.get()).exists, true);
+    assert.equal((await bundle.ref.get()).data()?.state, "cleanupPending");
+    assert.equal((await cleanupRef.get()).data()?.status, "retryPending");
+    assert.equal(fake.calls.deleteEvidence, 0);
+  });
+
+  test("미디어 evidence 실패 재시작은 cleanup 완료를 요구하고 TTL 삭제 job은 재생성한다", async () => {
     const roomRef = db.collection("Rooms").doc("moderation-room");
     await Promise.all([
       roomRef.set({lifecycleStatus: "active"}),
@@ -422,6 +856,7 @@ describe("moderation report transactions", () => {
     assert.equal((await db.collection("moderationMessageReportRequests").get()).size, 1);
 
     await bundleRef.update({objectPaths: []});
+    await copyJob.ref.delete();
     const restarted = await submitMessageReportService(
       reporterUID,
       retryInput,
