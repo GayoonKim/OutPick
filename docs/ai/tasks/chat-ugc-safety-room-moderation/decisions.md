@@ -88,6 +88,24 @@
 - 신고 기술 limiter는 reporter moderation principal 기준 user/room/message 합산 1분 10회다. 기존 accepted user/room 요청과 이전에 보지 못한 message `clientRequestID`의 최상위 transport receipt 생성을 합산한다. 정확히 같은 `clientRequestID` replay만 무료이며, 새 UUID는 기존 processing preparation 재사용·`alreadyReported`·`messageAlreadyDeleted` 결과여도 receipt 1건을 만들므로 transport slot 1개를 소비한다. 이는 moderation 신고 count·queue·evidence 증가와 분리된다. 새 semantic preparation 여부는 별도 `messagePreparationCount`로 관측하되 한 요청을 기술 작업 2회로 세지 않는다.
 - 관리자 삭제 tombstone은 구체적 신고 사유·신고자·관리자 정보를 client에 노출하지 않고 `deletionPresentation=moderationRemoved`만 제공한다. 일반 자기 삭제·방장 삭제는 기존 generic `deleted` 표시를 유지한다.
 
+## Phase 7.4C-1 evidence copy·cleanup 확정 — 2026-08-25
+
+- 미디어 evidence copy는 최초 실행을 포함해 최대 3회다. 실패 뒤 job `nextAttemptAt`은 1분, 2분 backoff를 사용하며 실제 복구 scheduler는 5분 주기라 해당 시각 이후 최대 약 5분 늦게 재개될 수 있다. 같은 attemptGeneration의 이미 검증된 destination은 다시 복사하지 않고 누락 객체만 수렴한다.
+- 논리 bundleID는 review revision 동안 유지하되 물리 객체는 `{bundleID}/g{attemptGeneration}/{attachmentID}/display`로 generation을 분리한다. source generation을 고정하고 destination 최초 생성은 generation 0 precondition, 삭제는 저장한 destination generation precondition을 사용한다. 모든 Firestore completion/retry/failure write도 `attemptGeneration + leaseToken`이 일치할 때만 허용한다.
+- source descriptor는 현재 환경의 exact ready bucket, `rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/display`, 양의 generation/bytes와 message type별 개수·MIME를 다시 검증한다. 이미지는 1...30개의 JPEG/PNG/GIF, 동영상은 MP4 정확히 1개만 허용하며 thumbnail·quarantine·다른 환경/메시지 path는 거부한다.
+- retry 중에는 report-first 삭제의 public ready media cleanup을 `awaitingEvidence`로 유지한다. 3회째 실패하면 generation-scoped partial destination을 모두 삭제한 뒤 processing preparation과 각 최초 receipt를 최대 30건씩 `failed`로 drain하고, bundle을 원문·경로 없는 최소 failed tombstone으로 만든 뒤 guard `failed`와 public cleanup `pending`을 원자 확정한다. 추가 alias receipt는 기존 조회 시 failure에 수렴한다.
+- copy job은 `copying → acceptanceDrain` 또는 `cleaningPartial → failureDrain` phase를 가지며, Storage metadata 검증은 `copying` 안에서 수행한다. bytes가 available이고 preparation drain이 모두 끝난 뒤에만 `succeeded`다. Function timeout은 9분, lease는 12분, onCreate와 5분 recovery scheduler를 사용한다. scheduler는 회당 최대 10개를 순차 처리하고 maxInstances는 Development 1, Production 초기 2다. 마지막 copy/cleanup 시도의 worker가 종료되면 만료 lease를 같은 시도 번호로 회수해 정리·종결하며 새 물리 copy 시도로 계산하지 않는다.
+- accepted evidence retention cleanup은 Storage 객체를 generation 조건으로 먼저 모두 삭제한 뒤 `moderationMessageEvidence/{bundleID}` 자체를 삭제한다. 완료 cleanup job에는 bundle hash·상태·시각 등 비민감 영수증만 남겨 7일 TTL 처리하며, copy job도 성공 뒤 source/evidence/room/message 연결을 scrub하고 7일 TTL 처리한다. revision-independent request receipt는 30일 TTL이고 iOS 미확정 UUID는 Phase 7.5에서 최대 7일 보존한다.
+- evidence bucket은 `asia-northeast3` Standard, uniform bucket-level access와 public access prevention, soft delete/versioning/retention lock 비활성으로 확정한다. C-1은 로컬 코드·테스트만 구현하며 bucket/IAM/Functions export·배포는 하지 않는다. C-2는 별도 승인 뒤 Development 리소스, C-3는 30장/350 MiB·IAM·삭제 실측이며 Production은 별도 rollout이다.
+- 외부 활성화는 Phase 7.4D Rules/index/admin query, audited 단건 evidence 조회, Phase 7.5 iOS UX, Development 실측, 개인정보/App Privacy와 운영 경고 준비가 모두 끝날 때까지 금지한다. processing 15분 warning, 45분 또는 terminal failed critical, backlog 10건 warning을 사용하되 원문·bucket/path·프로필은 로그에 남기지 않는다.
+
+## Phase 7.4C-2/C-3 Development 외부 계약 확정 — 2026-08-25
+
+- Development evidence runtime은 `outpick-msg-evidence-dev@outpick-test.iam.gserviceaccount.com` 하나가 copy/cleanup/scheduler를 수행하고 Functions별 maxInstances 1을 사용한다. Eventarc와 scheduler invoker는 프로젝트 전체가 아니라 대상 Cloud Run 서비스에만 부여한다.
+- evidence bucket IAM은 runtime의 source object read와 destination object create/get/delete, Firestore runtime에 필요한 최소 custom role로 분리한다. 사람 운영자는 bucket 설정/IAM만 관리하고 object read 권한은 갖지 않는다. UBLA/public access prevention을 강제하고 legacy binding, soft delete, versioning을 두지 않는다.
+- C-3를 실행 가능하게 하는 preparation acceptance `bundleID+status+requestedAt`과 copy/cleanup recovery `status+nextAttemptAt` 복합 인덱스 3개는 Phase 7.4D 전체보다 먼저 Development에 적용한다. 이는 worker의 필수 선행 조건이며 Rules·TTL·관리자 query를 조기 활성화하지 않는다.
+- Production 계정·버킷·IAM·Function·index는 별도 rollout 승인 전 생성하거나 배포하지 않는다.
+
 ## Phase 2 신고 rate limit과 구현 경계 — 2026-08-10
 
 - 신고 rate limit은 정상 사용자의 일일 신고 가능 횟수를 제한하는 정책이 아니라 자동화된 단기 폭주로부터 신고 집계·관리자 queue·Firestore를 보호하는 최후 방어선으로 사용한다.

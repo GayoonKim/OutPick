@@ -5,6 +5,10 @@ export const MESSAGE_EVIDENCE_CONTRACT_VERSION = 1;
 export const MESSAGE_GLOBAL_VISIBILITY_WINDOW_MILLIS = 24 * 60 * 60 * 1000;
 export const MESSAGE_AUTHOR_PATTERN_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000;
 export const MESSAGE_SANCTION_APPEAL_RETENTION_MILLIS = 30 * 24 * 60 * 60 * 1000;
+export const MESSAGE_EVIDENCE_MAX_COPY_ATTEMPTS = 3;
+export const MESSAGE_EVIDENCE_COPY_LEASE_MILLIS = 12 * 60 * 1000;
+export const MESSAGE_EVIDENCE_COMPLETED_JOB_TTL_MILLIS = 7 * 24 * 60 * 60 * 1000;
+export const MESSAGE_REPORT_REQUEST_RECEIPT_TTL_MILLIS = 30 * 24 * 60 * 60 * 1000;
 
 export type MessageReviewState = "open" | "inReview" | "resolved" | "dismissed";
 export type MessageQueueClass = "holding" | "reviewRequired" | "urgent";
@@ -18,6 +22,9 @@ export type MessageEvidencePreparationState =
   "copyPending" | "copying" | "available" | "failed";
 export type MessageEvidenceJobState =
   "pending" | "processing" | "retryPending" | "succeeded" | "failed";
+export type MessageEvidenceJobPhase =
+  "copying" | "acceptanceDrain" |
+  "cleaningPartial" | "failureDrain" | "completed";
 export type MessageEvidenceCleanupJobState =
   "awaitingEvidence" | MessageEvidenceJobState;
 export type MessageGuardWinner = "reportFirst" | "deleteFirst";
@@ -134,6 +141,27 @@ export function messageEvidenceCopyJobID(bundleID: string): string {
 
 export function messageEvidenceCleanupJobID(bundleID: string): string {
   return canonicalMessageEvidenceID("message-evidence-cleanup-job", [bundleID]);
+}
+
+export function messageEvidenceObjectPath(input: {
+  bundleID: string;
+  attemptGeneration: number;
+  attachmentID: string;
+}): string {
+  assertNonNegativeInteger(input.attemptGeneration, "attemptGeneration");
+  if (!input.bundleID || input.bundleID.includes("/") ||
+      !input.attachmentID || input.attachmentID.includes("/")) {
+    throw new Error("bundleID and attachmentID must be non-empty document IDs");
+  }
+  return `${input.bundleID}/g${input.attemptGeneration}/${input.attachmentID}/display`;
+}
+
+export function messageEvidenceRetryDelayMillis(attempt: number): number {
+  if (!Number.isSafeInteger(attempt) || attempt < 1 ||
+      attempt >= MESSAGE_EVIDENCE_MAX_COPY_ATTEMPTS) {
+    throw new Error("attempt must identify a retryable copy attempt");
+  }
+  return 2 ** (attempt - 1) * 60 * 1000;
 }
 
 export function nextMessageReviewRevision(input: {

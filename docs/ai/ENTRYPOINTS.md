@@ -24,7 +24,7 @@
 - Firebase Functions flat export: `functions/src/index.ts`
 - Firebase Functions 공통 runtime/callable: `functions/src/core/`
 - Firebase Functions 기능 구현: `functions/src/{auth,brand,chat,lookbook,moderation,profile,styleMoods}/`
-- 채팅 메시지 신고 evidence 계약·transaction: `functions/src/moderation/messageEvidence/{contracts,service}.ts` → `functions/src/moderation/reports/contracts.ts` → `contracts/chat-moderation-v1.json` → `firestore-tests/moderation-reports.emulator.test.mjs`; root callable export는 Phase 7.4C/D·7.5 전까지 보류한다.
+- 채팅 메시지 신고 evidence 계약·transaction·copy/cleanup: `functions/src/moderation/messageEvidence/{contracts,service,evidenceCopy,evidenceStorage,evidenceCleanup,evidenceFunctions,evidenceRuntime}.ts` → `functions/src/index.ts` → `functions/scripts/qa-message-evidence-development.mjs` → `firestore.indexes.json` → `functions/src/moderation/reports/contracts.ts` → `contracts/chat-moderation-v1.json` → `functions/src/moderation/messageEvidence/{contracts,evidenceCopy}.test.ts` / `firestore-tests/moderation-reports.emulator.test.mjs`; Phase 7.4C-2/C-3은 Development bucket/IAM/세 Function/필수 인덱스 3개와 30장·350MiB E2E까지 완료했고 Rules·TTL·관리자 조회·Production은 후속 승인 gate다.
 - Kakao custom-token 함수·전용 runtime identity: `functions/src/auth/{functions,kakaoService,runtime}.ts`
 - 계정·공개 프로필 서버 경계: `functions/src/profile/`, `functions/src/shared/accountStatus.ts`
 - 계정 삭제 서버 상태 머신·정리 worker: `functions/src/accountDeletion/` → `firestore.rules`/`storage.rules`/`firestore.indexes.json`

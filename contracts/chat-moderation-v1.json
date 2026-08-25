@@ -719,7 +719,8 @@
         "acceptedAt": "timestamp|null",
         "lastErrorCode": "bounded string|null",
         "createdAt": "timestamp",
-        "updatedAt": "timestamp"
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp; 30 days after creation for TTL cleanup"
       },
       "purpose": "revision-independent transport receipt; lookup occurs before current reviewRevision selection so a delayed retry can never become a new review-cycle report. Processing aliases converge one at a time from their preparation's terminal generation result instead of being bulk-written by the evidence drain"
     },
@@ -834,13 +835,14 @@
         "replyContextSnapshot": "bounded target-message reply preview|null; never follows the referenced message",
         "sharedContentSnapshot": "bounded server-validated lookbook sharedContent|null",
         "attachmentIDs": "server-derived full stable attachment ID array",
-        "sourceObjects": "bounded ready display descriptors with attachmentID, bucket, path, generation, bytes and contentType",
+        "sourceObjects": "bounded ready display descriptors with attachmentID, exact environment ready bucket/path, fixed generation, bytes and message-kind MIME; removed after copy finalization",
+        "evidenceObjects": "available-state descriptors with attachmentID, evidence bucket, generation-scoped path, destination/source generations, bytes, contentType and crc32c",
         "attemptGeneration": "non-negative integer",
         "acceptanceState": "notReady|draining|reviewable",
         "pendingPreparationCount": "non-negative integer",
         "totalDisplayBytes": "non-negative integer",
-        "objectPaths": "server-only bounded evidence object path array",
-        "state": "copyPending|copying|available|cleanupPending|deleting|deleted|failed; failed is terminal only after partial destination cleanup completed and objectPaths is empty",
+        "objectPaths": "server-only bounded evidence object path array using {bundleID}/g{attemptGeneration}/{attachmentID}/display",
+        "state": "copyPending|copying|available|cleanupPending|deleting|failed; failed is terminal only after generation-scoped partial destination cleanup completed and objectPaths is empty; successful retention cleanup deletes the entire bundle document",
         "retentionClass": "reviewOpen|deleteAfterDecision|sanctionAppeal30Days|appealOpen|legalHold",
         "createdAt": "timestamp",
         "deleteAfter": "timestamp|null",
@@ -860,29 +862,42 @@
         "reviewRevision": "non-negative integer",
         "bundleID": "string",
         "attemptGeneration": "non-negative integer; stale generations cannot update bundle or preparation state",
+        "messageType": "image|video",
         "sourceObjects": "bounded server-derived normalized display object descriptors",
+        "evidenceObjects": "temporary copied object descriptors during acceptance finalization; scrubbed on terminal job state",
         "status": "pending|processing|retryPending|succeeded|failed",
-        "attempt": "non-negative integer",
+        "phase": "copying|acceptanceDrain|cleaningPartial|failureDrain|completed",
+        "attempt": "1...3 for copy; the initial execution is attempt 1 and retries use 1-minute then 2-minute backoff",
+        "finalizationAttempt": "non-negative integer independent from the three physical copy attempts",
+        "leaseToken": "opaque UUID|null; every Firestore completion/retry write is fenced by leaseToken and attemptGeneration",
+        "leaseExpiresAt": "timestamp|null; 12-minute lease for a 9-minute runtime timeout",
         "nextAttemptAt": "timestamp",
         "lastErrorCode": "bounded string|null",
         "createdAt": "timestamp",
-        "updatedAt": "timestamp"
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null; succeeded and failed terminal jobs are scrubbed and retained for 7 days"
       },
-      "idempotency": "deterministic job and destination paths from bundleID; repeated workers verify source generation and converge. A failed bundle restart atomically increments the preparation, bundle, and copy-job attemptGeneration; stale generation callbacks cannot mutate the new attempt"
+      "idempotency": "destination create-if-absent and generation-precondition deletion use {bundleID}/g{attemptGeneration}/{attachmentID}/display. Repeated workers verify exact source and destination generations and ownership metadata. A failed bundle restart atomically increments preparation, bundle, and copy-job attemptGeneration; stale generation or lease callbacks cannot mutate the new attempt",
+      "terminalFailure": "after the third failed physical copy, delete every generation-scoped partial object, fail processing preparations and their initial receipts in batches of at most 30, scrub source/evidence data from the bundle and job, mark the guard failed, and release report-first public media cleanup. A failed bundle may start a new generation after cleanup; if the 7-day terminal copy-job receipt was already TTL-deleted, the new generation recreates it"
     },
     "moderationEvidenceCleanupJobs/{cleanupJobID}": {
       "clientRead": false,
       "clientWrite": false,
       "requiredFields": {
         "schemaVersion": "positive integer",
+        "bundleID": "string until the minimal receipt expires",
         "status": "awaitingEvidence|pending|processing|retryPending|succeeded|failed",
+        "phase": "deleting|completed",
         "attempt": "non-negative integer",
+        "leaseToken": "opaque UUID|null",
+        "leaseExpiresAt": "timestamp|null",
         "nextAttemptAt": "timestamp",
         "lastErrorCode": "bounded string|null",
         "createdAt": "timestamp",
-        "updatedAt": "timestamp"
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null; minimal succeeded receipt is retained for 7 days"
       },
-      "ordering": "this job deletes copied moderation evidence after a decision; public ready-media deletion waits in chatMessageCleanupJobs.awaitingEvidence instead"
+      "ordering": "this job generation-deletes every copied moderation evidence object after a decision, then completely deletes moderationMessageEvidence/{bundleID}; only a non-sensitive minimal cleanup receipt remains. Public ready-media deletion waits in chatMessageCleanupJobs.awaitingEvidence instead"
     },
     "Rooms/{roomID}/MediaUploads/{uploadID}": {
       "clientRead": false,
@@ -1227,7 +1242,7 @@
     "readyBucket": "existing environment-specific application media bucket",
     "readyPath": "rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/{display|thumbnail}",
     "evidenceBucket": "environment-specific dedicated moderation evidence bucket",
-    "reportEvidencePath": "{bundleID}/{attachmentID}/display",
+    "reportEvidencePath": "{bundleID}/g{attemptGeneration}/{attachmentID}/display",
     "quarantineRead": "server only",
     "quarantineWrite": "reservation owner only with exact path/content constraints",
     "quarantineUploadTransport": "iOS uploads the prepared source directly to Cloud Storage; Socket and Functions receive metadata only",

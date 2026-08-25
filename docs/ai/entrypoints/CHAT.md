@@ -309,7 +309,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
   - media index의 nullable `senderUID`는 `addSenderUIDToMediaIndexes` GRDB migration이 `chatMessage`에서 backfill하고, 신규 local/remote media admission은 공용 Store로 필터링한다.
   - 프로필과 참여자 목록은 유지한다. 답장 등 차단 대상 직접 상호작용은 차단자에게만 `먼저 차단을 해제해 주세요`를 표시한다.
   - 차단 해제 목록은 MyPage `BlockedUsersViewController`이며 성공 후 Store/snapshot만 갱신하고 열린 채팅방을 강제 재조회하지 않는다.
-- Phase 7 미디어 pending UI: `ChatMediaUploadUseCase`·`ChatPendingMediaUploadStore`가 `waitingForSlot/uploading/queued/processing/failed/expired`와 7일 outbox를 소유하고 서버 ready 뒤 기존 `receiveImages|receiveVideo`로 confirmed message에 수렴한다. `waitingForSlot/uploading/queued/processing`은 로컬 미리보기만 유지하고 진행률·전송 중 표시는 노출하지 않는다. `failed/expired`에서는 미디어를 가리는 overlay나 별도 실패 아이콘 없이 시간 라벨을 숨기고 그 위치에 44pt 터치 영역의 소형 재시도·삭제 아이콘을 제공한다. 수동 재시도는 새 `uploadID`·`clientMutationID`를 사용한다. 신고 UI는 stable `attachmentID` 선택과 신고자 개인 attachment 숨김을 별도 visibility 경계로 전달한다.
+- Phase 7 미디어 pending UI: `ChatMediaUploadUseCase`·`ChatPendingMediaUploadStore`가 `waitingForSlot/uploading/queued/processing/failed/expired`와 7일 outbox를 소유하고 서버 ready 뒤 기존 `receiveImages|receiveVideo`로 confirmed message에 수렴한다. `waitingForSlot/uploading/queued/processing`은 로컬 미리보기만 유지하고 진행률·전송 중 표시는 노출하지 않는다. `failed/expired`에서는 미디어를 가리는 overlay나 별도 실패 아이콘 없이 시간 라벨을 숨기고 그 위치에 44pt 터치 영역의 소형 재시도·삭제 아이콘을 제공한다. 수동 재시도는 새 `uploadID`·`clientMutationID`를 사용한다. Phase 7.5 신고 UI는 attachment 선택 없이 해당 메시지 전체가 신고·evidence 대상임을 명시한다.
 - 실패 outbox 복원 시 server window 뒤에 과거 날짜의 로컬 실패 메시지가 다시 붙을 수 있다. `ChatMessageWindowStore`의 날짜 구분선 diffable identifier는 `(day, occurrence)`를 사용해 같은 날짜가 비연속으로 반복돼도 유일하게 유지한다. 날짜 표시는 day만 사용하며 occurrence는 UI에 노출하지 않는다.
 - local session payload는 `uploadID`, `clientMutationID`, kind, expiry만 저장하고 bearer 성격의 signed URL·required headers는 GRDB에 영속화하지 않는다. terminal 실패·업로드 완료 후 finalize 실패는 session identity도 지운다. `ChatViewController.restoreMediaOutboxIfNeeded`는 이 레코드들을 session 조회 조건에서 제외하고 보존된 local/uploaded retry payload를 `ChatPendingMediaUploadStore.failed`로 복원해 재실행 후에도 시간 위치의 재시도·삭제 액션을 유지한다. `queued/processing/ready`처럼 서버에서 계속 진행 가능한 레코드만 session identity로 status monitoring을 재개한다.
 - 재실행 복원은 outbox의 영속화용 `isFailed`가 왼쪽 실패 표시로 노출되지 않도록 network status 조회 전에 local bubble을 silent pending으로 stage하고 셀을 재구성한다. `ChatMediaUploadUseCase.reconcileRestoredMediaProcessing`은 파일 PUT을 자동 재개하지 않고 같은 session identity의 status만 2·4·8초 재확인한다. `queued/processing/ready`면 monitoring으로 복귀하고 계속 `uploading`이거나 조회 오류가 지속되면 cancel 후 session credential을 제거한 수동 재시도·삭제 상태로 닫으며 cancel/ready 경합은 ready를 우선한다.
@@ -342,6 +342,16 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - v2 message mapping: `ChatMessage.makeAttachment`가 `attachmentID`, `bucketThumb`/`bucketOriginal`, format/animation metadata를 보존하고 `ChatAttachmentImageService`·`ChatVideoAssetService`가 전용 bucket의 `gs://` resource를 사용한다. `ChatMessageMediaAttachmentMappingTests`가 기본 bucket fallback 회귀를 차단한다.
 - GIF 표시: `readyService.ts`가 worker `technicalValidationResult`의 검증된 format·frame 수·animation 상태를 확정 message와 `mediaIndex`의 `mediaFormat`·`animated`로 투영한다. `Attachment.isAnimatedGIF`는 `image + gif + animated == true`를 모두 요구하고, `ChatImagePreviewCell`은 정적 JPEG thumbnail 우하단에만 `GIF` badge를 표시한다. `ChatViewController.presentImageViewer`는 해당 page에만 원본 data loader를 연결하며 `SimpleImageViewerVC`의 Kingfisher `AnimatedImageView`가 frame preload 3, 현재 page 단독 재생으로 animation을 제공한다. 2026-08-20 `onChatMediaWorkerCompleted` Development 배포와 iPhone 14 설치 뒤 새 seq 20 GIF의 message/mediaIndex metadata, badge·viewer animation·정적 thumbnail 복귀, cleanup 완료와 처리 구간 ERROR 0건을 확인했다.
 
+### Phase 7.4C-1 메시지 신고 evidence copy·cleanup 진입점
+
+- 신고/evidence 계약과 preparation transaction: `functions/src/moderation/messageEvidence/{contracts,service}.ts`.
+- Storage copy/검증: `evidenceCopy.ts` → `evidenceStorage.ts`. ready bucket의 exact message display path·고정 source generation·bytes·message kind별 개수/MIME를 검증하고 `{bundleID}/g{attemptGeneration}/{attachmentID}/display`에 create-if-absent로 복사한다.
+- retry/fence: 최초 포함 최대 3회, 1분/2분 backoff, 9분 runtime/12분 lease다. bundle/job/preparation mutation은 `attemptGeneration + leaseToken`, Storage delete는 destination generation과 ownership metadata로 fence한다. acceptance/failure drain은 실행당 최대 30건이다.
+- retention cleanup: `evidenceCleanup.ts`가 generation 일치 evidence 객체를 전부 삭제한 뒤 `moderationMessageEvidence/{bundleID}`를 완전 삭제하고 비민감 cleanup receipt만 7일 남긴다.
+- 함수 정의: `evidenceFunctions.ts`의 create trigger 2개와 5분 recovery scheduler를 `functions/src/index.ts`가 export한다. `evidenceRuntime.ts`가 환경별 전용 서비스 계정과 maxInstances를 fail-closed로 고정하고, Development 세 Function·bucket/IAM·필수 인덱스 3개·실객체 E2E는 완료했다. Rules·TTL override·관리자 조회·Production 배포는 후속 승인 gate다.
+- Development 재현: `functions`에서 `npm run build` 뒤 `node scripts/qa-message-evidence-development.mjs --run-id {격리ID}`를 실행하면 30×5MiB 이미지와 350MiB MP4 fixture를 만들고 copy/acceptance/익명 403/cleanup/잔여 0을 확인한다. 반드시 `outpick-test` 자격 증명으로만 실행한다.
+- 검증: `functions/src/moderation/messageEvidence/{contracts,evidenceCopy}.test.ts`, `firestore-tests/moderation-reports.emulator.test.mjs`.
+
 ### 서버·데이터 Phase 1 구현 진입점
 
 - Functions: `functions/src/moderation/{contracts,identity,state,functions}.ts`, `functions/src/shared/accountStatus.ts`
@@ -370,7 +380,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 
 ### 고정 사용자 동작
 
-- 신고 대상은 사용자 또는 방이다. 메시지 long press 신고는 sender 사용자 신고이며 `triggerMessageID`는 문맥일 뿐 case identity가 아니다.
+- 신고 대상은 사용자·방·메시지다. 기존 사용자/방 신고는 별도 case를 유지하고, Phase 7.4 메시지 long press 신고는 canonical `roomID + messageID` incident와 메시지 전체 evidence bundle을 만든다. attachment 선택·동영상 timestamp·신고자 개인 자동 숨김은 사용하지 않는다.
 - 차단은 blocked-by-me 단방향 콘텐츠 visibility다. 채팅 current window는 유지하고 이후 새 admission만 제외하며 hidden seq와 원본 pagination cursor는 소비한다. 기존 로컬 원문은 소급 삭제하지 않고 새 UI admission에서 필터링한다. 룩북 댓글·답글은 차단 성공 즉시 숨긴다.
 - 2026-08-11 Phase 4 Production은 Functions `blockUser`/`unblockUser`와 Socket revision `outpick-socket-p4-block-0811`을 반영했다. 두 계정 QA에서 current-window 유지, 차단 후 live admission 제외, 참여자 유지, unblock 후 재진입 복원과 future live 수신을 확인했다. 실제 기기 background push는 추가 QA 항목이다.
 - 2026-08-11~12 Production 앱 종료 혼합 unread QA에서 `lastReadSeq=1`, 차단 `seq=2`, 비차단 `seq=3` 조건으로 재실행 목록의 visible unread 1·비차단 preview와 재진입 차단 메시지 제외를 확인했다. Production 제3자 계정을 추가하지 않고 QA 방 한정 합성 발신자를 사용했으며 방·projection·차단 relation·Storage를 잔존 0건으로 정리했다.
