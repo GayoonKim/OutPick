@@ -3,7 +3,7 @@
 ## 상태
 
 - 작성일: 2026-08-18
-- 상태: Phase 7.0~7.3 로컬 구현·Development/Production rollout·확장 QA 완료. Phase 7.4는 텍스트·미디어 공통 메시지 전체 evidence, canonical 원장 직접 조회, 일반 `holding`/고유 2명 `reviewRequired`/긴급 `urgent`, 작성자 `메시지 3개 + 신고자 2명/7일`, 신고·삭제 server-only guard로 상세 설계를 확정했다. 2026-08-21 Phase 7.4A는 evidence `available` 뒤에만 accepted 신고를 확정하는 최신 계약의 순수 함수·단위 테스트를 구현하고 Functions 전체 226/226·build·lint 오류 0을 통과했다. 다음은 7.4B preparation/accepted 확정·삭제 transaction이며 외부 리소스·배포는 미수행이다.
+- 상태: Phase 7.0~7.3 로컬 구현·Development/Production rollout·확장 QA, Phase 7.4A 순수 계약, 7.4B preparation/accepted 확정·삭제 transaction, 2026-08-25 Phase 7.4C-1~C-3 generation-scoped evidence copy/cleanup의 로컬 구현과 Development 전용 bucket/IAM/세 Function/필수 인덱스 3개/경계 용량·접근 거부·무잔여 E2E를 완료했다. Rules·TTL·관리자 query와 Production rollout은 미수행이며 Phase 7.4D 이후 별도 승인 gate다.
 - 상위 계약: `decisions.md`, `contracts/chat-moderation-v1.json`, ADR-024
 - 범위: 신규 채팅 이미지·동영상의 격리 업로드, 기술 검증·metadata 제거, ready 전달, 메시지 전체 evidence, 관리자 queue 승격, 전역 비노출과 복원
 - 비범위: 외부 유해성 의미 판정, 관리자 웹 evidence byte 전달 UI, 댓글·답글 미디어, 기존 미디어 소급 정규화, 자동 계정 제재
@@ -409,12 +409,14 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 #### Phase 7.4C — evidence copy·cleanup
 
 1. text-only bundle은 신고 transaction에서 snapshot이 완성되므로 media copy 없이 `available`이다.
-2. media bundle은 server-derived attachment 1...30개의 ready bucket/path/generation/bytes/contentType을 copy job에 고정한다. client 값과 일반 URL을 신뢰하지 않는다.
-3. evidence object는 `{bundleID}/{attachmentID}/display`이며 destination generation precondition과 결정적 path로 재실행을 dedupe한다.
+2. media bundle은 server-derived attachment 1...30개의 ready bucket/path/generation/bytes/contentType을 copy job에 고정한다. worker는 환경별 exact ready bucket, message/attachment display path, image 1...30 JPEG/PNG/GIF 또는 video MP4 1개를 다시 검증하고 client 값·일반 URL·thumbnail·quarantine source를 신뢰하지 않는다.
+3. evidence object는 `{bundleID}/g{attemptGeneration}/{attachmentID}/display`다. source generation, destination create-if-absent와 delete generation precondition, Firestore `attemptGeneration + leaseToken`을 함께 사용해 동일 attempt replay는 dedupe하고 이전 generation worker는 새 attempt를 오염·삭제하지 못한다.
 4. 이미지 묶음은 모든 normalized display, 동영상은 normalized MP4 전체 1개만 복사한다. thumbnail과 quarantine source는 evidence가 아니다.
 5. 별도 evidence byte cap으로 정상 ready message의 신고를 거부하지 않는다. bundle에 `totalDisplayBytes`를 기록하고 Development에서 30장/350 MiB 복사 시간·비용을 측정한다.
-6. copy 일부 실패는 bundle/job `retryPending`, 최대 시도 뒤 `failed`로 남기고 공개 cleanup을 진행하지 않는다. 운영 경고 없이 evidence를 일부 상태로 확정하지 않는다.
-7. cleanup은 object를 먼저 삭제하고 성공한 item/bundle/job만 `deleted/completed`로 전환한다.
+6. copy는 최초 포함 최대 3회, 실패 뒤 1분/2분 backoff다. retry 중 partial destination은 같은 generation에서 재사용하고 public cleanup은 기다린다. 3회째 실패하면 partial destination 삭제와 preparation/최초 receipt failure drain을 끝낸 뒤 bundle 최소 failed tombstone·guard failed·public cleanup pending으로 수렴한다. partial 상태를 accepted로 확정하지 않는다.
+7. job phase는 `copying | acceptanceDrain | cleaningPartial | failureDrain | completed`다. Storage metadata 검증은 `copying` 안에서 수행하고, bytes available 뒤 preparation을 최대 30건씩 모두 accepted로 drain한 후에만 copy job을 succeeded로 만든다. onCreate + 5분 scheduler, timeout 9분, lease 12분, scheduler limit 10, Development/Production maxInstances 1/2를 초기값으로 사용한다. 마지막 시도의 만료 lease는 같은 시도 번호로 회수해 copy 또는 cleanup 횟수 상한을 넘기지 않고 terminal 상태로 수렴시킨다.
+8. retention cleanup은 저장된 destination generation과 일치하는 object를 먼저 모두 삭제하고 evidence bundle 문서를 완전 삭제한다. cleanup job은 민감 field를 scrub한 최소 완료 영수증만 7일 유지한다. copy job도 완료 뒤 source/evidence와 room/message 연결을 scrub해 7일 유지하고 request receipt는 30일 유지한다.
+9. C-1은 로컬 구현·fake Storage·Firestore emulator, C-2는 Development bucket/IAM/root export/세 Function, C-3는 필수 인덱스 3개와 30장/350MiB·접근 거부·soft delete/cleanup 실측까지 완료했다. Production rollout은 별도 승인 gate다.
 
 #### Phase 7.4D — Rules·index·관리자 query·문서
 

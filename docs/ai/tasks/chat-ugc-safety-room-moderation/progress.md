@@ -640,3 +640,28 @@
 - `functions/src/moderation/messageEvidence/contracts.ts`에 domain/version canonical tuple SHA-256 기반 incident/reporter/preparation/submission/bundle/copy·cleanup job ID, 최초 revision 0과 terminal reopen, report/evidence/job 상태·전이, queue 비강등, 24시간 고유 reporter 전역 비노출, 7일 `3 messages + 2 reporters`, 처리 결과별 retention·appeal/legal hold를 구현했다.
 - `contracts.test.ts` 12개가 exact golden ID, processing/accepted 효과 분리, 긴급/전체 임계치와 24시간·7일 경계, distinct message/reporter, 30일 retention과 상태 전이를 검증한다. Functions 전체 226/226, build, lint 오류 0, `jq empty contracts/chat-moderation-v1.json`, `git diff --check`가 통과했다. lint의 기존 moderation non-null assertion 경고 17개는 이번 범위와 무관하다.
 - 계약·DATA_SCHEMA·ADR·ENTRYPOINTS/FIREBASE/TESTS·계획/QA 문서를 최신화했다. Firestore transaction, Storage copy/cleanup, Rules/index, iOS `신고 처리 중` 화면, bucket/IAM과 Development/Production 배포는 수행하지 않았으며 Phase 7.4B 이후 범위다.
+
+## Phase 7.4C-1 evidence copy·cleanup 로컬 구현 — 2026-08-25
+
+- 사용자 확정으로 copy는 최초 포함 최대 3회와 1분/2분 backoff를 사용한다. 물리 path를 `{bundleID}/g{attemptGeneration}/{attachmentID}/display`로 분리하고 source/destination generation precondition과 모든 Firestore `attemptGeneration + leaseToken` fence를 결합했다.
+- `functions/src/moderation/messageEvidence/{evidenceCopy,evidenceStorage,evidenceCleanup,evidenceFunctions}.ts`를 추가했다. worker는 환경별 ready/evidence bucket과 exact message display path, image/video 개수·MIME·generation·bytes를 검증하고, copy/acceptance/failure/cleanup phase를 재실행 가능하게 수렴시킨다. 함수 정의는 root `functions/src/index.ts`에 export하지 않았다.
+- 3회째 실패는 generation-scoped partial object를 먼저 정리하고 preparation·최초 receipt를 최대 30건씩 failed로 drain한 뒤 원문·경로 없는 failed bundle tombstone과 guard failed를 기록하며 report-first public cleanup을 pending으로 해제한다. accepted retention cleanup은 generation 일치 Storage 객체를 모두 삭제한 뒤 evidence bundle 문서를 완전 삭제하고 비민감 cleanup receipt만 7일 남긴다.
+- request receipt에 30일 TTL field를 추가했고 성공 copy job은 source/evidence와 room/message 연결을 scrub한 뒤 7일 TTL field를 기록한다. 실제 Firestore TTL field override와 index는 Phase 7.4D, iOS UUID 7일 보존은 Phase 7.5 범위다.
+- 최종 검증은 targeted 순수 테스트 18/18, Functions 전체 234/234·build, Firestore/Storage Rules 45/45와 전체 transaction 41/41(신규 moderation transaction 18/18), `jq empty contracts/chat-moderation-v1.json`, `git diff --check`를 통과했다. lint는 오류 0이고 기존 non-null assertion warning 19개만 남았다. 31개 preparation은 첫 실행 30건·다음 lease 1건으로 이어지며, 일부 attachment만 복사된 3회 실패의 generation prefix 전부 제거, 미디어 크기 상한, 불완전 cleanup manifest의 bundle 보존 회귀를 포함한다.
+- evidence bucket/IAM, root export, Rules/index, Development 30장/350 MiB·접근 거부·soft delete 검증과 모든 배포는 수행하지 않았다. C-2/C-3 및 Production은 각각 별도 승인 gate다.
+
+## Phase 7.4C-2/C-3 Development 배포·경계 실증 완료 — 2026-08-25
+
+- `evidenceRuntime.ts`에서 Development/Production project ID별 dedicated service account와 maxInstances를 fail-closed로 고정하고, root `index.ts`에 copy/cleanup trigger와 5분 recovery scheduler를 export했다. Functions 계약 테스트는 108 export, 세 endpoint 설정과 필수 인덱스 exact shape를 확인하며 전체 236/236을 통과했다.
+- Development `outpick-test`에 `asia-northeast3` Standard `outpick-test-moderation-evidence` 버킷과 `outpick-msg-evidence-dev@outpick-test.iam.gserviceaccount.com`을 만들었다. UBLA/public access prevention을 강제하고 soft delete 0초·versioning off로 설정했으며, source read·evidence object manager·Firestore runtime custom role과 두 Eventarc 서비스의 exact Run invoker만 부여했다. 임시 Storage Admin은 복구 직후 회수했고 legacy/public binding은 0이다.
+- `onMessageEvidenceCopyQueued`, `onMessageEvidenceCleanupQueued`, `drainMessageEvidenceJobs`만 Development에 exact 배포했다. 모두 ACTIVE, Node.js 24, 512MiB, 540초, maxInstances 1, 전용 service account와 evidence bucket env를 사용하고 scheduler는 5분/Asia-Seoul/ENABLED다.
+- 최초 C-3에서 Eventarc Run invoker와 preparation/copy/cleanup 복합 인덱스 3개가 실제 선행 조건임을 발견했다. 서비스별 invoker를 보정하고 승인된 세 인덱스만 로컬 `firestore.indexes.json`과 Development에 추가해 모두 READY를 확인했다. READY 이후 recovery scheduler 수동 실행은 HTTP 200이다.
+- 격리 run `20260825c`에서 이미지 30장×5MiB=157,286,400 bytes를 4.084초, MP4 350MiB=367,001,600 bytes를 2.073초에 copy했다. 익명 요청은 두 시나리오 모두 403, cleanup은 4.085초/2.034초였고 evidence object·ready fixture·Firestore QA 문서 잔여는 0이다. bucket operator 사용자와 무관한 chat-media server identity의 probe read도 모두 거부됐고, 기본 Compute 계정은 IAM Policy Troubleshooter에서 `CANNOT_ACCESS`, probe 잔여는 0이다.
+- 전체 Development index audit은 local 53/remote 46, local-only 9/remote-only 2, field override local 33/remote 22와 only-local 14/only-remote 3의 기존 drift를 보고했다. 승인 범위를 지키기 위해 전체 Firebase index sync 대신 세 index만 exact 생성했으며 Phase 7.4D에서 reconcile 전 일괄 배포하지 않는다.
+- C-2/C-3에서 Firestore/Storage Rules, TTL field override, 관리자 evidence 조회와 Production 리소스는 변경하지 않았다. 다음 승인 gate는 Phase 7.4D다.
+
+## Phase 7.4C-1~C-3 병합 전 리뷰 — 2026-08-25
+
+- 마지막 3회차 copy lease 또는 20회차 cleanup lease를 획득한 worker가 Firestore terminal write 전에 종료되면, 기존 구현은 다음 recovery에서 시도 상한을 넘었다고 판단해 job을 영구 `processing`에 남길 수 있었다. 만료 lease를 같은 시도 번호로 회수하고 copy는 즉시 `cleaningPartial`로 전환해 새 물리 복사 없이 정리·실패 drain하며, cleanup은 generation 조건 delete를 재개하도록 보완했다.
+- Firestore emulator에 마지막 copy lease 중단 시 기존 partial object 삭제·attempt 3 유지·bundle/job failed 수렴과 마지막 cleanup lease 중단 시 attempt 20 유지·bundle/object 삭제·job succeeded 수렴 회귀를 추가했다.
+- 설계 문서와 TypeScript phase union에만 남아 있던 미사용 `verifying` phase를 제거했다. Storage metadata 검증은 영속 phase를 추가하지 않고 `copying` 내부에서 수행하며, 실제 job 계약과 JSON 계약은 `copying → acceptanceDrain` 또는 `cleaningPartial → failureDrain`으로 일치한다.

@@ -305,7 +305,7 @@ unban·명시적 재가입:
 - [x] ready Storage Rules는 account capability + visible message 두 문서만 조회하고 방 문서가 없어도 공개 message를 읽으며, 비노출 message와 비활성 account는 거부한다.
 - [x] 23분 idle cold JPEG는 ready 8.85초, 직후 warm JPEG는 worker 2.43초·ready 2.56초·cleanup 2.83초로 측정됐다.
 - [ ] 메시지와 이미지 뷰어 신고는 attachment 선택이나 동영상 시점 입력 없이 해당 메시지 전체 신고임을 명확히 표시한다.
-- [ ] 이미지 묶음 전체 또는 동영상 전체가 한 evidence bundle로 복사·dedupe되며 같은 메시지 후속 신고가 object를 늘리지 않는다.
+- [x] Phase 7.4C-1 로컬 worker에서 이미지 묶음 전체 또는 동영상 전체를 generation-scoped 공통 evidence bundle로 copy/dedupe하고 완료 job 재실행이 object를 늘리지 않음을 fake Storage + Firestore emulator로 검증했다. C-2/C-3에서 Development bucket과 30장·350MiB 실제 E2E까지 통과했다.
 - [x] Phase 7.4A 순수 계약은 versioned canonical tuple ID, 최초 revision 0, `processing → available → accepted`, queue 비강등, 24시간·7일 경계, retention·appeal/legal hold와 evidence/job 상태 전이를 단위 테스트 12개로 고정했다. Functions 전체 226/226·build·lint 오류 0과 JSON/diff 검증이 통과했다.
 - [ ] 신고 성공 직후 메시지를 자동 숨기지 않고 접수 안내만 표시한다.
 - [ ] 일반 단일 신고는 `holding`, 같은 메시지 고유 신고자 2명은 `reviewRequired`, 긴급 단일은 `urgent`로 분류된다. 기한이 지난 holding은 scheduler 없이 `reviewDueAt <= serverNow` 관리자 조회에 포함된다.
@@ -318,6 +318,9 @@ unban·명시적 재가입:
 - [x] 신고/삭제 순서에서 삭제 우선은 `messageAlreadyDeleted` transport receipt와 limiter slot만 만들고 preparation·evidence·moderation count를 만들지 않는다. 신고 우선 media는 삭제 tombstone을 즉시 만들되 public cleanup을 `awaitingEvidence`로 두며, available drain이 processing receipt를 accepted로 확정한다.
 - [x] evidence drain은 preparation 최대 30건과 각 최초 receipt만 직접 확정하고 추가 UUID receipt는 동일 UUID 재조회 때 개별 수렴해 receipt 수가 transaction 크기를 무제한 증가시키지 않는다.
 - [x] 실패 재시작은 partial destination cleanup 완료·빈 objectPaths와 preparation/bundle/copy job의 동일 terminal generation을 요구하며 세 문서를 함께 `attemptGeneration + 1`로 전환하고 stale generation accept를 거부한다.
+- [x] copy는 최초 포함 최대 3회와 1분/2분 backoff, 9분 timeout/12분 lease, generation-scoped destination과 generation+lease fence를 사용한다. 마지막 실패는 부분 객체를 모두 삭제한 뒤 receipt/preparation/guard/public cleanup을 terminal 상태로 수렴시킨다.
+- [x] retention cleanup은 generation 일치 evidence 객체를 전부 삭제한 뒤 bundle 문서를 완전 삭제하고 비민감 cleanup receipt만 남긴다. Development 실제 이미지/영상 cleanup과 soft delete 0초·versioning off·잔여 0을 확인했으며 TTL field override는 Phase 7.4D gate다.
+- [x] Development evidence bucket은 UBLA/public access prevention과 legacy/public binding 0을 유지하고, 익명·bucket operator 사용자·무관한 chat-media 서버 계정의 object read를 거부한다. 전용 evidence runtime의 실제 copy/cleanup 성공으로 허용 경로를 확인했다.
 - [ ] Evidence 원본은 일반 클라이언트와 비활성/비관리자에게 거부되고 활성 플랫폼 관리자의 서버 인증 단건 조회와 audit만 허용된다.
 - [ ] 기각·삭제만·경고만 evidence는 즉시 cleanup enqueue되고 계정 제재 evidence는 30일 이의제기 계약대로 삭제된다.
 
