@@ -178,6 +178,13 @@
       "succeeded",
       "failed"
     ],
+    "messageModerationDecision": [
+      "dismissed",
+      "contentDeleted",
+      "warningOnly",
+      "temporaryRestriction",
+      "permanentSuspension"
+    ],
     "messageGuardWinner": [
       "reportFirst",
       "deleteFirst"
@@ -694,9 +701,11 @@
         "acceptedAt": "timestamp|null",
         "failedAt": "timestamp|null",
         "createdAt": "timestamp",
-        "updatedAt": "timestamp"
+        "updatedAt": "timestamp",
+        "expiresAt": "timestamp|null; terminal preparation is scrubbed and expires exactly 30 days after createdAt"
       },
-      "purpose": "bounded semantic preparation and terminal-result projection for response loss and app termination; processing is not a canonical accepted report and does not affect queue, counts, patterns, or visibility"
+      "purpose": "bounded semantic preparation and terminal-result projection for response loss and app termination; processing is not a canonical accepted report and does not affect queue, counts, patterns, or visibility",
+      "terminalScrub": "accepted or failed terminal state removes reason, detail, and duplicate room/message/source identifiers and retains only the minimal convergence identity, status, attempt generation, result, timestamps, and expiresAt"
     },
     "moderationMessageReportRequests/{requestID}": {
       "clientRead": false,
@@ -850,7 +859,7 @@
       },
       "identity": "deterministic versioned canonical-tuple bundleID from incidentID + reviewRevision",
       "scope": "one common bundle for the bounded text snapshot and every normalized display attachment shown in that message; a video contributes its one complete normalized MP4",
-      "access": "active platform administrator through server-authenticated specific-object retrieval with audit; never directly exposed to clients"
+      "access": "active platform administrator with App Check and auth_time within five minutes through a server-authenticated, audited, exact-generation specific-object URL; only the incident current reviewRevision is allowed and historical revision details or bytes are never exposed"
     },
     "moderationEvidenceCopyJobs/{copyJobID}": {
       "clientRead": false,
@@ -1249,7 +1258,52 @@
     "readyRead": "authorized room reader and lifecycle/ban checks",
     "readyWrite": "server only",
     "evidenceReadWrite": "server-only audited APIs; never direct client access",
+    "evidenceFirebaseTarget": "moderationEvidence per environment with a dedicated deny-all Firebase Storage rules file",
+    "evidenceAuthority": "IAM, uniform bucket-level access, and public access prevention; the signed-URL identity has object get only and no list/create/update/delete",
+    "evidenceCORS": "no wildcard; configure an exact administrator-web origin only after its fixed localhost origin is decided",
     "evidenceSource": "copy the normalized display actually shown to users, never the raw quarantine source"
+  },
+  "evidenceAccessAudit": {
+    "firestoreCollection": null,
+    "applicationLogName": "outpick.googleapis.com/moderation_evidence_access",
+    "issuanceEvent": "EVIDENCE_VIEW_URL_ISSUED",
+    "issuanceFields": [
+      "issuanceID",
+      "actorUID",
+      "incidentID",
+      "reviewRevision",
+      "bundleID",
+      "evidenceObjectID",
+      "objectGeneration",
+      "requestID",
+      "issuedAt",
+      "urlExpiresAt",
+      "result"
+    ],
+    "forbiddenFields": [
+      "signedURL",
+      "signature",
+      "fullQuery",
+      "bucket",
+      "path",
+      "content",
+      "bytes",
+      "administratorEmail",
+      "administratorProfile"
+    ],
+    "writeOrdering": "create the signed URL only in server memory, synchronously write the issuance event through the Cloud Logging API, and return the URL only after the write succeeds",
+    "storageDataAccess": "explicitly enable Cloud Storage DATA_READ for the evidence bucket; sign opaque x-goog-custom-audit-issuance-id into the V4 URL and correlate GET and Range entries by issuanceID",
+    "logBucket": "environment-specific moderation-evidence-audit",
+    "location": "asia-northeast3",
+    "retentionDays": 1095,
+    "locked": true,
+    "analyticsEnabled": true,
+    "defaultBucketCopy": false,
+    "deploymentOrder": "create the unlocked analytics-enabled bucket with 1095-day retention, configure sink, views, and default-bucket exclusion, enable evidence DATA_READ, verify issuance and GET/Range routing plus query and IAM, then lock the bucket last",
+    "rollbackBoundary": "before lock, remove or correct routing and bucket configuration; after lock, retention reduction and early bucket deletion are intentionally unavailable",
+    "access": "minimum dedicated log-view readers only",
+    "queryDimensions": "time, actorUID, incidentID, reviewRevision, evidenceObjectID, issuanceID, and result",
+    "attributionLimit": "proves URL issuance and requests made with its issuanceID, not the identity of a third party who received a shared bearer URL"
   },
   "api": {
     "getMyModerationState": {
@@ -1467,7 +1521,7 @@
         "items": "safe report summary array",
         "nextCursor": "opaque string|null"
       },
-      "source": "query the canonical collection selected by targetType directly; message overdueHolding means queueClass holding and reviewDueAt <= serverNow; user summaries expose messagePatternActive as messagePatternReviewUntil > serverNow; no separate queue projection or scheduler"
+      "source": "query the canonical collection selected by targetType directly; actionable message views require acceptanceState reviewable. urgent and reviewRequired use reviewState open plus queueClass equality and order by slaDueAt ASC, lastReportedAt DESC, __name__ ASC. overdueHolding uses open, holding, reviewDueAt <= serverNow and order by reviewDueAt ASC, lastReportedAt DESC, __name__ ASC. inReview orders by priorityClass DESC, slaDueAt ASC, lastReportedAt DESC, __name__ ASC. resolved and dismissed order by updatedAt DESC, __name__ DESC. Cursors are view-scoped and contain every ordered value. User summaries expose messagePatternActive only while messagePatternReviewUntil > serverNow; no separate queue projection or scheduler"
     },
     "getModerationReportDetail": {
       "transport": "Firebase callable",
@@ -1483,6 +1537,50 @@
         "submissions": "safe submission array",
         "nextSubmissionCursor": "opaque string|null"
       }
+    },
+    "issueMessageEvidenceViewURL": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin with App Check and auth_time within 5 minutes; shared administrator read limiter 120 per minute",
+      "request": {
+        "incidentID": "string",
+        "reviewRevision": "non-negative integer",
+        "evidenceObjectID": "opaque logical object ID",
+        "objectGeneration": "exact decimal generation string",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "issuanceID": "server-generated opaque UUID",
+        "url": "one V4 signed GET URL for the exact object generation",
+        "expiresAt": "timestamp exactly 5 minutes after issuance"
+      },
+      "validation": "the requested revision must equal the incident current reviewRevision and reference the bundle; the bundle and object must be available, retained, not due for deletion, and not cleanupPending, deleting, or deleted. Exact Storage metadata must match bundle, attachment, attempt generation, content type, bytes, and object generation",
+      "signer": "environment-specific read-only service account separate from evidence copy and cleanup, with evidence object get and self iam.serviceAccounts.signBlob only; no JSON key or object list/write/delete",
+      "audit": "generate the URL in server memory, then synchronously write EVIDENCE_VIEW_URL_ISSUED through the Cloud Logging API and return only after success. The URL signs opaque x-goog-custom-audit-issuance-id so Cloud Storage DATA_READ GET and Range logs correlate by issuanceID. Never log the URL, signature, full query, bucket, path, content, administrator email, or profile"
+    },
+    "resolveMessageModeration": {
+      "transport": "Firebase callable",
+      "authorization": "active platform admin; account restriction or suspension additionally requires auth_time within 5 minutes",
+      "request": {
+        "incidentID": "string",
+        "reviewRevision": "non-negative integer",
+        "decision": "dismissed|contentDeleted|warningOnly|temporaryRestriction|permanentSuspension",
+        "restrictedUntil": "timestamp|null; required only for temporaryRestriction",
+        "expectedCaseVersion": "positive integer",
+        "expectedAccountStateVersion": "positive integer|null; required for temporaryRestriction or permanentSuspension",
+        "reasonCode": "bounded string",
+        "clientRequestID": "UUID string"
+      },
+      "response": {
+        "reviewState": "resolved|dismissed",
+        "reviewRevision": "non-negative integer",
+        "caseVersion": "positive integer",
+        "messageVisibilityState": "restored|deleted",
+        "accountModerationStatus": "active|restricted|suspended|null",
+        "retentionClass": "deleteAfterDecision|sanctionAppeal30Days|appealOpen|legalHold"
+      },
+      "authority": "derive room, message, bundle, target UID, and moderation principal from the incident; never trust client-supplied target identity",
+      "atomicEffects": "dismissed restores the same message ID and seq without unread or push. All confirmed-violation decisions create a moderationRemoved tombstone. The transaction updates incident and revision, confirmed violation, optional account action, evidence retention or cleanup job, and mutation audit consistently; acceptanceState must be reviewable and stale case or account versions fail",
+      "retention": "dismissed, contentDeleted, and warningOnly enqueue immediate evidence cleanup. temporaryRestriction and permanentSuspension retain evidence for 30 days; timely appeal or legal hold pauses cleanup under the existing retention contract"
     },
     "mutateModerationReview": {
       "transport": "Firebase callable",
@@ -1647,6 +1745,8 @@
     "PROTECTED_ADMIN_TARGET": "failed-precondition",
     "STALE_CASE_VERSION": "aborted",
     "STALE_STATE_VERSION": "aborted",
+    "EVIDENCE_NOT_AVAILABLE": "failed-precondition",
+    "EVIDENCE_AUDIT_UNAVAILABLE": "unavailable",
     "IDEMPOTENCY_CONFLICT": "already-exists",
     "MEDIA_INSPECTION_PENDING": "failed-precondition",
     "MEDIA_REJECTED": "permission-denied",
@@ -1674,6 +1774,51 @@
         "slaDueAt ASC",
         "lastReportedAt DESC",
         "__name__ ASC"
+      ]
+    },
+    {
+      "collection": "moderationMessageIncidents",
+      "views": "urgent|reviewRequired",
+      "fields": [
+        "reviewState ASC",
+        "acceptanceState ASC",
+        "queueClass ASC",
+        "slaDueAt ASC",
+        "lastReportedAt DESC",
+        "__name__ ASC"
+      ]
+    },
+    {
+      "collection": "moderationMessageIncidents",
+      "views": "overdueHolding",
+      "fields": [
+        "reviewState ASC",
+        "acceptanceState ASC",
+        "queueClass ASC",
+        "reviewDueAt ASC",
+        "lastReportedAt DESC",
+        "__name__ ASC"
+      ]
+    },
+    {
+      "collection": "moderationMessageIncidents",
+      "views": "inReview",
+      "fields": [
+        "reviewState ASC",
+        "acceptanceState ASC",
+        "priorityClass DESC",
+        "slaDueAt ASC",
+        "lastReportedAt DESC",
+        "__name__ ASC"
+      ]
+    },
+    {
+      "collection": "moderationMessageIncidents",
+      "views": "resolved|dismissed",
+      "fields": [
+        "reviewState ASC",
+        "updatedAt DESC",
+        "__name__ DESC"
       ]
     },
     {
@@ -1713,7 +1858,9 @@
     "readyTechnicalValidationMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
     "developmentFixtures": "delete after QA",
     "reportedMediaEvidence": "open or inReview until decision; dismissal, content-delete-only, or warning-only enqueues immediate asynchronous deletion; account sanction evidence is retained for a 30-day appeal window and, if appealed in time, until appeal resolution",
-    "reportedMediaEvidenceAccess": "not exposed to clients; an active platform administrator may retrieve only a specific evidence object through server authentication and audited authorization; delivery method is revisited by admin-web-operations-migration",
+    "reportedMediaEvidenceAccess": "not exposed to clients; an active platform administrator with App Check and five-minute recent authentication may retrieve one exact-generation object from the incident current revision only through the audited signed-URL API; reviewRevision isolates reopened cycles and does not grant historical detail or byte access",
+    "reportedMediaEvidenceAccessAudit": "no Firestore access-audit collection or TTL. Route EVIDENCE_VIEW_URL_ISSUED and evidence-bucket Cloud Storage DATA_READ logs, correlated by opaque issuanceID, to a locked Log Analytics bucket in asia-northeast3 for 1095 days; no signed URL, signature, full query, bucket path, content, email, or profile",
+    "messageReportPreparation": "processing retains the bounded semantic request. Accepted or failed terminal preparations scrub reason, detail, and duplicate room/message/source identifiers, retain only minimal convergence state, and expire exactly 30 days after createdAt",
     "deletedMessageSequenceTombstone": "retained with public payload removed",
     "roomClosureTombstone": "room content is removed immediately; shared tombstone and unacknowledged memberships remain at most 14 days, then the cleanup scheduler removes them in bounded batches",
     "legacyRoomClosureNotice": "no longer created; existing notices keep their Production 30-day TTL and are deleted by the new acknowledgment callable when confirmed",

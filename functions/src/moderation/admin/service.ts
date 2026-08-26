@@ -20,6 +20,7 @@ import {
   MutateModerationReviewInput,
   reviewStateForAction,
 } from "./contracts.js";
+import {messageReviewRevisionID} from "../messageEvidence/contracts.js";
 
 const ADMIN_READ_LIMIT_PER_MINUTE = 120;
 const ADMIN_MUTATION_LIMIT_PER_MINUTE = 30;
@@ -62,12 +63,107 @@ function reportCollectionName(targetType: ReportTargetType): string {
   return targetType === "user" ? "moderationUserReports" : "moderationRoomReports";
 }
 
-function safeAggregate(
-  targetType: ReportTargetType,
+function safeMessageIncident(
   id: string,
   data: FirebaseFirestore.DocumentData,
 ): Record<string, unknown> {
   return {
+    targetType: "message",
+    incidentID: id,
+    reviewRevision: data.reviewRevision,
+    reviewState: data.reviewState,
+    acceptanceState: data.acceptanceState,
+    caseVersion: data.caseVersion,
+    queueClass: data.queueClass,
+    priorityClass: data.priorityClass,
+    reasonCounts: data.reasonCounts ?? {},
+    visibilityState: data.visibilityState,
+    evidenceState: data.evidenceState,
+    slaDueAt: timestampISO(data.slaDueAt),
+    reviewDueAt: timestampISO(data.reviewDueAt),
+    firstReportedAt: timestampISO(data.firstReportedAt),
+    lastReportedAt: timestampISO(data.lastReportedAt),
+    updatedAt: timestampISO(data.updatedAt),
+  };
+}
+
+type MessageOrder = {field: "priorityClass" | "slaDueAt" | "reviewDueAt" | "lastReportedAt" | "updatedAt" | "__name__"; direction: "asc" | "desc"};
+
+export function messageQueueQueryContract(
+  view: NonNullable<ListModerationReportsInput["messageQueueView"]>,
+): {filters: Array<[string, "==" | "<=", unknown]>; orders: MessageOrder[]} {
+  if (view === "urgent" || view === "reviewRequired") {
+    return {
+      filters: [["acceptanceState", "==", "reviewable"], ["reviewState", "==", "open"], ["queueClass", "==", view]],
+      orders: [{field: "slaDueAt", direction: "asc"}, {field: "lastReportedAt", direction: "desc"}, {field: "__name__", direction: "asc"}],
+    };
+  }
+  if (view === "overdueHolding") {
+    return {
+      filters: [["acceptanceState", "==", "reviewable"], ["reviewState", "==", "open"], ["queueClass", "==", "holding"], ["reviewDueAt", "<=", "serverNow"]],
+      orders: [{field: "reviewDueAt", direction: "asc"}, {field: "lastReportedAt", direction: "desc"}, {field: "__name__", direction: "asc"}],
+    };
+  }
+  if (view === "inReview") {
+    return {
+      filters: [["acceptanceState", "==", "reviewable"], ["reviewState", "==", "inReview"]],
+      orders: [{field: "priorityClass", direction: "desc"}, {field: "slaDueAt", direction: "asc"}, {field: "lastReportedAt", direction: "desc"}, {field: "__name__", direction: "asc"}],
+    };
+  }
+  return {
+    filters: [["reviewState", "==", view]],
+    orders: [{field: "updatedAt", direction: "desc"}, {field: "__name__", direction: "desc"}],
+  };
+}
+
+async function listMessageModerationReports(
+  input: ListModerationReportsInput,
+  firestore: Firestore,
+  now: Date,
+): Promise<{items: Record<string, unknown>[]; nextCursor: string | null}> {
+  const view = input.messageQueueView;
+  if (!view) throw new HttpsError("invalid-argument", "메시지 신고 조회 view가 필요합니다.");
+  const contract = messageQueueQueryContract(view);
+  const scope = `message:${view}`;
+  let query: Query = firestore.collection("moderationMessageIncidents");
+  for (const [field, operator, rawValue] of contract.filters) {
+    const value = rawValue === "serverNow" ? Timestamp.fromDate(now) : rawValue;
+    query = query.where(field, operator, value);
+  }
+  for (const order of contract.orders) {
+    query = query.orderBy(order.field === "__name__" ? FieldPath.documentId() : order.field, order.direction);
+  }
+  if (input.cursor) {
+    const cursor = decodeCursor(input.cursor, "reports", scope);
+    if (cursor.values.length !== contract.orders.length) {
+      throw new HttpsError("invalid-argument", "cursor 값이 올바르지 않습니다.");
+    }
+    const values = contract.orders.map((order, index) =>
+      order.field === "__name__" || order.field === "priorityClass" ? cursor.values[index] :
+        Timestamp.fromMillis(Number(cursor.values[index])));
+    query = query.startAfter(...values);
+  }
+  const snapshot = await query.limit(input.pageSize + 1).get();
+  const visible = snapshot.docs.slice(0, input.pageSize);
+  const last = visible.at(-1);
+  return {
+    items: visible.map((document) => safeMessageIncident(document.id, document.data())),
+    nextCursor: snapshot.size > input.pageSize && last ? encodeCursor({
+      kind: "reports",
+      scope,
+      values: contract.orders.map((order) => order.field === "__name__" ? last.id :
+        order.field === "priorityClass" ? String(last.get(order.field)) : timestampMillis(last.get(order.field))),
+    }) : null,
+  };
+}
+
+function safeAggregate(
+  targetType: ReportTargetType,
+  id: string,
+  data: FirebaseFirestore.DocumentData,
+  now = new Date(),
+): Record<string, unknown> {
+  const aggregate: Record<string, unknown> = {
     targetType,
     targetID: id,
     reviewState: data.reviewState,
@@ -82,6 +178,12 @@ function safeAggregate(
     lastReportedAt: timestampISO(data.lastReportedAt),
     updatedAt: timestampISO(data.updatedAt),
   };
+  if (targetType === "user") {
+    aggregate.messagePatternReviewUntil = timestampISO(data.messagePatternReviewUntil);
+    aggregate.messagePatternActive = data.messagePatternReviewUntil instanceof Timestamp &&
+      data.messagePatternReviewUntil.toMillis() > now.getTime();
+  }
+  return aggregate;
 }
 
 function safeSubmission(
@@ -153,7 +255,12 @@ export async function consumeAdminRateLimit(
 export async function listModerationReportsService(
   input: ListModerationReportsInput,
   firestore: Firestore = db,
+  now = new Date(),
 ): Promise<{items: Record<string, unknown>[]; nextCursor: string | null}> {
+  if (input.targetType === "message") {
+    return listMessageModerationReports(input, firestore, now);
+  }
+  const targetType: ReportTargetType = input.targetType;
   const scope = [input.targetType, input.reviewState ?? "*", input.priorityClass ?? "*"].join(":");
   let query: Query = firestore.collection(reportCollectionName(input.targetType));
   if (input.reviewState) query = query.where("reviewState", "==", input.reviewState);
@@ -181,7 +288,7 @@ export async function listModerationReportsService(
   const visible = snapshot.docs.slice(0, input.pageSize);
   const last = visible.at(-1);
   return {
-    items: visible.map((document) => safeAggregate(input.targetType, document.id, document.data())),
+    items: visible.map((document) => safeAggregate(targetType, document.id, document.data(), now)),
     nextCursor: snapshot.size > input.pageSize && last ? encodeCursor({
       kind: "reports",
       scope,
@@ -199,7 +306,11 @@ export async function listModerationReportsService(
 export async function getModerationReportDetailService(
   input: GetModerationReportDetailInput,
   firestore: Firestore = db,
+  now = new Date(),
 ): Promise<Record<string, unknown>> {
+  if (input.targetType === "message") {
+    return getMessageModerationReportDetail(input.targetID, input.submissionPageSize, input.submissionCursor, firestore);
+  }
   const aggregateRef = firestore.collection(reportCollectionName(input.targetType)).doc(input.targetID);
   const aggregate = await aggregateRef.get();
   if (!aggregate.exists || !aggregate.data()) {
@@ -233,10 +344,74 @@ export async function getModerationReportDetailService(
     throw new HttpsError("failed-precondition", "신고 집계가 올바르지 않습니다.");
   }
   return {
-    aggregate: safeAggregate(input.targetType, aggregate.id, aggregateData),
+    aggregate: safeAggregate(input.targetType, aggregate.id, aggregateData, now),
     currentUserIDs: accounts ? accounts.docs.map((document) => document.id) : [],
     submissions: visible.map((document) => safeSubmission(document.id, document.data())),
     nextSubmissionCursor: submissions.size > input.submissionPageSize && last ? encodeCursor({
+      kind: "submissions",
+      scope,
+      values: [timestampMillis(last.get("createdAt")), last.id],
+    }) : null,
+  };
+}
+
+async function getMessageModerationReportDetail(
+  incidentID: string,
+  pageSize: number,
+  cursorValue: string | null,
+  firestore: Firestore,
+): Promise<Record<string, unknown>> {
+  const incidentRef = firestore.collection("moderationMessageIncidents").doc(incidentID);
+  const incident = await incidentRef.get();
+  if (!incident.exists || !incident.data()) {
+    throw new HttpsError("not-found", "메시지 신고 건을 찾을 수 없습니다.");
+  }
+  const reviewRevision = incident.get("reviewRevision");
+  if (typeof reviewRevision !== "number" || !Number.isSafeInteger(reviewRevision) || reviewRevision < 0) {
+    throw new HttpsError("failed-precondition", "메시지 신고 revision이 올바르지 않습니다.");
+  }
+  const revisionRef = incidentRef.collection("revisions").doc(messageReviewRevisionID(reviewRevision));
+  const revision = await revisionRef.get();
+  if (!revision.exists || !revision.data()) {
+    throw new HttpsError("failed-precondition", "현재 메시지 신고 revision을 찾을 수 없습니다.");
+  }
+  const scope = `message:${incidentID}:r${reviewRevision}`;
+  let query: Query = revisionRef.collection("reporters")
+    .orderBy("createdAt", "desc")
+    .orderBy(FieldPath.documentId(), "desc");
+  if (cursorValue) {
+    const cursor = decodeCursor(cursorValue, "submissions", scope);
+    if (cursor.values.length !== 2) throw new HttpsError("invalid-argument", "submissionCursor 값이 올바르지 않습니다.");
+    query = query.startAfter(Timestamp.fromMillis(Number(cursor.values[0])), cursor.values[1]);
+  }
+  const bundleID = revision.get("evidenceBundleID");
+  const [reporters, bundle] = await Promise.all([
+    query.limit(pageSize + 1).get(),
+    typeof bundleID === "string" ? firestore.collection("moderationMessageEvidence").doc(bundleID).get() : Promise.resolve(null),
+  ]);
+  const visible = reporters.docs.slice(0, pageSize);
+  const last = visible.at(-1);
+  const logicalEvidenceObjects = bundle?.exists && Array.isArray(bundle.get("evidenceObjects")) ?
+    (bundle.get("evidenceObjects") as Array<Record<string, unknown>>).map((object) => ({
+      evidenceObjectID: object.attachmentID,
+      objectGeneration: object.destinationGeneration,
+      contentType: object.contentType,
+      bytes: object.bytes,
+    })) : [];
+  return {
+    aggregate: safeMessageIncident(incident.id, incident.data()!),
+    revision: {
+      reviewRevision,
+      reviewState: revision.get("reviewState"),
+      evidenceBundleID: typeof bundleID === "string" ? bundleID : null,
+      evidenceState: incident.get("evidenceState"),
+      textSnapshot: bundle?.exists && typeof bundle.get("textSnapshot") === "string" ? bundle.get("textSnapshot") : null,
+      replyContextSnapshot: bundle?.exists ? bundle.get("replyContextSnapshot") ?? null : null,
+      sharedContentSnapshot: bundle?.exists ? bundle.get("sharedContentSnapshot") ?? null : null,
+      logicalEvidenceObjects,
+    },
+    submissions: visible.map((document) => safeSubmission(document.id, document.data())),
+    nextSubmissionCursor: reporters.size > pageSize && last ? encodeCursor({
       kind: "submissions",
       scope,
       values: [timestampMillis(last.get("createdAt")), last.id],

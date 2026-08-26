@@ -6,6 +6,7 @@ import {
   MESSAGE_EVIDENCE_CONTRACT_VERSION,
   MESSAGE_EVIDENCE_COPY_LEASE_MILLIS,
   MESSAGE_EVIDENCE_MAX_COPY_ATTEMPTS,
+  MESSAGE_REPORT_PREPARATION_TTL_MILLIS,
   messageEvidenceObjectPath,
   messageEvidenceRetryDelayMillis,
 } from "./contracts.js";
@@ -349,7 +350,8 @@ async function failPreparationBatch(job: ClaimedCopyJob, firestore: Firestore, n
       if (nonNegativeInteger(preparation.get("attemptGeneration")) !== job.attemptGeneration) {
         throw new MessageEvidenceCopyError("STALE_EVIDENCE_GENERATION", "evidence preparation generation is stale");
       }
-      transaction.set(preparation.ref, {status: "failed", failedAt: nowTimestamp, lastErrorCode: "EVIDENCE_COPY_FAILED", updatedAt: nowTimestamp}, {merge: true});
+      const createdAt = preparation.get("createdAt") instanceof Timestamp ? preparation.get("createdAt") as Timestamp : nowTimestamp;
+      transaction.set(preparation.ref, {status: "failed", failedAt: nowTimestamp, lastErrorCode: "EVIDENCE_COPY_FAILED", updatedAt: nowTimestamp, expiresAt: Timestamp.fromMillis(createdAt.toMillis() + MESSAGE_REPORT_PREPARATION_TTL_MILLIS), roomID: FieldValue.delete(), messageID: FieldValue.delete(), seq: FieldValue.delete(), reporterID: FieldValue.delete(), reporterModerationPrincipalID: FieldValue.delete(), senderModerationPrincipalID: FieldValue.delete(), bundleID: FieldValue.delete(), reason: FieldValue.delete(), detail: FieldValue.delete(), priorityClass: FieldValue.delete()}, {merge: true});
       if (requests[index]?.exists) transaction.set(requestRefs[index], {status: "failed", lastErrorCode: "EVIDENCE_COPY_FAILED", updatedAt: nowTimestamp}, {merge: true});
     });
     const hasMore = preparations.size > selected.length;

@@ -6,6 +6,7 @@ export type ModerationAuditAction =
   "startReview" |
   "resolveReview" |
   "dismissReview" |
+  "resolveMessageModeration" |
   "deleteMessage" |
   "closeRoomByOwner" |
   "closeRoomByModeration" |

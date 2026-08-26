@@ -5,11 +5,16 @@ import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
 import {
   parseGetModerationReportDetailInput,
+  parseIssueMessageEvidenceViewURLInput,
   parseListModerationReportsInput,
   parseMutateAccountModerationInput,
   parseMutateModerationReviewInput,
+  parseResolveMessageModerationInput,
   requireRecentAdminAuth,
 } from "./contracts.js";
+import {issueMessageEvidenceViewURLService} from "./evidenceAccess.js";
+import {messageEvidenceViewRuntimeForEnvironment} from "../messageEvidence/evidenceRuntime.js";
+import {resolveMessageModerationService} from "./messageResolution.js";
 import {
   assertActivePlatformAdmin,
   consumeAdminRateLimit,
@@ -28,6 +33,14 @@ const securedCallableOptions = {
   region: FUNCTIONS_REGION,
   enforceAppCheck: true,
 };
+
+const evidenceViewRuntime = messageEvidenceViewRuntimeForEnvironment();
+
+function requiredEvidenceBucket(): string {
+  const value = process.env.MODERATION_EVIDENCE_BUCKET?.trim();
+  if (!value) throw new Error("moderation_evidence_bucket_missing");
+  return value;
+}
 
 async function activeAdminUID(auth: CallableAuth): Promise<string> {
   const uid = requiredAuthUID(auth?.uid);
@@ -67,6 +80,38 @@ export async function handleMutateAccountModeration(
     parseMutateAccountModerationInput(data),
     now,
   );
+}
+
+export async function handleIssueMessageEvidenceViewURL(
+  auth: CallableAuth,
+  data: unknown,
+  now = new Date(),
+) {
+  const uid = await activeAdminUID(auth);
+  requireRecentAdminAuth(auth?.token.auth_time, now);
+  await consumeAdminRateLimit(uid, "read", now);
+  const parsed = parseIssueMessageEvidenceViewURLInput(data);
+  return issueMessageEvidenceViewURLService({
+    actorUID: uid,
+    request: parsed,
+    evidenceBucket: requiredEvidenceBucket(),
+    projectID: evidenceViewRuntime.projectID,
+    now,
+  });
+}
+
+export async function handleResolveMessageModeration(
+  auth: CallableAuth,
+  data: unknown,
+  now = new Date(),
+) {
+  const uid = await activeAdminUID(auth);
+  const input = parseResolveMessageModerationInput(data);
+  if (input.decision === "temporaryRestriction" || input.decision === "permanentSuspension") {
+    requireRecentAdminAuth(auth?.token.auth_time, now);
+  }
+  await consumeAdminRateLimit(uid, "mutation", now);
+  return resolveMessageModerationService(uid, input, now);
 }
 
 function callableError(error: unknown, operation: string): never {
@@ -115,6 +160,32 @@ export const mutateAccountModeration = onCall(
       return await handleMutateAccountModeration(request.auth, request.data);
     } catch (error) {
       return callableError(error, "mutateAccountModeration");
+    }
+  },
+);
+
+export const issueMessageEvidenceViewURL = onCall(
+  {
+    ...securedCallableOptions,
+    serviceAccount: evidenceViewRuntime.serviceAccountEmail,
+    maxInstances: evidenceViewRuntime.maxInstances,
+  },
+  async (request) => {
+    try {
+      return await handleIssueMessageEvidenceViewURL(request.auth, request.data);
+    } catch (error) {
+      return callableError(error, "issueMessageEvidenceViewURL");
+    }
+  },
+);
+
+export const resolveMessageModeration = onCall(
+  securedCallableOptions,
+  async (request) => {
+    try {
+      return await handleResolveMessageModeration(request.auth, request.data);
+    } catch (error) {
+      return callableError(error, "resolveMessageModeration");
     }
   },
 );

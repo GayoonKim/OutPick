@@ -6,6 +6,7 @@ import {
   MESSAGE_EVIDENCE_COPY_LEASE_MILLIS,
   messageEvidenceObjectPath,
   messageIncidentID,
+  messageEvidenceCleanupJobID,
   messageReviewRevisionID,
 } from "./contracts.js";
 import {
@@ -226,4 +227,48 @@ export async function dueMessageEvidenceCleanupJobIDs(firestore: Firestore, now 
     .limit(DUE_JOB_LIMIT)
     .get();
   return snapshot.docs.map((document) => document.id);
+}
+
+export async function enqueueDueMessageEvidenceRetention(
+  firestore: Firestore,
+  now = new Date(),
+): Promise<number> {
+  const due = await firestore.collection(BUNDLES)
+    .where("state", "==", "available")
+    .where("deleteAfter", "<=", Timestamp.fromDate(now))
+    .orderBy("deleteAfter", "asc")
+    .limit(DUE_JOB_LIMIT)
+    .get();
+  let enqueued = 0;
+  for (const candidate of due.docs) {
+    const cleanupRef = firestore.collection(CLEANUP_JOBS).doc(messageEvidenceCleanupJobID(candidate.id));
+    const didEnqueue = await firestore.runTransaction(async (transaction) => {
+      const [bundle, cleanup] = await Promise.all([
+        transaction.get(candidate.ref),
+        transaction.get(cleanupRef),
+      ]);
+      const deleteAfter = bundle.get("deleteAfter");
+      if (!bundle.exists || bundle.get("state") !== "available" ||
+          !(deleteAfter instanceof Timestamp) || deleteAfter.toMillis() > now.getTime() ||
+          cleanup.exists) return false;
+      const nowTimestamp = Timestamp.fromDate(now);
+      transaction.update(candidate.ref, {state: "cleanupPending", updatedAt: nowTimestamp});
+      transaction.create(cleanupRef, {
+        schemaVersion: 1,
+        bundleID: candidate.id,
+        status: "pending",
+        phase: "deleting",
+        attempt: 0,
+        nextAttemptAt: nowTimestamp,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        createdAt: nowTimestamp,
+        updatedAt: nowTimestamp,
+        expiresAt: null,
+      });
+      return true;
+    });
+    if (didEnqueue) enqueued += 1;
+  }
+  return enqueued;
 }

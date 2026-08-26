@@ -1,5 +1,5 @@
 /* eslint-disable require-jsdoc, max-len */
-import {Firestore, Timestamp} from "firebase-admin/firestore";
+import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
 import {requireAccountCapabilityData} from "../../shared/accountStatus.js";
@@ -18,6 +18,7 @@ import {
 import {
   MESSAGE_EVIDENCE_CONTRACT_VERSION,
   MESSAGE_REPORT_REQUEST_RECEIPT_TTL_MILLIS,
+  MESSAGE_REPORT_PREPARATION_TTL_MILLIS,
   MessageQueueClass,
   MessageReportStatus,
   messageEvidenceBundleID,
@@ -432,7 +433,13 @@ export async function submitMessageReportService(
 
     consumeTransportRequest(1);
     transaction.create(requestRef, requestDoc);
-    transaction.set(preparationRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, incidentID, roomID: input.roomID, messageID: input.messageID, seq, reviewRevision, reporterID, reporterModerationPrincipalID: reporterPrincipalID, senderModerationPrincipalID: senderPrincipalID, bundleID, initialRequestID: requestID, reason: input.reason, detail: input.detail, priorityClass, attemptGeneration, status, queueClass: immediatelyAccepted ? nextQueue : null, visibilityState: immediatelyAccepted ? acceptedVisibility : null, lastErrorCode: null, requestedAt: nowTimestamp, acceptedAt: immediatelyAccepted ? nowTimestamp : null, failedAt: null, createdAt: preparation.exists ? preparation.get("createdAt") ?? nowTimestamp : nowTimestamp, updatedAt: nowTimestamp});
+    const preparationCreatedAt = preparation.exists ? preparation.get("createdAt") ?? nowTimestamp : nowTimestamp;
+    const preparationDocument: Record<string, unknown> = {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, incidentID, roomID: input.roomID, messageID: input.messageID, seq, reviewRevision, reporterID, reporterModerationPrincipalID: reporterPrincipalID, senderModerationPrincipalID: senderPrincipalID, bundleID, initialRequestID: requestID, reason: input.reason, detail: input.detail, priorityClass, attemptGeneration, status, queueClass: immediatelyAccepted ? nextQueue : null, visibilityState: immediatelyAccepted ? acceptedVisibility : null, lastErrorCode: null, requestedAt: nowTimestamp, acceptedAt: immediatelyAccepted ? nowTimestamp : null, failedAt: null, createdAt: preparationCreatedAt, updatedAt: nowTimestamp};
+    if (immediatelyAccepted) {
+      for (const key of ["roomID", "messageID", "seq", "reporterID", "reporterModerationPrincipalID", "senderModerationPrincipalID", "bundleID", "reason", "detail", "priorityClass"]) delete preparationDocument[key];
+      preparationDocument.expiresAt = Timestamp.fromMillis((preparationCreatedAt as Timestamp).toMillis() + MESSAGE_REPORT_PREPARATION_TTL_MILLIS);
+    }
+    transaction.set(preparationRef, preparationDocument);
     if (!bundle.exists) {
       transaction.create(bundleRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, reviewRevision, textSnapshot: utf8Snapshot(messageData.message ?? messageData.msg), replyContextSnapshot: boundedMap(messageData.replyPreview, 4_000), sharedContentSnapshot: kind === "lookbookShare" ? boundedMap(messageData.sharedContent, 16_000) : null, attachmentIDs: objects.map((item) => item.attachmentID), sourceObjects: objects, evidenceObjects: [], attemptGeneration, acceptanceState: immediatelyAccepted ? "reviewable" : "notReady", pendingPreparationCount: immediatelyAccepted ? 0 : 1, totalDisplayBytes: objects.reduce((sum, item) => sum + item.bytes, 0), objectPaths: [], state: immediatelyAccepted ? "available" : "copyPending", retentionClass: "reviewOpen", createdAt: nowTimestamp, deleteAfter: null, updatedAt: nowTimestamp});
     } else if (restartingFailedBundle) {
@@ -609,7 +616,8 @@ export async function acceptMessageEvidenceBundleService(
     for (let index = 0; index < preparationDocuments.length; index += 1) {
       const preparation = preparationDocuments[index];
       const requestedAt = preparation.get("requestedAt") instanceof Timestamp ? preparation.get("requestedAt") : nowTimestamp;
-      transaction.set(preparation.ref, {status: "accepted", queueClass, visibilityState, acceptedAt: nowTimestamp, updatedAt: nowTimestamp}, {merge: true});
+      const createdAt = preparation.get("createdAt") instanceof Timestamp ? preparation.get("createdAt") as Timestamp : nowTimestamp;
+      transaction.set(preparation.ref, {status: "accepted", queueClass, visibilityState, acceptedAt: nowTimestamp, updatedAt: nowTimestamp, expiresAt: Timestamp.fromMillis(createdAt.toMillis() + MESSAGE_REPORT_PREPARATION_TTL_MILLIS), roomID: FieldValue.delete(), messageID: FieldValue.delete(), seq: FieldValue.delete(), reporterID: FieldValue.delete(), reporterModerationPrincipalID: FieldValue.delete(), senderModerationPrincipalID: FieldValue.delete(), bundleID: FieldValue.delete(), reason: FieldValue.delete(), detail: FieldValue.delete(), priorityClass: FieldValue.delete()}, {merge: true});
       if (!existingReporters[index].exists) {
         transaction.create(reporterRefs[index], {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, reason: preparation.get("reason"), detail: preparation.get("detail") ?? null, clientRequestID: initialRequests[index].get("clientRequestID") ?? null, priorityClass: preparation.get("priorityClass"), evidenceBundleID: bundleID, createdAt: requestedAt});
       }
