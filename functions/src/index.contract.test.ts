@@ -4,7 +4,7 @@ import {readFileSync} from "node:fs";
 import test from "node:test";
 import {DEVELOPMENT_AUTH_FUNCTIONS_SERVICE_ACCOUNT_EMAIL} from "./auth/runtime.js";
 import {chatMediaServiceAccountEmailForProject} from "./chat/media/runtime.js";
-import {messageEvidenceRuntimeForEnvironment} from "./moderation/messageEvidence/evidenceRuntime.js";
+import {messageEvidenceRuntimeForEnvironment, messageEvidenceViewRuntimeForEnvironment} from "./moderation/messageEvidence/evidenceRuntime.js";
 
 process.env.GCLOUD_PROJECT ??= "outpick-test";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -39,6 +39,8 @@ const callableNames = [
   "getModerationReportDetail",
   "mutateModerationReview",
   "mutateAccountModeration",
+  "issueMessageEvidenceViewURL",
+  "resolveMessageModeration",
   "getBrandAdminCapabilities",
   "createStyleMood",
   "updateStyleMood",
@@ -262,6 +264,7 @@ const scheduleEndpoints = {
 } as const;
 
 const callableOverrides = {
+  issueMessageEvidenceViewURL: {maxInstances: 1},
   requestSeasonCandidateImportJobs: {timeoutSeconds: 120, availableMemoryMb: 512},
   runLookbookExtractionDiagnostic: {timeoutSeconds: 120, availableMemoryMb: 512},
   discoverSeasonCandidates: {timeoutSeconds: 60, availableMemoryMb: 512},
@@ -284,7 +287,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 108개를 유지한다", () => {
+test("Firebase deployment export 이름 110개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -294,7 +297,7 @@ test("Firebase deployment export 이름 108개를 유지한다", () => {
     "verifyLookbookExtractionFix",
     "dispatchChatMediaProcessing",
   ].sort();
-  assert.equal(expected.length, 108);
+  assert.equal(expected.length, 110);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -346,12 +349,17 @@ test("chat media trigger와 scheduler는 전용 identity 경계를 유지한다"
 test("callable runtime metadata를 유지한다", () => {
   for (const name of callableNames) {
     const value = endpoint(name);
-    assertCommonMetadata(name, value);
+    const override = callableOverrides[name as keyof typeof callableOverrides];
+    const runtimeOverride = override as {
+      timeoutSeconds?: number;
+      availableMemoryMb?: number;
+      maxInstances?: number;
+    } | undefined;
+    assertCommonMetadata(name, value, runtimeOverride?.maxInstances ?? 10);
     assert.ok(value.callableTrigger, `${name} callableTrigger`);
 
-    const override = callableOverrides[name as keyof typeof callableOverrides];
-    assert.equal(runtimeNumber(value.timeoutSeconds), runtimeNumber(override?.timeoutSeconds), `${name} timeout`);
-    assert.equal(runtimeNumber(value.availableMemoryMb), runtimeNumber(override?.availableMemoryMb), `${name} memory`);
+    assert.equal(runtimeNumber(value.timeoutSeconds), runtimeNumber(runtimeOverride?.timeoutSeconds), `${name} timeout`);
+    assert.equal(runtimeNumber(value.availableMemoryMb), runtimeNumber(runtimeOverride?.availableMemoryMb), `${name} memory`);
   }
 
   assert.equal(
@@ -404,6 +412,18 @@ test("message evidence 함수는 환경별 전용 runtime identity를 사용한�
   assert.throws(() => messageEvidenceRuntimeForEnvironment({GCLOUD_PROJECT: "unknown"}));
 });
 
+test("Evidence URL 발급 함수는 copy/cleanup과 분리된 read-only runtime identity를 사용한다", () => {
+  const development = messageEvidenceViewRuntimeForEnvironment({GCLOUD_PROJECT: "outpick-test"});
+  assert.equal(endpoint("issueMessageEvidenceViewURL").serviceAccountEmail, development.serviceAccountEmail);
+  assert.notEqual(development.serviceAccountEmail,
+    messageEvidenceRuntimeForEnvironment({GCLOUD_PROJECT: "outpick-test"}).serviceAccountEmail);
+  assert.deepEqual(messageEvidenceViewRuntimeForEnvironment({GCLOUD_PROJECT: "outpick-664ae"}), {
+    projectID: "outpick-664ae",
+    serviceAccountEmail: "outpick-msg-evidence-view-prod@outpick-664ae.iam.gserviceaccount.com",
+    maxInstances: 2,
+  });
+});
+
 test("message evidence acceptance와 recovery query 인덱스를 유지한다", () => {
   const config = JSON.parse(
     readFileSync("../firestore.indexes.json", "utf8")
@@ -445,6 +465,28 @@ test("message evidence acceptance와 recovery query 인덱스를 유지한다", 
       `${collectionGroup} fields`
     );
   }
+});
+
+test("message 관리자 queue·retention query와 preparation TTL 인덱스를 유지한다", () => {
+  const config = JSON.parse(readFileSync("../firestore.indexes.json", "utf8")) as {
+    indexes?: Array<{collectionGroup?: string; queryScope?: string; fields?: Array<{fieldPath?: string; order?: string}>}>;
+    fieldOverrides?: Array<{collectionGroup?: string; fieldPath?: string; ttl?: boolean}>;
+  };
+  const incidentFields = config.indexes?.filter((index) =>
+    index.collectionGroup === "moderationMessageIncidents" && index.queryScope === "COLLECTION")
+    .map((index) => index.fields?.map((field) => [field.fieldPath, field.order])) ?? [];
+  assert.deepEqual(incidentFields, [
+    [["acceptanceState", "ASCENDING"], ["reviewState", "ASCENDING"], ["queueClass", "ASCENDING"], ["slaDueAt", "ASCENDING"], ["lastReportedAt", "DESCENDING"], ["__name__", "ASCENDING"]],
+    [["acceptanceState", "ASCENDING"], ["reviewState", "ASCENDING"], ["queueClass", "ASCENDING"], ["reviewDueAt", "ASCENDING"], ["lastReportedAt", "DESCENDING"], ["__name__", "ASCENDING"]],
+    [["acceptanceState", "ASCENDING"], ["reviewState", "ASCENDING"], ["priorityClass", "DESCENDING"], ["slaDueAt", "ASCENDING"], ["lastReportedAt", "DESCENDING"], ["__name__", "ASCENDING"]],
+    [["reviewState", "ASCENDING"], ["updatedAt", "DESCENDING"], ["__name__", "DESCENDING"]],
+  ]);
+  const retention = config.indexes?.find((index) => index.collectionGroup === "moderationMessageEvidence");
+  assert.deepEqual(retention?.fields?.map((field) => [field.fieldPath, field.order]),
+    [["state", "ASCENDING"], ["deleteAfter", "ASCENDING"]]);
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "moderationMessageReportPreparations" &&
+    override.fieldPath === "expiresAt" && override.ttl === true));
 });
 
 test("시즌 탐색 watchdog 상태 조회용 컬렉션 그룹 인덱스를 유지한다", () => {

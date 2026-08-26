@@ -5,6 +5,7 @@ import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {
   dueMessageEvidenceCleanupJobIDs,
+  enqueueDueMessageEvidenceRetention,
   processMessageEvidenceCleanupJob,
 } from "./evidenceCleanup.js";
 import {
@@ -82,6 +83,7 @@ export const drainMessageEvidenceJobs = onSchedule(
     serviceAccount: runtime.serviceAccountEmail,
   },
   async () => {
+    await enqueueDueMessageEvidenceRetention(db);
     const [copyJobIDs, cleanupJobIDs] = await Promise.all([
       dueMessageEvidenceCopyJobIDs(db),
       dueMessageEvidenceCleanupJobIDs(db),

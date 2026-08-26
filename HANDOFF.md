@@ -15,6 +15,33 @@
 
 ## 2. 완료한 작업
 
+### Chat UGC Safety Phase 7.4D — 관리자 Evidence 조회 Development 완료
+
+- 2026-08-26 canonical message queue/current-revision detail, decision별 same-seq restore/moderationRemoved/계정 제재·Evidence retention, terminal preparation scrub+TTL, 분리 signer와 exact-generation 5분 V4 GET, 응답 전 `EVIDENCE_VIEW_URL_ISSUED`를 로컬 구현했다. Functions 243/243, Rules 46/46, Firestore transaction 49/49, build·lint 오류 0을 통과했다.
+- Development에 Firestore/Evidence Storage Rules, exact index 5개, preparation TTL, 영향 Function 7개와 signer 최소 IAM을 반영했다. Function은 `ACTIVE`, index는 `READY`, TTL은 `ACTIVE`이며 Production은 변경하지 않았다.
+- 서울 전용 Log Analytics bucket은 1,095일 보존·`locked=true`다. Evidence app audit와 Evidence GET만 전용 sink에 route하고 `_Default`에서는 app audit와 프로젝트 전체 GCS DATA_READ를 exact exclusion한다.
+- 유효 PNG와 정확히 350 MiB인 재생 가능 MP4로 원격 probe·전체 GET·앞/뒤 Range, 실제 5분 만료 후 이미지·영상 HTTP 400, recent-auth 갱신 뒤 새 URL·새 issuanceID와 Range 성공을 확인했다. 운영 필드 결합 조회 2건의 내림차순, issuance별 Storage GET 6/1/1건과 `_Default=0`을 확인했다.
+- 영구 App Check debug token은 만들지 않았고 임시 Auth/Firestore/Storage/rate bucket 잔여 0, 기존 Auth 2명·active platform admin 0명, 최근 Function ERROR 0으로 종료했다. 다음 구현 경계는 Phase 7.5 iOS 신고 UX·전역 숨김/복원이며 Production은 별도 승인 전 변경하지 않는다.
+
+### Chat UGC Safety Phase 7.4C-1~C-3 — evidence copy/cleanup Development 검증 완료
+
+- 2026-08-25 `functions/src/moderation/messageEvidence/{evidenceCopy,evidenceStorage,evidenceCleanup,evidenceFunctions}.ts`에 exact ready source 검증, generation-scoped Storage copy/delete, lease-fenced acceptance/failure drain과 retention cleanup을 구현했다. copy는 최초 포함 3회, 1분/2분 backoff, 9분 timeout/12분 lease를 사용한다.
+- destination은 `{bundleID}/g{attemptGeneration}/{attachmentID}/display`이고 source generation 고정, create-if-absent, destination generation precondition, ownership metadata 검증을 결합한다. 한 실행은 preparation 최대 30건만 처리하고 남은 batch는 새 lease로 이어간다.
+- 마지막 copy 실패는 같은 generation의 부분 객체를 전부 삭제한 뒤 preparation·최초 receipt·guard를 failed로 확정하고 report-first public cleanup을 해제한다. retention cleanup은 Storage evidence 전부 삭제 뒤 bundle 문서를 완전 삭제하며 scrub된 cleanup receipt만 7일 보존한다.
+- C-2에서 root export와 환경별 runtime fence를 추가하고 Development에 전용 `outpick-test-moderation-evidence` 버킷, `outpick-msg-evidence-dev@outpick-test.iam.gserviceaccount.com`, 최소 custom IAM과 서비스별 Run invoker를 구성했다. 세 Function은 Node.js 24, 512MiB, 540초, maxInstances 1로 ACTIVE이고 scheduler는 5분 주기 ENABLED다.
+- C-3 선행 조건으로 preparation acceptance와 copy/cleanup scheduler용 복합 인덱스 3개만 Development에 생성해 READY를 확인했다. 30장×5MiB=150MiB는 4.084초, MP4 350MiB는 2.073초에 copy됐고 익명·버킷 운영자·무관한 chat-media 서버 계정 read가 모두 거부됐다. 기본 Compute 계정도 IAM Policy Troubleshooter에서 `CANNOT_ACCESS`다. cleanup 뒤 ready/evidence/Firestore QA 잔여는 0이고 READY 이후 scheduler는 HTTP 200이다.
+- Development 전체 index 감사에는 이번 범위와 별개인 기존 drift가 남는다: local/remote index 53/46, local-only/remote-only 9/2, field override local/remote 33/22와 only-local/only-remote 14/3이다. Phase 7.4D도 전체 sync 없이 승인된 exact index 5개만 추가했으므로, 향후 전체 `firestore:indexes` 동기화 전에는 반드시 reconcile한다.
+- Functions 236/236, Firestore/Storage Rules 45/45와 전체 transaction 41/41(신규 moderation 18/18), 계약 JSON·diff 검증을 통과했다. 이 C 단계에서 보류했던 Rules·TTL·관리자 Evidence 조회의 Development 적용은 위 Phase 7.4D에서 완료했고 Production은 여전히 별도 승인 gate다.
+
+### Chat UGC Safety Phase 7.4B — evidence-first 신고/삭제 transaction 로컬 완료
+
+- 2026-08-24 `functions/src/moderation/messageEvidence/service.ts`에 메시지 신고 parser/service와 evidence available drain transaction을 구현했다. revision과 무관한 최상위 `moderationMessageReportRequests/{requestID}`를 현재 revision보다 먼저 조회하므로 관리자 종결 뒤 같은 UUID의 지연 retry는 최초 결과를 반환하고, 새 UUID만 새 revision을 연다.
+- 신규 ready schema의 attachment evidence descriptor, text/lookbook 즉시 accepted, media preparation/bundle/copy job processing, 최대 30건 draining, reporter dedupe·작성자 aggregate·24시간 visibility, report/delete guard와 public cleanup `awaitingEvidence`를 반영했다.
+- 동일 UUID replay는 무료이고 이전에 보지 못한 새 UUID receipt는 preparation 재사용·alreadyReported·messageAlreadyDeleted여도 user/room 요청과 공유하는 1분 10회 transport limiter를 소비하도록 확정했다. 앱은 최초 UUID를 terminal 결과까지 유지하며 moderation count/evidence와 신규 semantic preparation 관측치는 분리한다.
+- 최종 리뷰에서 한 preparation의 추가 UUID receipt 전체를 drain transaction이 무제한 갱신하던 경계를 `initialRequestID` 1건 확정과 조회 시 개별 terminal 수렴으로 보정했다. 실패 재시작은 partial cleanup 완료·빈 objectPaths와 preparation/bundle/copy job 동일 generation을 검증한 뒤 세 문서를 원자적으로 `+1` 전환하며 stale generation을 거부한다.
+- Functions build/test 228/228, lint 오류 0(기존 포함 non-null assertion warning 19개), Firestore/Storage rules 45/45와 transaction 35/35, 계약 JSON·diff 검증을 통과했다. 지연 retry emulator 회귀가 revision 0 replay와 새 UUID revision 1 reopen을, limiter 회귀가 새 UUID 10회·11번째 거부·동일 UUID 무료 replay를, media 회귀가 최초 receipt drain·추가 alias 개별 수렴·generation fence와 신고/삭제 양쪽 순서를 확인한다.
+- `functions/src/index.ts` callable export, Rules/index 추가, 실제 Storage copy/cleanup worker, iOS `신고 처리 중` UX, Development/Production 배포는 수행하지 않았다. 다음 구현 경계는 Phase 7.4C다.
+
 ### Chat UGC Safety Phase 7.4A — evidence-first 순수 계약 완료
 
 - 2026-08-21 확정한 최신 설계를 문서와 `functions/src/moderation/messageEvidence/{contracts,contracts.test}.ts`에 반영했다. 신고는 `processing` 동안 server-only preparation/request receipt/guard/bundle/job만 소유하고 text snapshot 또는 메시지 전체 media evidence가 `available`이 된 뒤에만 `accepted`와 incident/reporter/aggregate·queue·visibility를 확정한다. processing/failed는 신고 임계치에 포함하지 않는다.
@@ -296,7 +323,7 @@
 
 ## 3. 완료 범위 밖 후속 후보와 현재 설계 task
 
-- 최우선: `chat-ugc-safety-room-moderation` Phase 7.3은 JPEG·HEIC·PNG·animated GIF, 31장 30+1, 70장 30+30+10 FIFO, 영상 앱 종료·재실행과 채팅방 화면 이탈·재진입 QA까지 통과해 완료 처리했다. silent pending 선복원, status-only 2·4·8초 reconciliation과 일반 실패 팝업 제거를 포함해 restore targeted test 26개, pending/outbox 17개 및 iPhone 14 Development build·설치가 통과했다. 정확한 350 MiB/장시간 영상 실파일과 실패 확인창 시각 점검은 Production 전 확장 QA로 분리했다. 다음은 Phase 7.4 evidence backend이며 Production은 변경하지 않았다.
+- 최우선: `chat-ugc-safety-room-moderation` Phase 7.4C-1~C-3의 로컬 구현, Development bucket/IAM/Functions/index와 경계 용량·접근 거부·cleanup 검증을 완료했다. 다음은 Phase 7.4D Rules·나머지 index/TTL·관리자 query이며 별도 사용자 승인 전 실행하지 않는다. Production은 변경하지 않았다.
 - Phase 7.4A evidence-first 순수 계약과 단위 테스트는 2026-08-21 완료했다. 텍스트·이미지 묶음 전체·동영상 전체의 공통 evidence bundle, `processing → available → accepted`, 신고 직후 자동 숨김 없음, 일반 단일 `holding`·같은 메시지 고유 2명 `reviewRequired`·기한 경과 holding 직접 조회, 같은 작성자 서로 다른 메시지 3개 + 전체 고유 신고자 2명/7일, 긴급 단일 `urgent`, 긴급 2명 또는 전체 3명/24시간 전역 비노출을 고정했다. 별도 관리자 queue projection과 72시간 scheduler는 만들지 않는다. 다음은 Phase 7.4B transaction이며 Production은 변경하지 않았다.
 
 1. Development 실기기 App Attest는 Apple Developer Program 가입 후 외부 의존 후속 작업으로 재개한다.
@@ -576,7 +603,7 @@
 
 ## 7. 다음 턴에서 바로 실행해야 할 작업
 
-1. Phase 7.4A evidence-first 순수 계약·단위 테스트와 문서 최신화를 완료했다. 다음은 Phase 7.4B preparation/accepted 확정·신고/삭제 transaction이며, 예상 read/write set과 service 경계를 다시 점검한 뒤 구현한다. Firestore/Storage/Rules/index/iOS와 Production은 별도 범위·승인 전 변경하지 않는다.
+1. Phase 7.4D 로컬 구현·Development 배포·350 MiB/5분 만료/운영 로그/cleanup QA를 완료했다. 다음 구현은 Phase 7.5 iOS 메시지 신고 UX·전역 숨김/복원이며, 변경 범위와 테스트 계획을 다시 점검하고 사용자 승인을 받은 뒤 진행한다. Production은 별도 승인 전 변경하지 않는다.
 2. 실제 기기 background FCM/APNs는 Apple Developer Program 가입 후 출시 전 gate에서 재개한다.
 3. Phase 3.1 종료 tombstone은 14일 scheduler 만료 시 자동 정리되며 즉시 추가 조치는 없다.
 4. Apple 로그인을 선택하면 `sign-in-with-apple-account-lifecycle`의 정책·콘솔·사용자 흐름·아키텍처 설계 하네스부터 진행하며 바로 구현하지 않는다.

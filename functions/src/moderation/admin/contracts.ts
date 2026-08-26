@@ -12,9 +12,16 @@ import {
   ReportTargetType,
 } from "../reports/contracts.js";
 import {ModerationAuditAction} from "../audit/contracts.js";
+import {MessageEvidenceDecision} from "../messageEvidence/contracts.js";
+
+export type AdminReportTargetType = ReportTargetType | "message";
+export type MessageModerationQueueView =
+  "urgent" | "reviewRequired" | "overdueHolding" |
+  "inReview" | "resolved" | "dismissed";
 
 export type ListModerationReportsInput = {
-  targetType: ReportTargetType;
+  targetType: AdminReportTargetType;
+  messageQueueView: MessageModerationQueueView | null;
   reviewState: ReportReviewState | null;
   priorityClass: ReportPriorityClass | null;
   pageSize: number;
@@ -22,10 +29,29 @@ export type ListModerationReportsInput = {
 };
 
 export type GetModerationReportDetailInput = {
-  targetType: ReportTargetType;
+  targetType: AdminReportTargetType;
   targetID: string;
   submissionPageSize: number;
   submissionCursor: string | null;
+};
+
+export type ResolveMessageModerationInput = {
+  incidentID: string;
+  reviewRevision: number;
+  decision: MessageEvidenceDecision;
+  restrictedUntil: Date | null;
+  expectedCaseVersion: number;
+  expectedAccountStateVersion: number | null;
+  reasonCode: string;
+  clientRequestID: string;
+};
+
+export type IssueMessageEvidenceViewURLInput = {
+  incidentID: string;
+  reviewRevision: number;
+  evidenceObjectID: string;
+  objectGeneration: string;
+  clientRequestID: string;
 };
 
 export type MutateModerationReviewInput = {
@@ -42,7 +68,7 @@ export type MutateAccountModerationInput = {
   action: "temporarilyRestrictAccount" | "permanentlySuspendAccount" | "liftAccountModeration";
   restrictedUntil: Date | null;
   reasonCode: string;
-  reportTargetType: ReportTargetType | null;
+  reportTargetType: AdminReportTargetType | null;
   reportTargetID: string | null;
   expectedStateVersion: number;
   clientRequestID: string;
@@ -89,6 +115,17 @@ function positiveInteger(
   return Math.min(value, maximum);
 }
 
+function nonNegativeInteger(
+  data: Record<string, unknown>,
+  key: string,
+): number {
+  const value = data[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new HttpsError("invalid-argument", `${key} 값이 올바르지 않습니다.`);
+  }
+  return value;
+}
+
 function clientRequestID(data: Record<string, unknown>): string {
   const value = requiredString(data, "clientRequestID", 64).toLowerCase();
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)) {
@@ -97,14 +134,34 @@ function clientRequestID(data: Record<string, unknown>): string {
   return value;
 }
 
-function targetType(data: Record<string, unknown>): ReportTargetType {
+function adminTargetType(data: Record<string, unknown>): AdminReportTargetType {
+  return requiredEnum(data, "targetType", ["user", "room", "message"] as const);
+}
+
+function reportTargetType(data: Record<string, unknown>): ReportTargetType {
   return requiredEnum(data, "targetType", ["user", "room"] as const);
 }
 
 export function parseListModerationReportsInput(data: unknown): ListModerationReportsInput {
   const record = recordData(data);
+  const parsedTargetType = adminTargetType(record);
+  const messageQueueView = optionalEnum(record, "messageQueueView", [
+    "urgent", "reviewRequired", "overdueHolding",
+    "inReview", "resolved", "dismissed",
+  ] as const);
+  if (parsedTargetType === "message" && messageQueueView === null) {
+    throw new HttpsError("invalid-argument", "메시지 신고 조회 view가 필요합니다.");
+  }
+  if (parsedTargetType !== "message" && messageQueueView !== null) {
+    throw new HttpsError("invalid-argument", "메시지 신고 view는 message 대상에만 사용할 수 있습니다.");
+  }
+  if (parsedTargetType === "message" &&
+    (record.reviewState !== undefined || record.priorityClass !== undefined)) {
+    throw new HttpsError("invalid-argument", "메시지 신고는 messageQueueView로만 필터링합니다.");
+  }
   return {
-    targetType: targetType(record),
+    targetType: parsedTargetType,
+    messageQueueView,
     reviewState: optionalEnum(
       record,
       "reviewState",
@@ -121,7 +178,7 @@ export function parseGetModerationReportDetailInput(
 ): GetModerationReportDetailInput {
   const record = recordData(data);
   return {
-    targetType: targetType(record),
+    targetType: adminTargetType(record),
     targetID: requiredDocumentID(requiredString(record, "targetID", 128), "targetID"),
     submissionPageSize: positiveInteger(record, "submissionPageSize", 100, 50),
     submissionCursor: optionalString(record, "submissionCursor", 1_024),
@@ -131,7 +188,7 @@ export function parseGetModerationReportDetailInput(
 export function parseMutateModerationReviewInput(data: unknown): MutateModerationReviewInput {
   const record = recordData(data);
   return {
-    targetType: targetType(record),
+    targetType: reportTargetType(record),
     targetID: requiredDocumentID(requiredString(record, "targetID", 128), "targetID"),
     action: requiredEnum(
       record,
@@ -140,6 +197,56 @@ export function parseMutateModerationReviewInput(data: unknown): MutateModeratio
     ),
     expectedCaseVersion: positiveInteger(record, "expectedCaseVersion", Number.MAX_SAFE_INTEGER),
     reasonCode: requiredString(record, "reasonCode", 64),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseResolveMessageModerationInput(data: unknown): ResolveMessageModerationInput {
+  const record = recordData(data);
+  const decision = requiredEnum(record, "decision", [
+    "dismissed", "contentDeleted", "warningOnly",
+    "temporaryRestriction", "permanentSuspension",
+  ] as const);
+  const restrictedUntil = optionalDate(record, "restrictedUntil");
+  const expectedAccountStateVersion = record.expectedAccountStateVersion === undefined ||
+    record.expectedAccountStateVersion === null ? null :
+    positiveInteger(record, "expectedAccountStateVersion", Number.MAX_SAFE_INTEGER);
+  if (decision === "temporaryRestriction" && restrictedUntil === null) {
+    throw new HttpsError("invalid-argument", "일시 제한 만료 시각이 필요합니다.");
+  }
+  if (decision !== "temporaryRestriction" && restrictedUntil !== null) {
+    throw new HttpsError("invalid-argument", "이 결정에는 제한 만료 시각을 사용할 수 없습니다.");
+  }
+  const sanctionsAccount = decision === "temporaryRestriction" ||
+    decision === "permanentSuspension";
+  if (sanctionsAccount !== (expectedAccountStateVersion !== null)) {
+    throw new HttpsError("invalid-argument", "계정 제재 결정에는 expectedAccountStateVersion이 필요합니다.");
+  }
+  return {
+    incidentID: requiredDocumentID(requiredString(record, "incidentID", 128), "incidentID"),
+    reviewRevision: nonNegativeInteger(record, "reviewRevision"),
+    decision,
+    restrictedUntil,
+    expectedCaseVersion: positiveInteger(record, "expectedCaseVersion", Number.MAX_SAFE_INTEGER),
+    expectedAccountStateVersion,
+    reasonCode: requiredString(record, "reasonCode", 64),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseIssueMessageEvidenceViewURLInput(
+  data: unknown,
+): IssueMessageEvidenceViewURLInput {
+  const record = recordData(data);
+  return {
+    incidentID: requiredDocumentID(requiredString(record, "incidentID", 128), "incidentID"),
+    reviewRevision: nonNegativeInteger(record, "reviewRevision"),
+    evidenceObjectID: requiredDocumentID(requiredString(record, "evidenceObjectID", 128), "evidenceObjectID"),
+    objectGeneration: (() => {
+      const value = requiredString(record, "objectGeneration", 32);
+      if (!/^[1-9][0-9]*$/.test(value)) throw new HttpsError("invalid-argument", "objectGeneration 값이 올바르지 않습니다.");
+      return value;
+    })(),
     clientRequestID: clientRequestID(record),
   };
 }
@@ -171,7 +278,7 @@ export function parseMutateAccountModerationInput(data: unknown): MutateAccountM
   const reportTargetType = optionalEnum(
     record,
     "reportTargetType",
-    ["user", "room"] as const,
+    ["user", "room", "message"] as const,
   );
   const reportTargetID = optionalString(record, "reportTargetID", 128);
   if ((reportTargetType === null) !== (reportTargetID === null)) {

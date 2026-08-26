@@ -349,7 +349,9 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - 삭제가 먼저 확정된 message는 `status=messageAlreadyDeleted`, `messageID`, `seq`를 반환하고 신고 원장·evidence·moderation count는 만들지 않는다. 새 `clientRequestID`이면 최상위 transport receipt를 만들고 공유 limiter slot 1개를 소비한다.
 - 신규 접수 성공은 `status=accepted`, incidentID/reviewRevision/submissionID, `queueClass=holding|reviewRequired|urgent`, `visibilityState`, `receivedAt`을 반환한다.
 - 기존 `listModerationReports`를 `targetType=message`일 때 `messageQueueView=urgent | reviewRequired | overdueHolding | inReview | resolved | dismissed`를 받도록 확장한다. `overdueHolding`은 `queueClass=holding && reviewDueAt<=serverNow`를 직접 조회하며 문서를 변경하지 않는다.
-- 기존 `getModerationReportDetail(targetType=message, targetID=incidentID)`은 현재 revision reporter submission, 작성자 최근 90일 확정 위반 참고값, evidence 상태와 object ID만 반환한다. byte URL은 반환하지 않는다.
+- 기존 `getModerationReportDetail(targetType=message, targetID=incidentID)`은 현재 revision reporter submission, 작성자 최근 90일 확정 위반 참고값, evidence 상태와 논리 object ID만 반환한다. byte URL과 과거 revision 상세는 반환하지 않는다.
+- `issueMessageEvidenceViewURL(incidentID, reviewRevision, evidenceObjectID, objectGeneration, clientRequestID)`은 active admin·App Check·5분 recent-auth와 read limiter를 확인하고 retained revision/bundle/object ownership을 재검증한 뒤 exact generation 5분 V4 signed GET URL 하나만 반환한다. 서버 생성 issuanceID를 opaque custom audit query에 포함하며 URL 응답 전에 구조화 발급 log write가 성공해야 한다.
+- `resolveMessageModeration(incidentID, reviewRevision, decision, restrictedUntil?, expectedCaseVersion, expectedAccountStateVersion?, reasonCode, clientRequestID)`은 message 종결 전용 authoritative API다. target UID, room/message/bundle은 incident에서 서버가 유도하고 decision은 `dismissed | contentDeleted | warningOnly | temporaryRestriction | permanentSuspension`으로 제한한다.
 
 #### Phase 7.4A — 순수 계약·단위 테스트
 
@@ -420,12 +422,26 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 #### Phase 7.4D — Rules·index·관리자 query·문서
 
+- 로컬 상태: 2026-08-26 구현·자동 테스트 완료. Functions 243/243, Rules 46/46, Firestore transaction 49/49, build·lint 오류 0. Development/Production 배포와 실제 IAM·Logging·DATA_READ smoke는 승인 gate로 유지한다.
+
+- 실행 경계는 로컬 구현·자동 테스트 완료 뒤 중단하고, 변경 대상과 rollback을 재감사해 사용자 별도 승인을 받은 경우에만 Development에 exact 배포한다. 로컬 전체 manifest를 일괄 동기화하거나 Production을 함께 변경하지 않는다.
 - Firestore Rules는 incident/revision/reporter/user marker/guard/evidence/job/confirmed violation을 모든 client read/write에서 deny한다.
-- Storage Rules는 evidence bucket/prefix를 모든 Firebase client SDK read/write에서 deny한다.
-- message incident index는 queue view별로 고정한다: `queueClass + reviewState + slaDueAt + lastReportedAt + __name__`, overdue는 `queueClass + reviewState + reviewDueAt + lastReportedAt + __name__`.
+- Storage Rules는 환경별 `moderationEvidence` Firebase target과 전용 deny-all rules file을 추가해 evidence bucket의 모든 Firebase client SDK read/write를 거부한다. signed URL 접근은 IAM·UBLA·public access prevention이 권위이며 wildcard CORS는 두지 않는다.
+- message incident actionable query는 `acceptanceState=reviewable`을 공통 조건으로 둔다. urgent/reviewRequired는 `reviewState=open,queueClass==view` 뒤 `slaDueAt ASC,lastReportedAt DESC,__name__ ASC`, overdueHolding은 `reviewState=open,queueClass=holding,reviewDueAt<=serverNow` 뒤 `reviewDueAt ASC,lastReportedAt DESC,__name__ ASC`, inReview는 `reviewState=inReview` 뒤 `priorityClass DESC,slaDueAt ASC,lastReportedAt DESC,__name__ ASC`, resolved/dismissed는 각 reviewState 뒤 `updatedAt DESC,__name__ DESC`로 고정한다. cursor에는 view와 모든 정렬값을 서명·검증해 다른 view 재사용을 거부한다.
 - user pattern marker의 `lastReportedAt`은 parent-scoped query로 `reportedMessages` 최근 3개와 `messageReporters` 최근 2개만 읽고 무제한 배열을 aggregate에 저장하지 않는다.
 - user 관리자 요약은 `messagePatternReviewUntil > serverNow`일 때만 반복 메시지 신고 신호를 활성 표시한다. 만료 시 문서를 재작성하는 scheduler는 두지 않는다.
 - 관리자 API는 source collection별 cursor를 사용하고 message/user/room을 한 cursor에 임의 병합하지 않는다. 관리자 웹은 별도 section/tab으로 표시한다.
+- 일반 관리자 상세 API는 현재 revision의 evidence 상태와 논리 object ID만 반환한다. Evidence 열람 API는 active admin·App Check·5분 recent-auth와 read limiter를 확인하고, 요청 revision이 incident의 현재 revision과 같고 해당 revision이 bundle을 참조하며 bundle/object가 available·보존 기간 내·cleanup 미시작인지 검증한다. Storage exact generation metadata의 bundle/attachment/attempt ownership까지 일치할 때만 read-only signer가 GET 전용 5분 V4 signed URL 하나를 메모리에서 만든다. list·prefix·일괄 발급과 write/delete URL은 금지한다.
+- 서버는 URL 응답 전에 Cloud Logging API로 `EVIDENCE_VIEW_URL_ISSUED` 구조화 로그 write 성공을 기다린다. 로그 실패 시 URL을 전달하지 않고, 재발급은 새 서버 생성 issuanceID와 새 로그를 만든다. 로그에는 actorUID와 incident/revision/bundle/논리 object/generation, requestID, issuanceID, 발급·만료 시각과 결과만 포함하며 URL·signature/query, bucket/path, 원문·bytes와 관리자 이메일·프로필은 기록하지 않는다.
+- signed URL에는 actorUID가 아닌 opaque `x-goog-custom-audit-issuance-id`를 서명해 넣고 Evidence bucket의 Cloud Storage `DATA_READ`를 명시적으로 활성화한다. 실제 GET/Range audit을 issuanceID로 발급 로그와 연결하며 여러 Range는 한 열람 세션으로 묶는다. 발급과 실제 GET audit은 `asia-northeast3`, Log Analytics, 1,095일 retention, lock, 최소 read IAM의 환경별 `moderation-evidence-audit` log bucket으로 route한다. 일반 `_Default` 접근 범위에는 민감 audit 사본을 두지 않는다.
+- Development 승인 뒤 log 인프라는 되돌릴 수 있는 순서로 적용한다: unlocked+Analytics+1,095일 bucket 생성 → 전용 sink/view와 `_Default` exclusion 구성 → Evidence `DATA_READ` 활성화 → 발급/GET/Range routing·query·권한 smoke → 누락 0 확인 뒤 마지막에 bucket lock. lock 이후 retention 축소·조기 삭제는 rollback하지 못하므로 smoke 전 lock하지 않고, Production은 같은 절차를 별도 승인으로 반복한다.
+- message 종결은 `resolveMessageModeration` 하나가 incident/revision, 동일 seq restore 또는 관리자 삭제 tombstone, confirmed violation, 조건부 계정 조치, retention/cleanup job과 mutation audit을 일관되게 갱신한다. `dismissed|contentDeleted|warningOnly`은 Evidence 즉시 cleanup, `temporaryRestriction|permanentSuspension`은 30일 보존이며 appeal/legal hold는 기존 계약을 따른다. stale case/account version과 `acceptanceState!=reviewable`은 거부한다.
+- terminal preparation은 reason/detail과 중복 room/message/source 식별자를 scrub하고 멱등 수렴에 필요한 최소 상태만 createdAt부터 30일 유지한 뒤 TTL 삭제한다. Evidence 접근 audit은 Firestore collection이나 TTL 대상이 아니다.
+- evidence copy는 destination object에 `Cache-Control: private, no-store, max-age=0`를 명시한다. URL은 DB·audit·애플리케이션 로그에 저장하지 않고 만료 뒤 재열람은 새 검증·audit·URL 발급으로 처리한다. Cloud Run 프록시 스트리밍과 관리자 저장·캡처 방지 DRM은 범위에서 제외한다.
+
+#### 논의 필요 사항
+
+- 없음. 2026-08-26 사용자 승인으로 Phase 7.4D의 요구사항·API·데이터·권한·query/index·감사 보존·Rules·로컬/Development 경계를 확정했다. 구현 또는 Development 실측에서 5분 Range 재생, Logging custom audit, IAM 등 플랫폼 제약이 계약과 다르게 확인되면 값을 임의 변경하지 않고 blocked로 보고한다.
 
 #### 변경 파일 후보
 
@@ -434,7 +450,8 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - `functions/src/moderation/admin/{contracts,service,functions}.ts`
 - `functions/src/chat/moderation/service.ts`, `functions/src/chat/cleanup/`
 - `functions/src/index.ts`, `functions/src/index.contract.test.ts`
-- `firestore.rules`, `storage.rules`, `firestore.indexes.json`
+- `firestore.rules`, `storage.moderation-evidence.rules`, `.firebaserc`, `firebase.chat-media.json`, `firestore.indexes.json`
+- Evidence access log writer·sink/filter·log bucket/Data Access/IAM을 정의하는 운영 설정과 검증 스크립트 후보
 - `contracts/chat-moderation-v1.json`, `DATA_SCHEMA.md`, entrypoint/QA 문서
 
 #### 완료 기준
@@ -446,6 +463,8 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - 72시간 holding은 scheduler/write 없이 server-now query에서만 overdue 목록에 포함된다.
 - cleanup 실패는 retryPending/failed로 남고 evidence를 조용히 유실하지 않는다.
 - 일반 사용자·비활성 admin·권한 없는 server identity가 evidence를 읽지 못한다.
+- current revision만 열람되고 과거 revision·cleanup 시작·만료·stale generation은 거부되며, 발급 로그와 실제 GET/Range가 issuanceID로 연결된다.
+- message decision별 restore/delete/account action/retention/cleanup이 원자적으로 일치하고 terminal preparation은 scrub 후 30일 TTL로 정리된다.
 
 ### Phase 7.5 — 신고 UX·관리자 queue·전역 숨김/복원
 

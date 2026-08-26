@@ -549,7 +549,7 @@
 - Phase 7.4B는 2026-08-24 clean break로 확정했다. 신규 attachment가 ready display generation/contentType을 저장하고 테스트 데이터 cleanup 뒤 신규 schema 메시지만 신고한다. 같은 reporter는 revision당 한 신고로 최초 reason/detail을 유지하며 processing은 재사용, accepted는 alreadyReported다. requestedAt과 acceptedAt을 분리하고 public cleanup은 awaitingEvidence를 claim하지 않는다. bundle reporter drain이 끝난 reviewable 상태에서만 관리자가 종결하며 삭제는 moderationRemoved, 기각 뒤 신고는 새 revision으로 시작한다. 7.4B는 내부 transaction/test까지만 구현하고 callable export·배포는 7.4C/D·iOS 준비 뒤로 미룬다.
 - iOS는 패션 매거진 에디토리얼 시각 언어의 간결한 `신고 처리 중` 상태만 표시한다. 앱이 살아 있고 결과를 확인할 수 있으면 accepted/확정 실패를 안내하고, 앱 종료·응답 유실로 결과를 알 수 없으면 추측 안내를 하지 않는다. 사용자가 다시 신고할 때 서버가 processing/accepted/failed를 확인해 기존 작업 재사용, `이미 신고한 메시지예요`, 또는 새 처리를 결정한다.
 - 총 신고 건수, 고유 신고자 수, 신고된 서로 다른 메시지 수와 관리자 확정 경고 수를 분리한다. 확정 위반 최근 90일 수는 1회 경고·2회 일시 제한 검토·3회 이상 장기 제한/정지 검토의 운영 참고값이며 자동 제재로 사용하지 않는다.
-- evidence 원본은 클라이언트에 공개하지 않고 활성 플랫폼 관리자의 서버 인증·단건 객체 조회만 허용한다. 실제 byte 전달 방식은 관리자 웹 구현 시 재검토한다.
+- evidence 원본은 클라이언트에 공개하지 않는다. active admin·App Check·5분 recent-auth와 보존 상태·exact generation을 검증한 read-only signer가 단건 5분 V4 signed GET URL만 제공한다. 발급 구조화 로그와 opaque issuanceID로 연결한 Cloud Storage `DATA_READ`는 서울 리전의 잠긴 전용 Log Analytics bucket에서 1,095일 보존하며 Firestore access-audit 문서는 만들지 않는다.
 - 기각·삭제만·경고만이면 처리 직후 evidence 삭제를 enqueue한다. 계정 제재 근거면 30일 이의제기 기간을 적용하고 기간 내 이의제기는 해결 직후, 미제기는 30일에 삭제한다.
 
 ### 완료 기준

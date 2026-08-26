@@ -6,9 +6,11 @@ export {
 } from "./moderation/reports/functions.js";
 export {
   getModerationReportDetail,
+  issueMessageEvidenceViewURL,
   listModerationReports,
   mutateAccountModeration,
   mutateModerationReview,
+  resolveMessageModeration,
 } from "./moderation/admin/functions.js";
 export {
   acknowledgeRoomClosure,

@@ -11,6 +11,9 @@
         ],
         "chatMediaQuarantine": [
           "outpick-664ae-chat-media-quarantine"
+        ],
+        "moderationEvidence": [
+          "outpick-664ae-moderation-evidence"
         ]
       }
     },
@@ -21,6 +24,9 @@
         ],
         "chatMediaQuarantine": [
           "outpick-test-chat-media-quarantine"
+        ],
+        "moderationEvidence": [
+          "outpick-test-moderation-evidence"
         ]
       }
     }

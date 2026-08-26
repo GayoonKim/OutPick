@@ -101,7 +101,7 @@ export function firebaseMessageEvidenceStorage(): MessageEvidenceStorage {
       try {
         const [copied] = await source.copy(destination, {
           contentType: input.source.contentType,
-          cacheControl: "private, no-store",
+          cacheControl: "private, no-store, max-age=0",
           metadata: ownership,
           preconditionOpts: {ifGenerationMatch: 0},
         });

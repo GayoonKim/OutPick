@@ -9,6 +9,7 @@ export const MESSAGE_EVIDENCE_MAX_COPY_ATTEMPTS = 3;
 export const MESSAGE_EVIDENCE_COPY_LEASE_MILLIS = 12 * 60 * 1000;
 export const MESSAGE_EVIDENCE_COMPLETED_JOB_TTL_MILLIS = 7 * 24 * 60 * 60 * 1000;
 export const MESSAGE_REPORT_REQUEST_RECEIPT_TTL_MILLIS = 30 * 24 * 60 * 60 * 1000;
+export const MESSAGE_REPORT_PREPARATION_TTL_MILLIS = 30 * 24 * 60 * 60 * 1000;
 
 export type MessageReviewState = "open" | "inReview" | "resolved" | "dismissed";
 export type MessageQueueClass = "holding" | "reviewRequired" | "urgent";
