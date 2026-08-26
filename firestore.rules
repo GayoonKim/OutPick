@@ -264,6 +264,38 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /moderationMessageReportPreparations/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationMessageReportRequests/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationMessageIncidents/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationMessageGuards/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationMessageEvidence/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationEvidenceCopyJobs/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationEvidenceCleanupJobs/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /moderationConfirmedViolations/{document=**} {
+      allow read, write: if false;
+    }
+
     match /moderationReportRateLimitBuckets/{bucketID} {
       allow read, write: if false;
     }

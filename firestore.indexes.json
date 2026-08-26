@@ -872,6 +872,59 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "moderationMessageIncidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "acceptanceState", "order": "ASCENDING"},
+        {"fieldPath": "reviewState", "order": "ASCENDING"},
+        {"fieldPath": "queueClass", "order": "ASCENDING"},
+        {"fieldPath": "slaDueAt", "order": "ASCENDING"},
+        {"fieldPath": "lastReportedAt", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "moderationMessageIncidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "acceptanceState", "order": "ASCENDING"},
+        {"fieldPath": "reviewState", "order": "ASCENDING"},
+        {"fieldPath": "queueClass", "order": "ASCENDING"},
+        {"fieldPath": "reviewDueAt", "order": "ASCENDING"},
+        {"fieldPath": "lastReportedAt", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "moderationMessageIncidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "acceptanceState", "order": "ASCENDING"},
+        {"fieldPath": "reviewState", "order": "ASCENDING"},
+        {"fieldPath": "priorityClass", "order": "DESCENDING"},
+        {"fieldPath": "slaDueAt", "order": "ASCENDING"},
+        {"fieldPath": "lastReportedAt", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "moderationMessageIncidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "reviewState", "order": "ASCENDING"},
+        {"fieldPath": "updatedAt", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "moderationMessageEvidence",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "state", "order": "ASCENDING"},
+        {"fieldPath": "deleteAfter", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": [
@@ -972,6 +1025,12 @@
     },
     {
       "collectionGroup": "moderationReportRateLimitBuckets",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "moderationMessageReportPreparations",
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []

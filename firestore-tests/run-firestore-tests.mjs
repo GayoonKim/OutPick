@@ -39,6 +39,7 @@ const result = spawnSync(
       "profile.rules.test.mjs profile-storage.rules.test.mjs " +
       "chat-media-storage.rules.test.mjs " +
       "chat-media-quarantine-storage.rules.test.mjs " +
+      "moderation-evidence-storage.rules.test.mjs " +
       "moderation-capabilities.rules.test.mjs " +
       "brand-storage.rules.test.mjs " +
       "&& node --test --test-concurrency=1 profile-transactions.emulator.test.mjs " +

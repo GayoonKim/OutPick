@@ -7,6 +7,10 @@
     {
       "target": "chatMediaQuarantine",
       "rules": "storage.chat-media-quarantine.rules"
+    },
+    {
+      "target": "moderationEvidence",
+      "rules": "storage.moderation-evidence.rules"
     }
   ]
 }
