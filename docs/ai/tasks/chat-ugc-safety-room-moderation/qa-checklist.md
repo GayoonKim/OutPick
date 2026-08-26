@@ -321,8 +321,20 @@ unban·명시적 재가입:
 - [x] copy는 최초 포함 최대 3회와 1분/2분 backoff, 9분 timeout/12분 lease, generation-scoped destination과 generation+lease fence를 사용한다. 마지막 실패는 부분 객체를 모두 삭제한 뒤 receipt/preparation/guard/public cleanup을 terminal 상태로 수렴시킨다.
 - [x] retention cleanup은 generation 일치 evidence 객체를 전부 삭제한 뒤 bundle 문서를 완전 삭제하고 비민감 cleanup receipt만 남긴다. Development 실제 이미지/영상 cleanup과 soft delete 0초·versioning off·잔여 0을 확인했으며 TTL field override는 Phase 7.4D gate다.
 - [x] Development evidence bucket은 UBLA/public access prevention과 legacy/public binding 0을 유지하고, 익명·bucket operator 사용자·무관한 chat-media 서버 계정의 object read를 거부한다. 전용 evidence runtime의 실제 copy/cleanup 성공으로 허용 경로를 확인했다.
-- [ ] Evidence 원본은 일반 클라이언트와 비활성/비관리자에게 거부되고 활성 플랫폼 관리자의 서버 인증 단건 조회와 audit만 허용된다.
-- [ ] 기각·삭제만·경고만 evidence는 즉시 cleanup enqueue되고 계정 제재 evidence는 30일 이의제기 계약대로 삭제된다.
+- [x] Evidence 전용 Firebase Storage target과 deny-all rules의 모든 client read/write/delete 거부, copy/cleanup과 분리된 환경별 signer runtime을 로컬 코드·Storage emulator로 검증했다. Development signer의 object get·self signBlob·최소 Firestore read/Logging write와 Storage list/create/update/delete 부재도 확인했다.
+- [x] 일반 관리자 상세는 current revision의 evidence 상태·논리 object ID·exact generation만 반환하고 URL을 포함하지 않는다. 별도 API의 active admin·App Check·5분 recent-auth·read limiter와 current revision/bundle/object·stale generation·cleanup/보존 상태 차단을 코드와 emulator로 검증했다.
+- [x] 열람 API는 exact Storage metadata의 bundle/attachment/attempt/source generation/contentType/bytes/object generation을 재검증하고 V4 signed GET을 5분 생성한다. Cloud Logging write 실패 시 URL을 반환하지 않고 issuanceID를 매번 새로 만드는 흐름을 fake signer/writer와 emulator로 검증했고 Development 실제 Google signer/Logging smoke도 통과했다.
+- [x] 구조화 발급 event는 actorUID, incidentID, reviewRevision, bundleID, 논리 object ID, objectGeneration, requestID, issuanceID, issuedAt, urlExpiresAt과 결과만 구성하고 URL·signature/query, bucket/path, 원문·bytes·관리자 이메일·프로필 및 Firestore access audit을 만들지 않도록 구현·검증했다.
+- [x] signed URL의 opaque `x-goog-custom-audit-issuance-id`와 명시적으로 활성화한 Cloud Storage `DATA_READ`가 실제 GET/Range를 같은 issuanceID로 기록한다. 발급 로그와 실제 접근 로그는 서울 리전의 전용 Log Analytics bucket에만 route되고 retention 1,095일·lock·최소 read IAM·일반 `_Default` 비노출을 만족한다.
+- [x] Development log 인프라는 unlocked Analytics bucket → sink/view·`_Default` exclusion → `DATA_READ` → routing/query/IAM smoke 순서로 검증하고 누락 0 확인 뒤 마지막에만 lock한다. lock의 비가역성과 Production 별도 승인 gate를 확인한다.
+- 2026-08-26 Development 일회성 active admin/App Check/PNG Evidence fixture로 실제 URL 발급, 전체 GET, `bytes=0-0` Range GET과 캐시 헤더를 통과했다. 같은 issuanceID로 발급 event 1건·Storage GET 2건이 전용 view에 연결되고 `_Default`는 0건이었다. fixture·Auth·App Check·rate bucket 잔여 0과 기존 Auth 2명·active platform admin 0명 원복 뒤 bucket을 `locked=true`로 잠갔다. Production은 미변경이다.
+- [x] Logs Explorer/Analytics에서 기간, actorUID, incidentID, reviewRevision, 논리 object ID, issuanceID, 결과로 조회·정렬할 수 있다. 여러 Range GET은 한 issuanceID 세션으로 묶이고 signed URL 공유자의 실제 신원은 증명하지 못한다는 운영 한계를 문서화한다.
+- [x] Evidence copy metadata는 `Cache-Control: private, no-store, max-age=0`이고 단건 V4 read URL만 생성하며 URL을 DB·audit·애플리케이션 로그 payload에 넣지 않는다. Development 실제 HTTP 전체/Range 응답에서도 같은 캐시 정책을 확인했다.
+- [x] 5분 URL은 유효 PNG와 정확히 350 MiB인 재생 가능 MP4의 최초 표시·원격 video track probe·전체 다운로드·앞/뒤 HTTP Range를 통과했다. 이미지·영상 기존 URL은 만료 뒤 GCS HTTP 400으로 거부됐고, recent-auth 갱신 후 새 URL·새 issuanceID와 Range 성공으로 수렴했다.
+- [x] 기각·삭제만·경고만 Evidence는 즉시 cleanup enqueue되고 계정 제재 Evidence는 30일 뒤 scheduler drain이 cleanup job으로 전환됨을 emulator로 검증했다.
+- [x] `resolveMessageModeration`은 decision별 same-seq restore 또는 moderationRemoved tombstone, confirmed violation, 조건부 제한/정지, Evidence retention/cleanup과 audit을 한 transaction으로 갱신하고 stale case/account version·draining incident를 거부한다.
+- [x] actionable message queue는 `acceptanceState=reviewable`만 포함하고 urgent/reviewRequired/overdueHolding/inReview/resolved/dismissed의 고정 정렬·view-scoped cursor/index 계약을 단위·emulator 테스트로 검증했다.
+- [x] terminal preparation은 reason/detail과 중복 room/message/source 식별자를 scrub하고 최소 수렴 상태와 `createdAt + 30일` expiresAt만 남기며 TTL manifest에 포함된다.
 
 ## Phase 8 — iOS UX
 
