@@ -455,7 +455,7 @@ private class MessagePreviewView: UIView {
         // 기본 본문/닉네임 세팅
         nicknameLabel.text = message.senderNickname
         if message.isDeleted {
-            messageLabel.text = "삭제된 메시지입니다."
+            messageLabel.text = "삭제된 메시지입니다"
         } else if let text = message.msg, !text.isEmpty {
             messageLabel.text = text
         } else if message.hasDisplayableAttachments {
@@ -481,7 +481,7 @@ private class MessagePreviewView: UIView {
         // 답장 미리보기 표시/토글
         if let rp = message.replyPreview {
             replyPreviewNameLabel.text = rp.sender
-            replyPreviewMsgLabel.text = rp.isDeleted ? "삭제된 메시지입니다." : rp.text
+            replyPreviewMsgLabel.text = rp.isDeleted ? "삭제된 메시지입니다" : rp.text
             replyPreviewContainer.isHidden = false
             messageTopToBubbleTop?.isActive = false
             messageTopToReplyBottom?.isActive = true

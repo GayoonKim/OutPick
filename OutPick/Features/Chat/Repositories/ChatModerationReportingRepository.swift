@@ -1,6 +1,10 @@
 import Foundation
 
 protocol ChatModerationReportingRepositoryProtocol {
+    func submitMessageReport(
+        _ command: ChatMessageReportCommand
+    ) async throws -> ChatMessageReportReceipt
+
     func submitUserReport(
         _ command: ChatUserReportCommand
     ) async throws -> ChatModerationReportReceipt
@@ -16,6 +20,33 @@ final class CloudFunctionsChatModerationReportingRepository:
 
     init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
         self.transport = transport
+    }
+
+    func submitMessageReport(
+        _ command: ChatMessageReportCommand
+    ) async throws -> ChatMessageReportReceipt {
+        var data: [String: Any] = [
+            "roomID": command.roomID,
+            "messageID": command.messageID,
+            "reason": command.reason.rawValue,
+            "clientRequestID": command.clientRequestID.uuidString.lowercased()
+        ]
+        if let detail = command.detail { data["detail"] = detail }
+        let response = try await transport.call("submitMessageReport", data: data)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        guard let status = ChatMessageReportStatus(rawValue: try decoder.string("status")) else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        return ChatMessageReportReceipt(
+            status: status,
+            submissionID: decoder.optionalString("submissionID"),
+            isDeduplicated: try decoder.bool("deduplicated"),
+            isAlreadyReported: try decoder.bool("alreadyReported"),
+            visibilityState: try decoder.string("visibilityState"),
+            seq: decoder.optionalInt("seq").map(Int64.init),
+            receivedAt: decoder.optionalDate("receivedAt"),
+            originalReceivedAt: decoder.optionalDate("originalReceivedAt")
+        )
     }
 
     func submitUserReport(

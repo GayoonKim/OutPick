@@ -48,6 +48,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let loadImageDataProvider: LoadImageDataProvider?
     private let photoLibrarySaver: PhotoLibrarySaving
     private let onClose: (() -> Void)?
+    private let onReport: ((SimpleImageViewerVC) -> Void)?
     private let thumbnailMaxBytes = 12 * 1024 * 1024
     private let originalMaxBytes = 60 * 1024 * 1024
     private let swipeDownDismissTranslationThreshold: CGFloat = 120
@@ -69,6 +70,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private var isChromeVisible = false
     private var didInitializeChromeTransforms = false
     private var saveButton: UIButton!
+    private var reportButton: UIButton?
 
     private var pageCount: Int {
         pages.count
@@ -86,7 +88,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         loadImageProvider: LoadImageProvider?,
         loadImageDataProvider: LoadImageDataProvider? = nil,
         photoLibrarySaver: PhotoLibrarySaving,
-        onClose: (() -> Void)? = nil
+        onClose: (() -> Void)? = nil,
+        onReport: ((SimpleImageViewerVC) -> Void)? = nil
     ) {
         self.pages = pages
         self.startIndex = startIndex
@@ -95,6 +98,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         self.loadImageDataProvider = loadImageDataProvider
         self.photoLibrarySaver = photoLibrarySaver
         self.onClose = onClose
+        self.onReport = onReport
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -392,6 +396,10 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         }
     }
 
+    @objc private func reportTapped() {
+        onReport?(self)
+    }
+
     private func saveImageToLibrary(_ image: UIImage) {
         Task { [weak self] in
             guard let self else { return }
@@ -478,6 +486,25 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
             saveButton.heightAnchor.constraint(equalToConstant: 28)
         ])
 
+        if onReport != nil {
+            let reportButton = UIButton(type: .system)
+            reportButton.setTitle("신고", for: .normal)
+            reportButton.setTitleColor(.white, for: .normal)
+            reportButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+            reportButton.titleLabel?.adjustsFontForContentSizeCategory = true
+            reportButton.accessibilityLabel = "이 메시지 신고"
+            reportButton.translatesAutoresizingMaskIntoConstraints = false
+            reportButton.addTarget(self, action: #selector(reportTapped), for: .touchUpInside)
+            bottomBar.addSubview(reportButton)
+            NSLayoutConstraint.activate([
+                reportButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
+                reportButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+                reportButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                reportButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            ])
+            self.reportButton = reportButton
+        }
+
         closeButton = UIButton(type: .system)
         closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         closeButton.tintColor = .white
@@ -557,7 +584,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
             if role == .demand {
                 if Task.isCancelled { return }
-                if await self.shouldResolveThumbnail(for: index, page: page),
+                if self.shouldResolveThumbnail(for: index, page: page),
                    let thumbnail = await self.loadThumbnail(for: page) {
                     self.setImage(thumbnail, at: index)
                 }
@@ -568,7 +595,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 }
             } else {
                 if Task.isCancelled { return }
-                if await self.shouldResolveThumbnail(for: index, page: page),
+                if self.shouldResolveThumbnail(for: index, page: page),
                    let thumbnail = await self.loadThumbnail(for: page) {
                     self.setImage(thumbnail, at: index)
                 }

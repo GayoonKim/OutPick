@@ -25,22 +25,31 @@ protocol ChatRoomClosureListUpdating: AnyObject {
 protocol ChatRoomRouting: AnyObject {
     func showSettings(from source: ChatViewController)
     func showUserProfile(from source: ChatViewController, userID: String, nickname: String, avatarPath: String?)
+    func showMessageReport(from source: ChatViewController, messageID: String)
     func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent)
     func showImageViewer(
         from source: ChatViewController,
+        messageID: String,
+        canReport: Bool,
         pages: [SimpleImageViewerVC.ProgressivePage],
         startIndex: Int,
         cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
         loadImageProvider: SimpleImageViewerVC.LoadImageProvider?,
         loadImageDataProvider: SimpleImageViewerVC.LoadImageDataProvider?
     )
-    func showVideoPlayer(from source: ChatViewController, path: String)
+    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String)
+    func dismissPresentedMedia(from source: ChatViewController, deletedMessageIDs: Set<String>)
     func handleRoomExit(from source: ChatViewController, roomID: String)
     func handleRoomClosure(from source: ChatViewController, event: RealtimeRoomClosureEvent)
 }
 
 @MainActor
 final class ChatCoordinator {
+    private struct PresentedMediaContext {
+        weak var controller: UIViewController?
+        let messageID: String
+    }
+
 
     private struct NavigationSnapshot: Equatable {
         let revision: UInt64
@@ -55,6 +64,7 @@ final class ChatCoordinator {
     private var userProfileDetailCoordinator: UserProfileDetailCoordinator?
     private var navigationRevisions: [ObjectIdentifier: UInt64] = [:]
     private var roomClosurePresentationState = ChatRoomClosurePresentationState()
+    private var presentedMediaContexts: [ObjectIdentifier: PresentedMediaContext] = [:]
     private let openRoomRequests = ChatOpenRoomRequestRegistry<
         ObjectIdentifier,
         NavigationSnapshot
@@ -422,6 +432,46 @@ final class ChatCoordinator {
         userProfileDetailCoordinator = coordinator
         coordinator.start(userID: userID, nickname: nickname, avatarPath: avatarPath)
     }
+
+    private func presentMessageReport(
+        from presenter: UIViewController,
+        source: ChatViewController,
+        roomID: String,
+        messageID: String,
+        isMediaContext: Bool
+    ) {
+        let reportViewController = ChatMessageReportViewController(
+            viewModel: container.makeMessageReportViewModel(
+                roomID: roomID,
+                messageID: messageID,
+                isMediaContext: isMediaContext
+            )
+        )
+        let navigationController = UINavigationController(rootViewController: reportViewController)
+        navigationController.modalPresentationStyle = .formSheet
+        reportViewController.onCancel = { [weak navigationController] in
+            navigationController?.dismiss(animated: true)
+        }
+        reportViewController.onCompletion = { [weak source, weak navigationController] completion in
+            navigationController?.dismiss(animated: true) {
+                guard let source else { return }
+                switch completion {
+                case .accepted:
+                    source.showRoutingFailure("신고가 접수되었어요")
+                case .processing:
+                    source.showRoutingFailure("신고를 처리 중이에요")
+                case .alreadyReported:
+                    source.showRoutingFailure("이미 신고한 메시지예요")
+                case .messageAlreadyDeleted:
+                    source.showRoutingFailure("이미 삭제된 메시지예요")
+                    Task { @MainActor [weak source] in
+                        await source?.reconcileDeletionAfterReport()
+                    }
+                }
+            }
+        }
+        presenter.present(navigationController, animated: true)
+    }
 }
 
 extension ChatCoordinator: ChatRoomRouting {
@@ -481,6 +531,17 @@ extension ChatCoordinator: ChatRoomRouting {
         presentUserProfile(from: source, userID: userID, nickname: nickname, avatarPath: avatarPath)
     }
 
+    func showMessageReport(from source: ChatViewController, messageID: String) {
+        guard let roomID = source.room?.id, !roomID.isEmpty, !messageID.isEmpty else { return }
+        presentMessageReport(
+            from: source,
+            source: source,
+            roomID: roomID,
+            messageID: messageID,
+            isMediaContext: false
+        )
+    }
+
     func openLookbookSharedContent(from source: ChatViewController, sharedContent: LookbookSharedContent) {
         Task { @MainActor [weak self, weak source] in
             guard let self, let source, let appContentRouter else { return }
@@ -495,6 +556,8 @@ extension ChatCoordinator: ChatRoomRouting {
 
     func showImageViewer(
         from source: ChatViewController,
+        messageID: String,
+        canReport: Bool,
         pages: [SimpleImageViewerVC.ProgressivePage],
         startIndex: Int,
         cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?,
@@ -508,14 +571,25 @@ extension ChatCoordinator: ChatRoomRouting {
             cachedImageProvider: cachedImageProvider,
             loadImageProvider: loadImageProvider,
             loadImageDataProvider: loadImageDataProvider,
-            photoLibrarySaver: container.makePhotoLibrarySaver()
+            photoLibrarySaver: container.makePhotoLibrarySaver(),
+            onReport: canReport ? { [weak self, weak source] viewer in
+                    guard let self, let source, let roomID = source.room?.id else { return }
+                    self.presentMessageReport(
+                        from: viewer,
+                        source: source,
+                        roomID: roomID,
+                        messageID: messageID,
+                        isMediaContext: true
+                    )
+                } : nil
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve
+        trackPresentedMedia(viewer, messageID: messageID)
         source.present(viewer, animated: true)
     }
 
-    func showVideoPlayer(from source: ChatViewController, path: String) {
+    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String) {
         Task { @MainActor [weak self, weak source] in
             guard let self, let source else { return }
 
@@ -528,6 +602,7 @@ extension ChatCoordinator: ChatRoomRouting {
                     photoLibrarySaver: container.makePhotoLibrarySaver()
                 )
                 playerViewController.modalPresentationStyle = .fullScreen
+                self.trackPresentedMedia(playerViewController, messageID: messageID)
                 source.present(playerViewController, animated: true)
             } catch {
                 AlertManager.showAlertNoHandler(
@@ -537,6 +612,27 @@ extension ChatCoordinator: ChatRoomRouting {
                 )
             }
         }
+    }
+
+    func dismissPresentedMedia(
+        from source: ChatViewController,
+        deletedMessageIDs: Set<String>
+    ) {
+        guard let presented = source.presentedViewController else { return }
+        let identifier = ObjectIdentifier(presented)
+        guard let context = presentedMediaContexts[identifier],
+              context.controller === presented,
+              deletedMessageIDs.contains(context.messageID) else { return }
+        presentedMediaContexts.removeValue(forKey: identifier)
+        presented.dismiss(animated: true)
+    }
+
+    private func trackPresentedMedia(_ controller: UIViewController, messageID: String) {
+        presentedMediaContexts = presentedMediaContexts.filter { $0.value.controller != nil }
+        presentedMediaContexts[ObjectIdentifier(controller)] = PresentedMediaContext(
+            controller: controller,
+            messageID: messageID
+        )
     }
 
     func handleRoomExit(from source: ChatViewController, roomID: String) {

@@ -508,7 +508,7 @@ class ChatMessageCell: UICollectionViewCell {
         failedIconImageView.isHidden = true
         resetMediaUploadRecoveryConstraints()
     }
-    
+
     func configureWithMessage(
         with message: ChatMessage,
         avatarLoader: ((String) async -> UIImage?)? = nil
@@ -532,12 +532,13 @@ class ChatMessageCell: UICollectionViewCell {
         configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
 
         if message.isDeleted {
-            messageLabel.text = "삭제된 메시지입니다."
+            messageLabel.text = "삭제된 메시지입니다"
             messageLabel.textColor = OutPickTheme.ColorToken.textTertiary
         } else {
             messageLabel.text = message.msg
             messageLabel.textColor = OutPickTheme.ColorToken.textPrimary
         }
+        messageLabel.textAlignment = .left
         imagesPreviewCollectionView.isHidden = true
         
         let containerWidth = UIScreen.main.bounds.width * 0.7
@@ -591,20 +592,13 @@ class ChatMessageCell: UICollectionViewCell {
         ].compactMap{ $0 })
         
         // 답장 프리뷰 처리
-        if message.isDeleted {
-            // 🔹 원본 메시지가 삭제된 경우: 프리뷰를 아예 숨기고 기본 레이아웃로 복귀
-            replyPreviewContainer.isHidden = true
-            replyPreviewSeparator.isHidden = true
-            NSLayoutConstraint.deactivate([messageLabelTopConsraint!])
-            messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
-            NSLayoutConstraint.activate([ messageLabelTopConsraint! ])
-        } else if let replyMessage = message.replyPreview {
+        if let replyMessage = message.replyPreview {
             // 🔹 답장 프리뷰 표시 (참조된 메시지가 삭제되었으면 플레이스홀더만)
             replyPreviewContainer.isHidden = false
             replyPreviewSeparator.isHidden = false
             replyPreviewNameLabel.text = replyMessage.sender
             if replyMessage.isDeleted {
-                replyPreviewMsgLabel.text = "삭제된 메시지입니다."
+                replyPreviewMsgLabel.text = "삭제된 메시지입니다"
             } else {
                 replyPreviewMsgLabel.text = replyMessage.text
             }
@@ -642,95 +636,9 @@ class ChatMessageCell: UICollectionViewCell {
         resetDynamicLayoutConstraintsForReconfigure()
         messageLabel.attributedText = nil
         
-        // 삭제된 메시지를 이미지가 아니라, "삭제된 메시지입니다."로 표시
+        // 기존 메시지 레이아웃을 유지하면서 미디어 본문만 삭제 문구로 교체한다.
         if message.isDeleted {
-            bubbleView.isHidden = false
-            messageLabel.isHidden = false
-            imagesPreviewCollectionView.isHidden = true
-            imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
-            lookbookShareContentView.prepareForReuse()
-            lookbookShareContentView.isHidden = true
-            representedLookbookSharedContent = nil
-
-            messageLabel.text = "삭제된 메시지입니다."
-            messageLabel.textColor = OutPickTheme.ColorToken.textTertiary
-
-            NSLayoutConstraint.deactivate([
-                imagePreviewCollectionViewTopConstraint,
-                imagePreviewCollectionViewLeadingConstraint,
-                imagePreviewCollectionViewTrailingConstraint,
-                imagePreviewCollectionViewBottomConstraint,
-                imagePreviewCollectionViewWidthConstraint,
-                imagePreviewCollectionViewHeightConstraint
-            ].compactMap { $0 })
-            imagePreviewCollectionViewTopConstraint = nil
-            imagePreviewCollectionViewLeadingConstraint = nil
-            imagePreviewCollectionViewTrailingConstraint = nil
-            imagePreviewCollectionViewBottomConstraint = nil
-            imagePreviewCollectionViewWidthConstraint = nil
-            imagePreviewCollectionViewHeightConstraint = nil
-
-            let containerWidth = UIScreen.main.bounds.width * 0.7
-
-            let isMine = LoginManager.shared.canonicalUserID == message.senderUID
-            configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
-            if isMine {
-                // 본인이 보낸(삭제된) 메시지로 표시
-                bubbleView.backgroundColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.18)
-                bubbleView.layer.borderWidth = 1
-                bubbleView.layer.borderColor = OutPickTheme.ColorToken.accent.withAlphaComponent(0.28).cgColor
-
-                bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20)
-                bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
-                bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor)
-                bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-            } else {
-                // 상대방이 보낸(삭제된) 메시지로 표시
-                bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
-                bubbleView.layer.borderWidth = 0
-                bubbleView.layer.borderColor = nil
-
-                bubbleViewLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
-                bubbleViewTrailingConstraint = bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -10)
-                bubbleViewTopConstraint = bubbleView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
-                bubbleViewBottomConstraint = bubbleView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-            }
-
-            widthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualToConstant: containerWidth)
-            widthConstraint?.isActive = true
-
-            // 실패 아이콘은 숨김
-            failedIconImageView.isHidden = true
-            failedIconImageViewCenterYConstraint?.isActive = false
-            failedIconImageViewTrainlingConstraint?.isActive = false
-            failedIconImageViewCenterYConstraint = nil
-            failedIconImageViewTrainlingConstraint = nil
-
-            // 답장 프리뷰는 숨김, 메시지 라벨의 top을 버블 top으로
-            replyPreviewContainer.isHidden = true
-            replyPreviewSeparator.isHidden = true
-            if let top = messageLabelTopConsraint { NSLayoutConstraint.deactivate([top]) }
-            messageLabelTopConsraint = messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10)
-            messageLabelTopConsraint?.isActive = true
-
-            NSLayoutConstraint.activate([
-                bubbleViewLeadingConstraint,
-                bubbleViewTrailingConstraint,
-                bubbleViewTopConstraint,
-                bubbleViewBottomConstraint
-            ].compactMap { $0 })
-
-            // Sent time for deleted-as-text case (실패 메시지는 숨김)
-            if message.isFailed {
-                timeLabel.isHidden = true
-            } else {
-                timeLabel.isHidden = false
-                timeLabel.text = formattedTime(message.sentAt)
-                mountTimeLabel(on: bubbleView, isMine: isMine)
-            }
-
-            self.setNeedsLayout()
-            self.layoutIfNeeded()
+            configureWithMessage(with: message, avatarLoader: avatarLoader)
             return
         }
 

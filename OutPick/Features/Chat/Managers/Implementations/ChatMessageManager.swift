@@ -6,25 +6,30 @@
 //
 
 import Foundation
-import Combine
 
 final class ChatMessageManager: ChatMessageManaging {
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
     private let messagePersistence: ChatMessagePersisting
     private let profileCache: ChatProfileCachePersisting
+    private let deletionSanitizer: ChatDeletionSyncUseCaseProtocol?
+    private let currentAccountID: @Sendable () -> String
     private let profileDisplayCacheLimit = 20
     
     init(
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
         moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol = CloudFunctionsChatModerationLifecycleRepository(),
         messagePersistence: ChatMessagePersisting,
-        profileCache: ChatProfileCachePersisting
+        profileCache: ChatProfileCachePersisting,
+        deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
+        currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.messageRepository = messageRepository
         self.moderationLifecycleRepository = moderationLifecycleRepository
         self.messagePersistence = messagePersistence
         self.profileCache = profileCache
+        self.deletionSanitizer = deletionSanitizer
+        self.currentAccountID = currentAccountID
     }
 
     func loadLocalInitialWindow(
@@ -80,10 +85,11 @@ final class ChatMessageManager: ChatMessageManaging {
     ) async throws -> ChatInitialWindow {
         switch mode {
         case .latestTail(let latestSeq):
-            let messages = try await messageRepository.fetchLatestMessages(
+            let fetched = try await messageRepository.fetchLatestMessages(
                 for: room,
                 limit: policy.latestTailSize
             )
+            let messages = try await sanitizeForAdmission(fetched, roomID: room.id)
             return try await appendingFailedOutgoingMessages(
                 to: makeInitialWindow(
                 messages: messages,
@@ -105,10 +111,10 @@ final class ChatMessageManager: ChatMessageManaging {
                 limit: policy.unreadAfterSize
             )
 
-            let messages = combineAndSortInitialWindow(
+            let messages = try await sanitizeForAdmission(combineAndSortInitialWindow(
                 before: try await beforeMessages,
                 after: try await afterMessages
-            )
+            ), roomID: room.id)
             return try await appendingFailedOutgoingMessages(
                 to: makeInitialWindow(
                 messages: messages,
@@ -153,11 +159,12 @@ final class ChatMessageManager: ChatMessageManaging {
 
         let olderDeficit = max(0, normalizedBefore - localOlder.count)
         if olderDeficit > 0 {
-            let serverOlder = try await messageRepository.fetchOlderMessages(
+            let fetchedOlder = try await messageRepository.fetchOlderMessages(
                 for: room,
                 before: anchor.ID,
                 limit: olderDeficit
             )
+            let serverOlder = try await sanitizeForAdmission(fetchedOlder, roomID: roomID)
             if !serverOlder.isEmpty {
                 fetchedFromServer.append(contentsOf: serverOlder)
                 // older는 ASC 반환. 로컬 older 앞쪽으로 합쳐준다.
@@ -169,11 +176,12 @@ final class ChatMessageManager: ChatMessageManaging {
 
         let newerDeficit = max(0, normalizedAfter - localNewer.count)
         if newerDeficit > 0 {
-            let serverNewer = try await messageRepository.fetchMessagesAfter(
+            let fetchedNewer = try await messageRepository.fetchMessagesAfter(
                 room: room,
                 after: anchor.ID,
                 limit: newerDeficit
             )
+            let serverNewer = try await sanitizeForAdmission(fetchedNewer, roomID: roomID)
             if !serverNewer.isEmpty {
                 fetchedFromServer.append(contentsOf: serverNewer)
                 let localIDs = Set(localNewer.map(\.ID))
@@ -205,7 +213,7 @@ final class ChatMessageManager: ChatMessageManaging {
             return lhs.ID < rhs.ID
         }
     }
-    
+
     func loadOlderMessages(room: ChatRoom, before messageID: String?) async throws -> [ChatMessage] {
         let roomID = room.id
         
@@ -216,11 +224,12 @@ final class ChatMessageManager: ChatMessageManaging {
         // 2. 부족분은 서버에서 채우기
         if local.count < 100 {
             let needed = 100 - local.count
-            let server = try await messageRepository.fetchOlderMessages(
+            let fetched = try await messageRepository.fetchOlderMessages(
                 for: room,
                 before: messageID ?? "",
                 limit: needed
             )
+            let server = try await sanitizeForAdmission(fetched, roomID: roomID)
             
             if !server.isEmpty {
                 try await messagePersistence.saveChatMessages(server)
@@ -233,11 +242,12 @@ final class ChatMessageManager: ChatMessageManaging {
     }
     
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage] {
-        let server = try await messageRepository.fetchMessagesAfter(
+        let fetched = try await messageRepository.fetchMessagesAfter(
             room: room,
             after: messageID ?? "",
             limit: 100
         )
+        let server = try await sanitizeForAdmission(fetched, roomID: room.id)
         
         guard !server.isEmpty else { return [] }
         try await messagePersistence.saveChatMessages(server)
@@ -254,13 +264,15 @@ final class ChatMessageManager: ChatMessageManaging {
         let fetched: [ChatMessage]
         switch query {
         case .latest(let limit):
-            fetched = try await messageRepository.fetchLatestMessages(for: room, limit: limit)
+            let raw = try await messageRepository.fetchLatestMessages(for: room, limit: limit)
+            fetched = try await sanitizeForAdmission(raw, roomID: room.id)
         case .beforeSeq(let beforeSeq, let limit):
-            fetched = try await messageRepository.fetchMessagesBeforeSeq(
+            let raw = try await messageRepository.fetchMessagesBeforeSeq(
                 room: room,
                 beforeSeq: beforeSeq,
                 limit: limit
             )
+            fetched = try await sanitizeForAdmission(raw, roomID: room.id)
         }
 
         let window = try ChatLatestMessageWindow.make(targetSeq: targetSeq, fetched: fetched)
@@ -269,22 +281,6 @@ final class ChatMessageManager: ChatMessageManaging {
         try await messagePersistence.saveChatMessages(messages)
         persistSenderDisplayCache(for: messages)
         return window
-    }
-    
-    func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String] {
-        let localIDs = localMessages.map { $0.ID }
-        let localDeletionStates = Dictionary(uniqueKeysWithValues: localMessages.map { ($0.ID, $0.isDeleted) })
-        
-        let serverMap = try await messageRepository.fetchDeletionStates(roomID: room.id, messageIDs: localIDs)
-        
-        // 서버가 true인데 로컬은 false인 ID만 업데이트 대상
-        let idsToUpdate = localIDs.filter { (serverMap[$0] ?? false) && ((localDeletionStates[$0] ?? false) == false) }
-        guard !idsToUpdate.isEmpty else { return [] }
-        
-        let roomID = room.id
-        try await applyLocalDeletion(idsToUpdate, inRoom: roomID)
-        
-        return idsToUpdate
     }
     
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
@@ -297,18 +293,25 @@ final class ChatMessageManager: ChatMessageManaging {
             expectedSeq: message.seq,
             reasonCode: "chatMessageDeletion"
         )
-        try await applyLocalDeletion([messageID], inRoom: roomID)
+        if let deletionSanitizer {
+            _ = try await deletionSanitizer.reconcile(
+                roomID: roomID,
+                accountID: currentAccountID(),
+                allowEmptyLocalBootstrap: false
+            )
+        }
     }
     
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
+        let admitted = try await sanitizeForAdmission([message], roomID: room.id).first ?? message
         // 메시지 저장 (재시도 로직 포함)
         let maxRetries = 3
         var lastError: Error?
         
         for attempt in 1...maxRetries {
             do {
-                try await messagePersistence.saveChatMessages([message])
-                persistSenderDisplayCache(for: [message])
+                try await messagePersistence.saveChatMessages([admitted])
+                persistSenderDisplayCache(for: [admitted])
                 
                 lastError = nil
                 break
@@ -327,31 +330,14 @@ final class ChatMessageManager: ChatMessageManaging {
         }
         
     }
-    
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        let listener = messageRepository.listenToDeletedMessages(roomID: roomID) { deletedMessageID in
-            Task.detached(priority: .medium) {
-                do {
-                    try await self.applyLocalDeletion([deletedMessageID], inRoom: roomID)
-                } catch {
-                    print("❌ GRDB deletion persistence failed:", error)
-                }
-                
-                await MainActor.run {
-                    onDeleted(deletedMessageID)
-                }
-            }
-        }
-        
-        return AnyCancellable {
-            listener.remove()
-        }
-    }
-    
-    private func applyLocalDeletion(_ messageIDs: [String], inRoom roomID: String) async throws {
-        guard !messageIDs.isEmpty, !roomID.isEmpty else { return }
 
-        try await messagePersistence.applyDeletion(messageIDs: messageIDs, inRoom: roomID)
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
+        guard let deletionSanitizer else { return messages }
+        return try await deletionSanitizer.sanitize(
+            messages,
+            accountID: currentAccountID(),
+            roomID: roomID
+        )
     }
 
     private func persistSenderDisplayCache(for messages: [ChatMessage]) {

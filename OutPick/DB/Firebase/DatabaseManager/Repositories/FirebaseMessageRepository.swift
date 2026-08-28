@@ -15,56 +15,47 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
     init(db: Firestore) {
         self.db = db
     }
-    
-    func listenToDeletedMessages(roomID: String,
-                                 onDeleted: @escaping (String) -> Void) -> ListenerRegistration {
-        return db.collection("Rooms")
+
+    func fetchMessageDeletionRevision(roomID: String) async throws -> Int64 {
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+        let snapshot = try await db.collection("Rooms").document(roomID).getDocument()
+        guard snapshot.exists else { throw FirebaseError.FailedToFetchRoom }
+        return Self.int64(snapshot.get("messageDeletionRevision")) ?? 0
+    }
+
+    func fetchDeletionDeltas(
+        roomID: String,
+        afterRevision: Int64,
+        limit: Int
+    ) async throws -> [ChatDeletionDelta] {
+        guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
+        guard limit > 0 else { return [] }
+        let snapshot = try await db.collection("Rooms")
             .document(roomID)
             .collection("Messages")
-            .whereField("isDeleted", isEqualTo: true)
-            .addSnapshotListener { snapshot, error in
-                if let error = error {
-                    print("❌ listenToDeletedMessages 오류: \(error)")
-                    return
-                }
-                guard let snapshot = snapshot else { return }
-                
-                for change in snapshot.documentChanges {
-                    if change.type == .added || change.type == .modified {
-                        let doc = change.document
-                        let mid = (doc.get("ID") as? String) ?? doc.documentID
-                        onDeleted(mid)
-                        print("🗑 삭제 감지된 메시지: messageID=\(mid), docID=\(doc.documentID)")
-                    }
-                }
-            }
+            .whereField("deletionRevision", isGreaterThan: afterRevision)
+            .order(by: "deletionRevision", descending: false)
+            .limit(to: min(limit, 100))
+            .getDocuments()
+        return snapshot.documents.compactMap { Self.deletionDelta(document: $0, roomID: roomID) }
     }
-    
-    func fetchDeletionStates(roomID: String, messageIDs: [String]) async throws -> [String: Bool] {
+
+    func fetchDeletionDeltas(roomID: String, messageIDs: [String]) async throws -> [ChatDeletionDelta] {
         guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
-        guard !messageIDs.isEmpty else { return [:] }
-        
-        var result: [String: Bool] = [:]
-        let chunkSize = 10
-        var start = 0
-        while start < messageIDs.count {
-            let end = min(start + chunkSize, messageIDs.count)
-            let chunk = Array(messageIDs[start..<end])
-            start = end
-            
-            let snap = try await db.collection("Rooms")
+        guard !messageIDs.isEmpty else { return [] }
+        var result: [ChatDeletionDelta] = []
+        for start in stride(from: 0, to: messageIDs.count, by: 10) {
+            let chunk = Array(messageIDs[start..<min(start + 10, messageIDs.count)])
+            let snapshot = try await db.collection("Rooms")
                 .document(roomID)
                 .collection("Messages")
                 .whereField("ID", in: chunk)
                 .getDocuments()
-            
-            for doc in snap.documents {
-                let mid = (doc.get("ID") as? String) ?? doc.documentID
-                let isDel = (doc.get("isDeleted") as? Bool) ?? false
-                result[mid] = isDel
-            }
+            result.append(contentsOf: snapshot.documents.compactMap {
+                Self.deletionDelta(document: $0, roomID: roomID)
+            })
         }
-        return result
+        return result.sorted { $0.revision < $1.revision }
     }
     
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int = 50, reset: Bool = false) async throws -> [ChatMessage] {
@@ -268,6 +259,31 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
                 return nil
             }
         }
+    }
+
+    private static func deletionDelta(document: QueryDocumentSnapshot, roomID: String) -> ChatDeletionDelta? {
+        let data = document.data()
+        guard data["isDeleted"] as? Bool == true,
+              let revision = int64(data["deletionRevision"]), revision > 0 else { return nil }
+        let messageID = (data["ID"] as? String) ?? document.documentID
+        guard !messageID.isEmpty else { return nil }
+        return ChatDeletionDelta(
+            messageID: messageID,
+            roomID: roomID,
+            seq: int64(data["seq"]) ?? 0,
+            revision: revision,
+            deletedAt: (data["deletedAt"] as? Timestamp)?.dateValue(),
+            anonymizesSender: (data["senderAnonymized"] as? Bool) ??
+                ((data["senderUID"] as? String)?.isEmpty != false)
+        )
+    }
+
+    private static func int64(_ value: Any?) -> Int64? {
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? Int { return Int64(value) }
+        if let value = value as? Int64 { return value }
+        if let value = value as? Double { return Int64(value) }
+        return nil
     }
 
     func searchMessagesInRoom(roomID: String, keyword: String) async throws -> ChatMessageServerSearchResponse {

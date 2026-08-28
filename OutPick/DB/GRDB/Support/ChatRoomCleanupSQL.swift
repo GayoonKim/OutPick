@@ -6,6 +6,8 @@ enum ChatRoomCleanupSQL {
         try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ?", arguments: [roomID])
         try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ?", arguments: [roomID])
         try db.execute(sql: "DELETE FROM chatMessageFTS WHERE roomID = ?", arguments: [roomID])
+        try db.execute(sql: "DELETE FROM chatDeletedMessageMarker WHERE roomID = ?", arguments: [roomID])
+        try db.execute(sql: "DELETE FROM chatDeletionCursor WHERE roomID = ?", arguments: [roomID])
     }
 
     static func deleteRoomDataAfterExit(roomID: String, currentUserID: String, in db: Database) throws {

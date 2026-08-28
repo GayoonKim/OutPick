@@ -52,4 +52,8 @@ actor StorageDownloadURLCache: StorageDownloadURLResolving {
         cache[path] = url
         return url
     }
+
+    func removeCachedURL(for path: String) {
+        cache.removeValue(forKey: path)
+    }
 }

@@ -15,10 +15,18 @@ final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
                 guard let record = ChatMessageRecordMapper.record(from: message) else { continue }
                 try record.insert(db, onConflict: .replace)
                 try db.execute(
-                    sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
-                    arguments: [message.ID, message.msg ?? "", message.roomID]
+                    sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?",
+                    arguments: [message.roomID, message.ID]
                 )
-                try ChatMediaIndexSQL.replaceProjections(for: message, in: db)
+                if !message.isDeleted {
+                    try db.execute(
+                        sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
+                        arguments: [message.ID, message.msg ?? "", message.roomID]
+                    )
+                    try ChatMediaIndexSQL.replaceProjections(for: message, in: db)
+                } else {
+                    try ChatMediaIndexSQL.deleteProjections(messageID: message.ID, roomID: message.roomID, in: db)
+                }
             }
         }
 

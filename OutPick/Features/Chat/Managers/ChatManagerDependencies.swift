@@ -24,20 +24,26 @@ struct ChatManagerProvider {
         profileSyncManager: ChatProfileSyncManaging? = nil,
         moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol =
             CloudFunctionsChatModerationLifecycleRepository(),
+        deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
+        currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
         let resolvedSearchManager = searchManager ?? ChatSearchManager(
             messageSearch: persistence.messageStore,
             messageRepository: repositories.messageRepository,
-            networkStatusProvider: resolvedNetworkStatusProvider
+            networkStatusProvider: resolvedNetworkStatusProvider,
+            deletionSanitizer: deletionSanitizer,
+            currentAccountID: currentAccountID
         )
 
         self.messageManager = messageManager ?? ChatMessageManager(
             messageRepository: repositories.messageRepository,
             moderationLifecycleRepository: moderationLifecycleRepository,
             messagePersistence: persistence.messageStore,
-            profileCache: persistence.profileStore
+            profileCache: persistence.profileStore,
+            deletionSanitizer: deletionSanitizer,
+            currentAccountID: currentAccountID
         )
         self.roomImageManager = roomImageManager ?? RoomImageService(
             imageStorageRepository: repositories.imageStorageRepository

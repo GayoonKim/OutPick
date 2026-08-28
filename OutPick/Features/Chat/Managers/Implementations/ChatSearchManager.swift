@@ -11,14 +11,20 @@ final class ChatSearchManager: ChatSearchManaging {
     private let messageSearch: ChatMessageSearching
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let networkStatusProvider: NetworkStatusProviding
+    private let deletionSanitizer: ChatDeletionMessageSanitizing?
+    private let currentAccountID: @Sendable () -> String
     
     init(
         messageSearch: ChatMessageSearching,
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
-        networkStatusProvider: NetworkStatusProviding? = nil
+        networkStatusProvider: NetworkStatusProviding? = nil,
+        deletionSanitizer: ChatDeletionMessageSanitizing? = nil,
+        currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.messageSearch = messageSearch
         self.messageRepository = messageRepository
+        self.deletionSanitizer = deletionSanitizer
+        self.currentAccountID = currentAccountID
 
         if let networkStatusProvider {
             self.networkStatusProvider = networkStatusProvider
@@ -33,10 +39,19 @@ final class ChatSearchManager: ChatSearchManaging {
         if networkStatusProvider.currentStatus.isOnline {
             do {
                 let server = try await messageRepository.searchMessagesInRoom(roomID: roomID, keyword: keyword)
+                let sanitizedMessages = try await sanitize(
+                    server.hits.map(\.message),
+                    roomID: roomID
+                )
+                let hits: [ChatMessageSearchHit] = zip(server.hits, sanitizedMessages).compactMap { pair in
+                    let (hit, message) = pair
+                    guard !message.isDeleted else { return nil }
+                    return ChatMessageSearchHit(message: message, snippet: hit.snippet)
+                }
                 return ChatMessageSearchResult(
                     keyword: keyword,
-                    totalCount: server.totalCount,
-                    hits: server.hits,
+                    totalCount: hits.count,
+                    hits: hits,
                     source: .serverIndex,
                     isAuthoritative: true
                 )
@@ -69,6 +84,15 @@ final class ChatSearchManager: ChatSearchManaging {
         return messages.map { message in
             ChatMessageSearchHit(message: message, snippet: message.msg)
         }
+    }
+
+    private func sanitize(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
+        guard let deletionSanitizer else { return messages }
+        return try await deletionSanitizer.sanitize(
+            messages,
+            accountID: currentAccountID(),
+            roomID: roomID
+        )
     }
     
     func applyHighlight(messageIDs: Set<String>) -> Set<String> {

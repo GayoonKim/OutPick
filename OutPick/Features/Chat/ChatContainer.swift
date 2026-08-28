@@ -34,6 +34,7 @@ final class ChatContainer {
     private let chatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol
     private let chatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
+    private let chatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol
     private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
@@ -53,6 +54,7 @@ final class ChatContainer {
     private let loadShareableJoinedRoomsUseCase: LoadShareableJoinedRoomsUseCaseProtocol
     private let shareLookbookContentToChatUseCase: ShareLookbookContentToChatUseCaseProtocol
     private let blockUserUseCase: any BlockUserUseCaseProtocol
+    private let submitModerationReportUseCase: any SubmitChatModerationReportUseCaseProtocol
 
     init(
         persistence: ChatPersistenceProvider,
@@ -77,6 +79,18 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
+        let deletionSyncUseCase = ChatDeletionSyncUseCase(
+            repository: FirebaseChatDeletionSyncRepository(
+                messageRepository: repositories.messageRepository
+            ),
+            persistence: persistence.deletionSyncStore,
+            mediaCleaner: DefaultChatDeletionMediaCleaner(
+                imageLoader: attachmentImageLoader,
+                videoDiskCache: OPVideoDiskCache.shared,
+                storageURLResolver: StorageDownloadURLCache.shared
+            )
+        )
+        self.chatDeletionSyncUseCase = deletionSyncUseCase
         let moderationLifecycleRepository = CloudFunctionsChatModerationLifecycleRepository(
             currentUserID: { currentUserProvider.canonicalUserID }
         )
@@ -85,7 +99,9 @@ final class ChatContainer {
             repositories: repositories,
             publicProfileRepository: publicProfileRepository,
             persistence: persistence,
-            moderationLifecycleRepository: moderationLifecycleRepository
+            moderationLifecycleRepository: moderationLifecycleRepository,
+            deletionSanitizer: deletionSyncUseCase,
+            currentAccountID: { currentUserProvider.canonicalUserID }
         )
         self.managers = managers
         self.avatarImageManager = avatarImageManager
@@ -100,6 +116,9 @@ final class ChatContainer {
         self.blockUserUseCase = BlockUserUseCase(
             repository: userBlockRepository,
             sessionSynchronizer: userBlockSessionSynchronizer
+        )
+        self.submitModerationReportUseCase = SubmitChatModerationReportUseCase(
+            repository: CloudFunctionsChatModerationReportingRepository()
         )
         let resolvedRoomReadStateStore = roomReadStateStore ?? ChatRoomReadStateStore()
         self.roomReadStateStore = resolvedRoomReadStateStore
@@ -177,6 +196,7 @@ final class ChatContainer {
             userProfileRepository: self.userProfileRepository,
             chatRoomRepository: self.roomRepository,
             networkStatusProvider: managers.networkStatusProvider,
+            deletionSyncUseCase: deletionSyncUseCase,
             serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
             currentUserUIDProvider: { currentUserProvider.canonicalUserID }
         )
@@ -229,6 +249,7 @@ final class ChatContainer {
         self.shareLookbookContentToChatUseCase = ShareLookbookContentToChatUseCase(
             repository: lookbookChatShareSendingRepository
         )
+        Task { await deletionSyncUseCase.resumePendingCleanup() }
     }
 
     func makeRoomListsViewModel() -> RoomListsViewModel {
@@ -268,7 +289,8 @@ final class ChatContainer {
             roomReadStateStore: roomReadStateStore,
             userBlockVisibilityStore: userBlockVisibilityStore,
             blockUserUseCase: blockUserUseCase,
-            memberModerationUseCase: makeChatRoomMemberModerationUseCase()
+            memberModerationUseCase: makeChatRoomMemberModerationUseCase(),
+            deletionSyncUseCase: chatDeletionSyncUseCase
         )
     }
 
@@ -297,6 +319,19 @@ final class ChatContainer {
 
     func makeBlockUserUseCase() -> any BlockUserUseCaseProtocol {
         blockUserUseCase
+    }
+
+    func makeMessageReportViewModel(
+        roomID: String,
+        messageID: String,
+        isMediaContext: Bool
+    ) -> ChatMessageReportViewModel {
+        ChatMessageReportViewModel(
+            roomID: roomID,
+            messageID: messageID,
+            isMediaContext: isMediaContext,
+            useCase: submitModerationReportUseCase
+        )
     }
 
     func makeChatMediaUploadUseCase() -> ChatMediaUploadUseCaseProtocol {

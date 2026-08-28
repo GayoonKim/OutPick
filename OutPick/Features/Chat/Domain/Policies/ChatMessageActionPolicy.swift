@@ -55,7 +55,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         currentUserID: String,
         roomCreatorID: String?
     ) -> ChatMessageActionPolicy {
-        if message.seq <= 0 && !message.isFailed {
+        if message.isDeleted || (message.seq <= 0 && !message.isFailed) {
             return ChatMessageActionPolicy(
                 canReply: false,
                 canCopy: false,
@@ -70,6 +70,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         let isOwner = currentUserID == message.senderUID
         let isAdmin = roomCreatorID == currentUserID
         let canDelete = isOwner || isAdmin
+        let canReport = !isOwner && !message.senderUID.isEmpty && message.seq > 0
         let canRemoveMember = isAdmin && !isOwner && !message.senderUID.isEmpty
 
         if message.isLookbookShareMessage {
@@ -77,7 +78,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
                 canReply: true,
                 canCopy: false,
                 canDelete: canDelete,
-                canReport: !canDelete,
+                canReport: canReport,
                 canBlock: !isOwner,
                 canAnnounce: false,
                 canRemoveMember: canRemoveMember
@@ -88,7 +89,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canReply: true,
             canCopy: true,
             canDelete: canDelete,
-            canReport: !canDelete,
+            canReport: canReport,
             canBlock: !isOwner,
             canAnnounce: isAdmin,
             canRemoveMember: canRemoveMember

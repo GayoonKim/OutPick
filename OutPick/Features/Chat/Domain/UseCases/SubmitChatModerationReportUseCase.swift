@@ -1,6 +1,10 @@
 import Foundation
 
 protocol SubmitChatModerationReportUseCaseProtocol {
+    func submitMessageReport(
+        _ command: ChatMessageReportCommand
+    ) async throws -> ChatMessageReportReceipt
+
     func submitUserReport(
         _ command: ChatUserReportCommand
     ) async throws -> ChatModerationReportReceipt
@@ -13,6 +17,7 @@ protocol SubmitChatModerationReportUseCaseProtocol {
 enum SubmitChatModerationReportError: LocalizedError, Equatable {
     case missingTarget
     case missingRoomContext
+    case missingMessage
     case detailTooLong
 
     var errorDescription: String? {
@@ -21,6 +26,8 @@ enum SubmitChatModerationReportError: LocalizedError, Equatable {
             return "신고 대상을 확인할 수 없습니다."
         case .missingRoomContext:
             return "신고할 채팅방을 확인할 수 없습니다."
+        case .missingMessage:
+            return "신고할 메시지를 확인할 수 없습니다."
         case .detailTooLong:
             return "신고 상세 내용은 500자까지 입력할 수 있습니다."
         }
@@ -33,6 +40,19 @@ final class SubmitChatModerationReportUseCase:
 
     init(repository: any ChatModerationReportingRepositoryProtocol) {
         self.repository = repository
+    }
+
+    func submitMessageReport(
+        _ command: ChatMessageReportCommand
+    ) async throws -> ChatMessageReportReceipt {
+        guard !command.roomID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SubmitChatModerationReportError.missingRoomContext
+        }
+        guard !command.messageID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SubmitChatModerationReportError.missingMessage
+        }
+        try validateDetail(command.detail)
+        return try await repository.submitMessageReport(command)
     }
 
     func submitUserReport(

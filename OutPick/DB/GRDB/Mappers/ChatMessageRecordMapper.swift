@@ -3,8 +3,7 @@ import Foundation
 enum ChatMessageRecordMapper {
     static func record(from message: ChatMessage) -> ChatMessageRecord? {
         guard !message.roomID.isEmpty,
-              !message.senderUID.isEmpty,
-              !message.senderNickname.isEmpty else {
+              message.isDeleted || (!message.senderUID.isEmpty && !message.senderNickname.isEmpty) else {
             return nil
         }
 
@@ -12,17 +11,19 @@ enum ChatMessageRecordMapper {
             id: message.ID,
             seq: message.seq,
             roomID: message.roomID,
-            senderUID: message.senderUID,
-            senderNickname: message.senderNickname,
+            senderUID: message.senderUID.isEmpty ? nil : message.senderUID,
+            senderNickname: message.senderNickname.isEmpty ? nil : message.senderNickname,
             senderAvatarPath: message.senderAvatarPath,
-            messageType: message.messageType?.rawValue,
-            msg: message.msg,
+            messageType: message.isDeleted ? nil : message.messageType?.rawValue,
+            msg: message.isDeleted ? nil : message.msg,
             sentAt: message.sentAt,
-            attachments: encode(message.attachments.sorted { $0.index < $1.index }) ?? "[]",
-            sharedContent: message.sharedContent.flatMap(encode),
-            isFailed: message.isFailed,
+            attachments: message.isDeleted ? "[]" : (encode(message.attachments.sorted { $0.index < $1.index }) ?? "[]"),
+            sharedContent: message.isDeleted ? nil : message.sharedContent.flatMap(encode),
+            isFailed: message.isDeleted ? false : message.isFailed,
             replyPreview: message.replyPreview.flatMap(encode),
-            isDeleted: message.isDeleted
+            isDeleted: message.isDeleted,
+            deletionRevision: message.deletionRevision,
+            deletedAt: message.deletedAt
         )
     }
 
@@ -37,8 +38,8 @@ enum ChatMessageRecordMapper {
             ID: record.id,
             seq: record.seq,
             roomID: record.roomID,
-            senderUID: record.senderUID,
-            senderNickname: record.senderNickname,
+            senderUID: record.senderUID ?? "",
+            senderNickname: record.senderNickname ?? "",
             senderAvatarPath: record.senderAvatarPath,
             messageType: messageType,
             msg: record.msg,
@@ -47,7 +48,9 @@ enum ChatMessageRecordMapper {
             sharedContent: sharedContent,
             replyPreview: decode(ReplyPreview.self, from: record.replyPreview),
             isFailed: record.isFailed,
-            isDeleted: record.isDeleted
+            isDeleted: record.isDeleted,
+            deletionRevision: record.deletionRevision,
+            deletedAt: record.deletedAt
         )
     }
 

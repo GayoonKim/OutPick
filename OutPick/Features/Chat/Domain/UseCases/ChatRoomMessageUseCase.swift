@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 
 enum ChatTextInputPolicy {
     static let maximumUTF8Bytes = 4_000
@@ -28,8 +27,14 @@ protocol ChatRoomMessageUseCaseProtocol {
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage]
     func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage]
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws
+}
+
+extension ChatRoomMessageUseCaseProtocol {
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
+        messages
+    }
 }
 
 struct ChatMessageSenderSnapshot: Equatable {
@@ -138,8 +143,8 @@ final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
         try await serverConfirmedMessageReconciler?.reconcileServerConfirmedMessages([message])
     }
 
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        messageManager.setupDeletionListener(roomID: roomID, onDeleted: onDeleted)
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
+        try await messageManager.sanitizeForAdmission(messages, roomID: roomID)
     }
 
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {

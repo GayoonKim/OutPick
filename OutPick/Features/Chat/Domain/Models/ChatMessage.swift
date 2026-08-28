@@ -24,6 +24,8 @@ struct ChatMessage: SocketData, Codable, Sendable {
     var replyPreview: ReplyPreview?
     var isFailed: Bool = false
     var isDeleted: Bool = false
+    var deletionRevision: Int64? = nil
+    var deletedAt: Date? = nil
 
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -46,6 +48,8 @@ struct ChatMessage: SocketData, Codable, Sendable {
         case replyPreview
         case isFailed
         case isDeleted
+        case deletionRevision
+        case deletedAt
     }
     
     func toSocketRepresentation() -> SocketData {
@@ -176,7 +180,7 @@ extension ChatMessage {
         ID = try container.decode(String.self, forKey: .ID)
         seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
         roomID = try container.decode(String.self, forKey: .roomID)
-        senderUID = try container.decode(String.self, forKey: .senderUID)
+        senderUID = try container.decodeIfPresent(String.self, forKey: .senderUID) ?? ""
         senderNickname = try container.decodeIfPresent(String.self, forKey: .senderNickname) ?? ""
         senderAvatarPath = try container.decodeIfPresent(String.self, forKey: .senderAvatarPath)
         messageType = decodedMessageType
@@ -187,6 +191,8 @@ extension ChatMessage {
         replyPreview = try container.decodeIfPresent(ReplyPreview.self, forKey: .replyPreview)
         isFailed = try container.decodeIfPresent(Bool.self, forKey: .isFailed) ?? false
         isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
+        deletionRevision = try container.decodeIfPresent(Int64.self, forKey: .deletionRevision)
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -205,6 +211,8 @@ extension ChatMessage {
         try container.encodeIfPresent(replyPreview, forKey: .replyPreview)
         try container.encode(isFailed, forKey: .isFailed)
         try container.encode(isDeleted, forKey: .isDeleted)
+        try container.encodeIfPresent(deletionRevision, forKey: .deletionRevision)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
 }
 
@@ -238,6 +246,10 @@ extension ChatMessage {
     }
 
     var previewTextForRoomList: String {
+        if isDeleted {
+            return "삭제된 메시지입니다"
+        }
+
         if let text = msg?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             return text
         }
@@ -259,10 +271,12 @@ extension ChatMessage {
     static func from(_ dict: [String: Any]) -> ChatMessage? {
         // Required IDs
         guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,
-              let roomID = (dict["roomID"] as? String) ?? (dict["roomName"] as? String),
-              let senderUID = dict["senderUID"] as? String else {
+              let roomID = (dict["roomID"] as? String) ?? (dict["roomName"] as? String) else {
             return nil
         }
+        let isDeleted = dict["isDeleted"] as? Bool ?? false
+        guard isDeleted || dict["senderUID"] is String else { return nil }
+        let senderUID = dict["senderUID"] as? String ?? ""
 
         // Sequence: accept Int/Int64/NSNumber/Double, fallback 0; also accept legacy "sequence"
         let seq: Int64 = {
@@ -330,7 +344,8 @@ extension ChatMessage {
 
         // Flags (optional)
         let isFailed = dict["isFailed"] as? Bool ?? false
-        let isDeleted = dict["isDeleted"] as? Bool ?? false
+        let deletionRevision = parseInt64(dict["deletionRevision"])
+        let deletedAt = parseSentAt(dict["deletedAt"])
 
         return ChatMessage(
             ID: id,
@@ -346,8 +361,18 @@ extension ChatMessage {
             sharedContent: sharedContent,
             replyPreview: rp,
             isFailed: isFailed,
-            isDeleted: isDeleted
+            isDeleted: isDeleted,
+            deletionRevision: deletionRevision,
+            deletedAt: deletedAt
         )
+    }
+
+    private static func parseInt64(_ value: Any?) -> Int64? {
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? Int { return Int64(value) }
+        if let value = value as? Int64 { return value }
+        if let value = value as? Double { return Int64(value) }
+        return nil
     }
 
     // Parse attachments/images from socket payload (supports Data or base64 for thumbData)

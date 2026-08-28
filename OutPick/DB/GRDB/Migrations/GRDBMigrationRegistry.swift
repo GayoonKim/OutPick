@@ -20,11 +20,13 @@ enum GRDBMigrationRegistry {
         "addSenderUIDToMediaIndexes",
         "removeSenderEmailFromChatMessage",
         "extendChatOutgoingOutboxForMediaV2",
-        "storeChatMediaUploadSession"
+        "storeChatMediaUploadSession",
+        "createChatDeletionSync",
+        "addDeletionMarkerSenderPolicy"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
-        var migrator = makeMigrator()
+        let migrator = makeMigrator()
         try migrator.migrate(writer)
     }
 
@@ -159,6 +161,66 @@ enum GRDBMigrationRegistry {
                 $0.add(column: "sessionPayloadJSON", .text)
             }
         }
+        migrator.registerMigration("createChatDeletionSync") { db in
+            try addColumnIfMissing("deletionRevision", to: "chatMessage", in: db) {
+                $0.add(column: "deletionRevision", .integer)
+            }
+            try addColumnIfMissing("deletedAt", to: "chatMessage", in: db) {
+                $0.add(column: "deletedAt", .datetime)
+            }
+
+            // 계정 탈퇴 tombstone은 작성자 식별정보를 비워야 하므로
+            // 기존 NOT NULL 작성자 열을 nullable schema로 한 번 재구성한다.
+            try db.execute(sql: "ALTER TABLE chatMessage RENAME TO chatMessage_before_deletion_sync")
+            try createCurrentChatMessageTable(in: db)
+            try db.execute(sql: """
+                INSERT INTO chatMessage(
+                    id, seq, roomID, senderUID, senderNickname, senderAvatarPath,
+                    messageType, msg, sentAt, attachments, sharedContent, isFailed,
+                    replyPreview, isDeleted, deletionRevision, deletedAt
+                )
+                SELECT id, seq, roomID, senderUID, senderNickname, senderAvatarPath,
+                       messageType, msg, sentAt, attachments, sharedContent, isFailed,
+                       replyPreview, isDeleted, deletionRevision, deletedAt
+                  FROM chatMessage_before_deletion_sync
+            """)
+            try db.execute(sql: "DROP TABLE chatMessage_before_deletion_sync")
+            try createChatMessageIndexes(in: db)
+
+            try db.create(table: "chatDeletionCursor", options: [.ifNotExists]) { table in
+                table.column("accountID", .text).notNull()
+                table.column("roomID", .text).notNull()
+                table.column("revision", .integer).notNull().defaults(to: 0)
+                table.primaryKey(["accountID", "roomID"])
+            }
+            try db.create(table: "chatDeletionCleanup", options: [.ifNotExists]) { table in
+                table.column("kind", .text).notNull()
+                table.column("path", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.primaryKey(["kind", "path"])
+            }
+            try db.create(table: "chatDeletedMessageMarker", options: [.ifNotExists]) { table in
+                table.column("accountID", .text).notNull()
+                table.column("roomID", .text).notNull()
+                table.column("messageID", .text).notNull()
+                table.column("seq", .integer).notNull().defaults(to: 0)
+                table.column("revision", .integer).notNull()
+                table.column("deletedAt", .datetime)
+                table.primaryKey(["accountID", "roomID", "messageID"])
+            }
+            try db.create(
+                index: "idx_chatDeletedMessageMarker_room_revision",
+                on: "chatDeletedMessageMarker",
+                columns: ["accountID", "roomID", "revision"],
+                ifNotExists: true
+            )
+        }
+        migrator.registerMigration("addDeletionMarkerSenderPolicy") { db in
+            try addColumnIfMissing("anonymizesSender", to: "chatDeletedMessageMarker", in: db) {
+                // 기존 marker는 최소 tombstone 계약에서 생성됐으므로 개인정보 재노출 방지를 우선한다.
+                $0.add(column: "anonymizesSender", .boolean).notNull().defaults(to: true)
+            }
+        }
 
         return migrator
     }
@@ -168,8 +230,8 @@ enum GRDBMigrationRegistry {
             table.column("id", .text).primaryKey()
             table.column("seq", .integer).notNull().defaults(to: 0)
             table.column("roomID", .text).notNull()
-            table.column("senderUID", .text).notNull()
-            table.column("senderNickname", .text).notNull()
+            table.column("senderUID", .text)
+            table.column("senderNickname", .text)
             table.column("senderAvatarPath", .text)
             table.column("messageType", .text)
             table.column("msg", .text)
@@ -179,6 +241,8 @@ enum GRDBMigrationRegistry {
             table.column("isFailed", .boolean).notNull().defaults(to: false)
             table.column("replyPreview", .text)
             table.column("isDeleted", .boolean).notNull().defaults(to: false)
+            table.column("deletionRevision", .integer)
+            table.column("deletedAt", .datetime)
         }
     }
 
