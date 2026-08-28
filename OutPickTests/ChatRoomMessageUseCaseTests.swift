@@ -63,7 +63,7 @@ struct ChatRoomMessageUseCaseTests {
         let room = makeRoom(id: "room-1")
         let message = try #require(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: room))
 
-        try await useCase.sendPreparedMessage(message, room: room)
+        _ = try await useCase.sendPreparedMessage(message, room: room)
 
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.message.ID == "message-1")
