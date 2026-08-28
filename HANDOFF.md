@@ -15,6 +15,13 @@
 
 ## 2. 완료한 작업
 
+### Development 상대 프로필 이미지 Storage Rules drift 교정
+
+- 2026-08-28 Production에서는 정상인 채팅 메시지·채팅방 설정 참여자 목록의 상대 프로필 이미지가 Development에서 표시되지 않는 현상을 진단했다. 두 화면은 `userPublicProfiles.avatarThumbPath`와 공용 `AvatarImageService`를 사용한다.
+- Development/Production의 Firestore Rules는 로컬 hash와 일치했고, Development 공개 프로필·active `users`/`moderationAccounts` projection·avatar thumbnail 객체도 2/2 존재했다. 직접 원인은 Development 기본 bucket의 Storage Rules만 구버전 hash `78ebf3d161284be1ac3aa4ff4c3a5a86ad4d325287ebefaa79fa36c0e32b94d1`로 남은 배포 drift였다.
+- 구버전 cross-user avatar read는 요청자의 `users`·`moderationAccounts`와 대상자의 `users` 세 문서를 참조해 Storage Rules의 Firestore 문서 접근 한도 2개를 초과했다. 최신 Rules는 요청자/대상자의 `moderationAccounts` 두 문서만 사용해 account capability와 대상 active 상태를 확인한다.
+- profile Storage Rules emulator 5/5를 통과한 뒤 `outpick-test` 기본 Storage target만 배포했다. 새 ruleset `c44c38b3-713f-49b8-9db2-814d73a15dcd`, source SHA-256 `712a87a7d47b8bc9c8c77b146cd453df65846ecf231b943b24ec7f41a19966c4`로 로컬·Production과 일치하며, 사용자 재확인에서 두 Development 화면의 상대 프로필 이미지가 정상 표시됐다. Firestore·Production·앱 코드는 변경하지 않았다.
+
 ### Chat UGC Safety Phase 7 — Production backend rollout 완료
 
 - 2026-08-28 `main`이 PR #22 merge commit `951333cae0f37f6f395f7aade41e6d64e8650b6e`와 정확히 일치함을 확인하고 Production 읽기 전용 감사를 수행했다. message·삭제 tombstone·deletion delivery·Evidence 관련 데이터가 모두 0건이라 migration은 만들거나 실행하지 않았다.
