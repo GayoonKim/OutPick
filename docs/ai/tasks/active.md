@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~6 구현·자동 검증·Development QA와 Production backend rollout, Phase 7.0~7.3 미디어 전송·Production 반영을 완료했다. Phase 7.4A 순수 evidence 계약과 Phase 7.4B 신고/삭제 transaction을 로컬에서 완료했으며 revision-independent transport receipt의 terminal-review 지연 retry 회귀까지 통과했다. callable export·Rules/index·Storage copy worker·iOS·배포 없이 Phase 7.4C evidence copy/cleanup을 다음 경계로 둔다.
+- 현재 핵심 task는 `chat-ugc-safety-room-moderation`이다. Phase 0~6과 Phase 7.0~7.4 Production 반영, Phase 7.5 구현·자동 회귀, Phase 7.6 Development rollout·공동 수동 QA·종료 감사·최종 자동 회귀·전체 diff 리뷰를 완료했다. 일반/미디어 신고, 작성자·방 관리자·플랫폼 관리자 삭제, 비활성·앱 종료·오프라인 복구, 열린 viewer/player·durable cache cleanup, disposable 계정 탈퇴 bulk가 통과했다. 다음 순서는 단위별 커밋 → PR·리뷰·차단 수정 → 최종 체크·머지다. Production은 Phase 7.5 변경을 반영하지 않았다.
 - Phase 6은 자동 의미 필터 미도입, 전송 burst guard, 입력 상한, senderEmail 제거와 로그 최소화를 반영했다. Phase 7은 전용 Cloud Run 기술 검증·metadata 제거, 이미지 30장/GIF, 350 MiB·길이 제한 없는 동영상, 선택 첨부 evidence, 개인/전역 비노출·복원·retention 세부 설계를 확정했다. Phase 7.3 pending UX는 정규화 직후 upload source 기반 1024px 메모리 다운샘플링 로컬 버블, 활성 상태 무표시, 실패·만료에만 시간 위치의 소형 재시도/삭제 아이콘으로 고정했다. GIF badge/viewer, 이미지·영상 실패의 재시도/삭제 전용 표시, 네트워크 재연결, 앱 종료·방 이탈 복원, 70장 30+30+10 FIFO 실기기 QA를 완료했고, 실패 outbox 재실행의 반복 날짜 separator diffable ID 크래시도 occurrence identity와 회귀 테스트로 보정했다. Production backend·Production 구성 빌드 및 smoke가 현재 승인된 배포 gate이며 Sign in with Apple은 별도 후속 작업이다.
 - 이전 핵심 task `style-mood-personalization-account-privacy`의 Phase 1~8은 완료 처리했다. Apple Developer Program 가입 후 App Attest 실기기 QA와 운영 백업 설정은 출시 운영 게이트로 분리하고, 개발 데이터 전체 삭제는 마지막 Phase의 별도 승인 전까지 진행하지 않는다.
 - `lookbook-discovery-learning-loop`는 사용자 승인으로 task 문서를 생성했다. 동일 active 요청 병합, latest generation publish, 기존 시즌 동일성, 7/30/60일 retention, failure action, watchdog 복구, 관리자 review와 fixture/version gate를 설계 기준으로 확정했다.
@@ -24,7 +24,7 @@
   - [Phase 계획](chat-ugc-safety-room-moderation/plan.md)
   - [현재 상태](chat-ugc-safety-room-moderation/progress.md)
   - [QA 기준](chat-ugc-safety-room-moderation/qa-checklist.md)
-  - 상태: Phase 0~7.3 구현·QA·Production 반영 완료. Phase 7.4A 순수 계약과 Phase 7.4B evidence-first 신고/삭제 transaction 로컬 구현·자동 검증 완료. 다음은 Phase 7.4C evidence Storage copy/cleanup이며 7.4B callable export와 외부 배포는 의도적으로 보류했다.
+  - 상태: Phase 0~7.5 구현·자동 검증과 Phase 7.6 Development rollout·공동 QA·종료 감사·최종 자동 회귀·전체 diff 리뷰 완료. 다음은 단위별 커밋과 PR이다. Production은 Phase 7.5 미변경이다.
 
 ## 이전 핵심 작업
 

@@ -13,6 +13,7 @@
 - Phase 7.4A는 2026-08-21 최신 evidence-first 계약의 로컬 순수 구현과 자동 검증을 완료했다. 텍스트·이미지 묶음 전체·동영상 전체 evidence가 `available`이 된 뒤에만 `accepted` 신고와 canonical incident/reporter/aggregate·queue·visibility를 확정하고, 준비 중 `processing`과 확정 `failed`는 신고 집계에 포함하지 않는다. versioned canonical tuple ID, 최초 revision 0과 terminal reopen, 일반 단일 `holding`·같은 메시지 고유 2명 `reviewRequired`·긴급 단일 `urgent`, 긴급 2명 또는 전체 3명/24시간 전역 비노출, 작성자 `메시지 3개 + 신고자 2명/7일`, retention·appeal/legal hold를 순수 함수로 고정했다. Functions 전체 226/226, build, lint 오류 0과 계약 JSON/diff 검증을 통과했으며 기존 non-null assertion 경고 17개만 남았다. 다음은 Phase 7.4B이며 외부 리소스·배포는 수행하지 않았다.
 - Phase 7.4B는 2026-08-24 로컬 구현을 완료했다. `moderationMessageReportRequests/{requestID}`를 revision-independent transport receipt로 분리해 관리자 종결 뒤 같은 UUID의 지연 retry가 새 revision을 만들지 않으며, 새 UUID만 새 심사 회차를 연다. 동일 UUID replay는 무료이고 이전에 보지 못한 새 UUID receipt는 preparation 재사용·alreadyReported·messageAlreadyDeleted 결과여도 user/room 요청과 공유하는 1분 10회 transport limiter를 소비한다. text/lookbook 즉시 accepted, ready media processing preparation/bundle/copy job, available bundle 30건 단위 draining, reporter dedupe·작성자 aggregate·24시간 visibility, report/delete guard와 public cleanup `awaitingEvidence`를 transaction으로 연결했다. 최종 리뷰에서 추가 UUID receipt 전체를 무제한 drain하던 transaction 크기 위험을 최초 receipt+조회 시 개별 수렴으로 제한했고, partial cleanup 전 실패 재시작과 preparation/bundle/copy job generation 불일치를 동일 terminal generation 검증·원자 `+1` 재시작으로 보정했다. Functions 228/228, lint 오류 0, Rules 45/45와 transaction 35/35를 통과했으며 media drain·generation fence와 신고/삭제 양쪽 순서도 에뮬레이터로 확인했다. root callable export·Rules/index·Storage copy worker·iOS·Development/Production 배포는 하지 않았다.
 - Phase 7.4D 로컬 구현·자동 테스트를 2026-08-26 완료했다. canonical message collection direct queue/current-revision detail, `resolveMessageModeration`의 same-seq restore·moderationRemoved·confirmed violation·조건부 계정 제재·즉시/30일 retention, terminal preparation scrub+30일 TTL, Evidence 전용 deny-all Storage target, 환경별 분리 signer, exact-generation V4 GET과 응답 전 `EVIDENCE_VIEW_URL_ISSUED` Cloud Logging write를 구현했다. reviewRevision은 과거 byte 열람이 아니라 재심사 cycle/cleanup race 경계로만 사용한다. Functions 243/243, Rules 46/46, Firestore transaction 49/49, build·lint 오류 0과 JSON manifest 검증을 통과했다.
+- Phase 7.5A~E를 2026-08-27 로컬 구현했고 7.5F 자동 회귀·문서 cutover까지 완료했다. 신고 집계는 관리자 queue/count만 갱신하고 관리자 종결은 `reviewOutcome + contentAction + accountAction`으로 분리했다. 모든 서버 확정 삭제는 최소 일반 tombstone·Room revision·cleanup/outbox와 iOS Deletion Sync로 수렴한다. 최종 자동 검증은 Socket 103/103, Functions 245/245, Rules·Storage 46/46, Firestore transaction 52/52, iOS 관련 9개 suite 60/60과 generic Simulator build를 통과했다. Development deletion cutover는 cleanup field index 두 scope READY, failed job 10건 완료·잔존 0, revision 10/10·head 10으로 완료했다. Production 삭제 0건이며 실제 backend/Socket rollout과 공동 수동 QA는 남았다.
 - 같은 날 사용자 승인으로 Development `outpick-test`에 Firestore/Evidence Storage Rules, 5개 exact composite index(`READY`), preparation TTL(`ACTIVE`), 영향 Function 7개(`ACTIVE`)를 배포했다. 전체 index manifest의 기존 drift는 동기화하지 않았다. 전용 evidence-view service account에는 Firestore get/list/create/update, Storage object get, self signBlob, Logging write만 부여했고 Storage list/create/update/delete는 부여하지 않았다. 서울 `asia-northeast3`에 Analytics·1,095일 보존의 전용 log bucket과 제한 view/sink를 만들고 프로젝트 Storage DATA_READ를 활성화했다. `_Default`에는 Evidence app audit와 모든 GCS DATA_READ를 버리는 두 exact exclusion을 구성했다.
 - 승인된 일회성 Development fixture로 임시 active platform admin·App Check debug token·1-byte PNG Evidence를 만들고 실제 callable, 5분 V4 signed URL 전체 GET과 `bytes=0-0` Range GET, `private, no-store, max-age=0`, opaque issuanceID query를 통과했다. 전용 view에는 같은 issuanceID의 `EVIDENCE_VIEW_URL_ISSUED` 1건과 `storage.objects.get` 2건이 연결됐고 `_Default`에는 두 종류 모두 0건이었다. 임시 Auth/Firestore/Storage/App Check·rate bucket은 잔여 0건으로 정리됐으며 기존 Auth 2명·active platform admin 0명으로 원복했다. 전용 log bucket은 최종 gate 뒤 `ACTIVE`·Analytics·1,095일·`locked=true`로 잠갔다. exclusion 교정 전에 기록한 비식별 app smoke 4건만 `_Default`에 30일 남고 Evidence 식별정보는 없다. Production은 변경하지 않았다.
 - 잔여 QA에서 유효 PNG와 앞부분에 유효 H.264 track을 둔 정확히 350 MiB MP4를 사용했다. 원격 MP4 playable/duration/video track probe, 전체 350 MiB GET, 앞·뒤 Range와 캐시 정책을 확인했고 5분 뒤 이미지·영상 URL은 모두 HTTP 400으로 거부됐다. recent-auth를 갱신한 재발급은 새 URL·새 issuanceID와 Range 성공으로 수렴했다. 기간+actorUID+incidentID+reviewRevision+논리 object ID+결과 결합 조회 2건의 내림차순, 첫 영상 issuance GET 6건·재발급 1건·이미지 1건의 세션 묶음과 `_Default=0`을 확인했다. 영구 debug token 없이 일회성 App Check token을 사용했고 Auth/Firestore/Storage/rate bucket 잔여 0, 기존 Auth 2명·active platform admin 0명, 최근 Function ERROR 0으로 종료했다.
@@ -670,3 +671,153 @@
 - 마지막 3회차 copy lease 또는 20회차 cleanup lease를 획득한 worker가 Firestore terminal write 전에 종료되면, 기존 구현은 다음 recovery에서 시도 상한을 넘었다고 판단해 job을 영구 `processing`에 남길 수 있었다. 만료 lease를 같은 시도 번호로 회수하고 copy는 즉시 `cleaningPartial`로 전환해 새 물리 복사 없이 정리·실패 drain하며, cleanup은 generation 조건 delete를 재개하도록 보완했다.
 - Firestore emulator에 마지막 copy lease 중단 시 기존 partial object 삭제·attempt 3 유지·bundle/job failed 수렴과 마지막 cleanup lease 중단 시 attempt 20 유지·bundle/object 삭제·job succeeded 수렴 회귀를 추가했다.
 - 설계 문서와 TypeScript phase union에만 남아 있던 미사용 `verifying` phase를 제거했다. Storage metadata 검증은 영속 phase를 추가하지 않고 `copying` 내부에서 수행하며, 실제 job 계약과 JSON 계약은 `copying → acceptanceDrain` 또는 `cleaningPartial → failureDrain`으로 일치한다.
+
+## Phase 7.5 신고 UX·Deletion Sync 설계 확정 — 2026-08-27
+
+- 신고 임계치는 관리자 queue만 승격하고 원문을 자동 비노출하지 않는 것으로 확정했다. `hiddenPendingReview`, `검토 중인 메시지입니다` tombstone과 자동 restore는 Phase 7.5에서 제거 또는 비활성화한다.
+- 관리자 종결은 `reviewOutcome`, `contentAction`, `accountAction`을 분리하고 `contentAction=delete`만 모든 사용자에게 일반 `삭제된 메시지입니다` tombstone을 만든다.
+- 활성 방은 `chat:messageDeleted` Socket fast path로 즉시 반영하고, 다른 화면·다른 방·앱 종료·오프라인·Socket 유실은 Room `messageDeletionRevision`과 계정·방별 로컬 `lastAppliedDeletionRevision`의 delta sync로 복구한다.
+- 작성자·방 관리자·플랫폼 관리자 종결·계정 탈퇴 정리를 포함한 모든 서버 확정 메시지 삭제가 같은 공통 deletion mutation, 일반 tombstone과 Deletion Sync를 사용하도록 설계를 보정했다. 삭제 원인은 서버 audit에만 남기고 클라이언트 동기화·표시는 구분하지 않는다.
+- 계정 탈퇴 메시지는 `알 수 없는 사용자 + 원문 유지`가 아니라 모든 공개 메시지의 senderUID/sentAt/원문·첨부를 제거한 중립 시스템 tombstone으로 확정했다. collection group query를 방별 batch로 처리하고 메시지별 outbox 대신 revision 범위당 head-advanced outbox 하나를 사용한다.
+- 구현 계획을 7.5A 서버 신고·관리자 계약 cutover → 7.5B 공통 삭제 core·계정 탈퇴 bulk → 7.5C outbox·Socket → 7.5D iOS/GRDB Deletion Sync → 7.5E 신고 UX → 7.5F 통합 회귀·하네스의 순차 phase로 확정했다. 계획만 작성했으며 코드·테스트 실행·Development·Production 변경은 아직 승인되지 않았다.
+- 별도 deletion journal과 사용자별 deletion inbox/push fan-out은 만들지 않는다. 삭제 message tombstone 자체를 durable delta로 사용하며 방이 존재하는 동안 유지한다.
+- GRDB 원문·첨부·reply preview·FTS·media index scrub, durable local cache cleanup queue, revision gap·중복·역순·앱 종료 복구와 offline cache 한계를 `phase-7-5-design.md`에 기록했다.
+- 이번 단계는 문서 설계만 갱신했으며 코드·테스트·Firebase·Socket·Development·Production 상태는 변경하지 않았다.
+
+## Phase 7.5A 신고 queue-only·관리자 종결 계약 완료 — 2026-08-27
+
+- `messageGlobalVisibilityEvaluation`과 `shouldHide`를 제거하고 `messageReportQueueEvaluation`으로 바꿨다. 텍스트 즉시 accepted와 미디어 evidence drain 모두 24시간 고유 신고자 count와 queue만 갱신하며 공개 Message의 `moderationVisibilityState`를 쓰지 않는다.
+- `resolveMessageModeration` 입력·audit·incident/revision·confirmed violation을 `reviewOutcome`, `contentAction`, `accountAction`으로 전환했다. 위반+경고+원문 유지, 위반+삭제+무계정조치, 위반+원문 유지+계정 제재를 독립 표현하며 모순 조합은 callable parser에서 거부한다.
+- 기각이나 `contentAction=keep`은 이미 별도로 삭제된 메시지를 부활시키지 않는다. 아직 남아 있을 수 있는 legacy `hiddenPendingReview` 값은 keep 종결 시 `visible`로 수렴하지만 신규 신고는 해당 값을 생성하지 않는다.
+- evidence retention은 결합 decision이 아니라 account action을 기준으로 계산한다. 일시 제한·영구 정지만 30일 appeal window를 사용하고 나머지는 즉시 cleanup 대상으로 전환한다.
+- 새 action 조합과 same-request replay 충돌, 신고자 3명 이후 원문 유지·queue 승격, 기각, 삭제+경고, 원문 유지+경고, 원문 유지+일시 제한, report/delete 경합을 단위·Emulator 테스트로 검증했다. Functions 243/243, Rules 46/46, transaction 51/51, lint 오류 0(기존 non-null assertion warning 24개), build와 JSON parse가 통과했다.
+- Firestore rules/index 변경은 필요하지 않았다. Development·Production 배포, 공통 deletion revision/outbox, Socket·iOS·GRDB 변경은 수행하지 않았고 다음 순차 단계는 Phase 7.5B다.
+
+## Phase 7.5B 공통 deletion mutation·계정 탈퇴 bulk 완료 — 2026-08-27
+
+- `functions/src/chat/deletion/mutation.ts`에 snapshot-in/write-only 공통 deletion mutation을 추가했다. 작성자·방 관리자 `deleteChatMessageService`, 플랫폼 관리자 `resolveMessageModerationService`, 계정 탈퇴 message worker가 각자의 transaction을 소유하면서 동일한 최소 tombstone, Room `messageDeletionRevision`, lastMessage/announcement projection, evidence-aware cleanup job과 결정적 delivery outbox를 사용한다.
+- 공개 tombstone은 `ID`, `roomID`, `seq`, `isDeleted`, `deletionRevision`, `deletedAt`만 남긴다. actor/reason, senderUID/sentAt, 본문·첨부·reply/search/표시 snapshot과 기존 `deletionPresentation`은 제거한다. 최초 visible→deleted만 revision을 소비하고 replay와 legacy deleted 정규화는 새 revision/outbox를 만들지 않는다.
+- 계정 탈퇴 `collectionGroup("Messages").where("senderUID", "==", uid)` 결과를 최대 30건씩 방별로 묶고 `seq → document ID` 순서로 연속 revision을 배정한다. 방 batch마다 head-advanced outbox 하나를 만들며 고아 parent room의 message도 revision/outbox 없이 최소 tombstone과 cleanup job으로 개인정보를 fail-closed scrub한다.
+- account deletion transaction마다 `deletionPending + accountGenerationID` fence를 다시 확인한다. 생성·재사용한 cleanup job에 서버 전용 `accountDeletionRequestID`를 연결하고 verify 단계가 연결 job 전부의 `completed`를 확인하므로 reply preview·media index·Storage가 남은 상태에서 계정 탈퇴 완료를 선언하지 않는다. 영구 batch journal은 추가하지 않았다.
+- `chatMessageDeletionDeliveryJobs`를 Rules deny-all과 `expiresAt` TTL manifest에 추가했다. Phase 7.5B는 outbox 생성까지만 소유하며 claim/lease/retry/Socket emit은 Phase 7.5C 범위다.
+- 자동 검증은 Functions 245/245, lint 오류 0(기존 non-null assertion warning 24개), build, Rules 46/46, Firestore transaction 52/52와 index JSON parse를 통과했다. 신규 transaction 회귀는 단건 최소 tombstone/revision/outbox/replay, 관리자 delete 결합, 계정 탈퇴 2개 방 연속 revision·cleanup 완료 gate와 client outbox deny를 검증한다.
+- Development·Production Functions/Rules/Indexes/TTL, Socket, iOS/GRDB는 변경하지 않았다. 다음 순차 단계는 Phase 7.5C다.
+
+## Phase 7.5C transactional outbox·Socket fast path 완료 — 2026-08-27
+
+- `Socket/src/deletion/deletionDeliveryWatcher.js`가 `chatMessageDeletionDeliveryJobs`의 pending/due retry/만료 processing을 transaction lease로 claim한다. 별도 Functions→Socket HTTP API와 인증 계약은 추가하지 않고 기존 media delivery watcher와 같은 Firestore→Socket runtime 경계를 사용한다.
+- 단건은 `chat:messageDeleted(roomID,messageID,seq,deletionRevision)`, 계정 탈퇴 bulk는 메시지 배열 없이 `chat:messageDeletionHeadAdvanced(roomID,fromRevision,toRevision)`를 `io.to(roomID)`에만 emit한다. 참여자별 inbox·push fan-out은 만들지 않는다.
+- 60초 lease, 5초 polling+snapshot wake-up, 최대 10회 지수 backoff(최대 5분)를 적용했다. 만료 processing은 같은 attempt로 회수해 마지막 lease 중단을 복구하고, 10번째 물리 실패만 `failed`로 종결한다. completed/failed TTL은 terminal 시점부터 7일이다.
+- retry/lease recovery query용 `status + nextAttemptAt`, `status + leaseExpiresAt` 복합 인덱스와 Functions index contract test를 추가했다. Rules의 client deny-all과 TTL은 Phase 7.5B 계약을 유지한다.
+- Socket check·103/103, Functions 245/245, Rules 46/46, Firestore transaction 52/52, index JSON·diff whitespace 검증이 통과했다. Development·Production Socket/Indexes/TTL 배포와 iOS/GRDB 변경은 수행하지 않았으며 다음 순차 단계는 Phase 7.5D다.
+
+## Phase 7.5D iOS/GRDB Deletion Sync 완료 — 2026-08-27
+
+- `ChatDeletionSyncUseCase`가 Room head와 account+room cursor를 비교해 revision ASC 100개 page를 적용하고, Socket 단건 연속 revision은 즉시 적용하며 중복·gap·bulk head는 같은 reconciliation으로 수렴시킨다.
+- GRDB migration에 최소 tombstone 필드, cursor, 방 수명 삭제 마커, durable cleanup queue를 추가했다. 한 transaction에서 message/reply/FTS/media index/발신 outbox scrub, marker·cleanup 기록과 cursor 전진을 처리한다.
+- 새 설치는 현재 server page를 권위로 사용하고 page 밖 reply target만 묶음 조회한 뒤 빈 로컬 상태의 cursor를 current head로 bootstrap한다. 기존 기기는 방 admission 전에 delta를 적용하므로 원문 flash 없이 수렴한다.
+- 기존 Firestore `isDeleted` snapshot listener와 `fetchDeletionStates/syncDeletedStates`를 제거했다. 이미지·영상·Storage URL cache eviction과 in-flight 취소, 열린 viewer/player 종료를 Socket 삭제 화면 흐름에 연결했다.
+- `OutPick-Development` generic Simulator build와 build-for-testing이 통과했다. iPhone 17 Pro Max iOS 26.2에서 GRDB deletion sync 5/5, migration 2/2와 Realtime binder 15/15가 통과했다. 실제 Development Socket/Firestore E2E와 강제 종료 수동 QA는 Phase 7.5F 자동 회귀 뒤 Phase 7.6 배포 승인과 함께 수행한다.
+
+## Phase 7.5E 사용자 신고 UX·Coordinator 연결 완료 — 2026-08-27
+
+- 누락돼 있던 `submitMessageReport` callable wrapper와 root export를 추가해 기존 evidence-first transaction을 실제 iOS transport에 연결했다. 신규 message receipt는 `processing | accepted | alreadyReported | failed | messageAlreadyDeleted`, optional submission/seq/시각을 계약대로 해석한다.
+- `ChatMessageReportViewController`/`ViewModel`을 추가하고 Chat long press와 신고 가능한 이미지 뷰어가 `ChatCoordinator`의 동일 route를 사용한다. 이미지 뷰어는 현재 attachment가 아니라 메시지 전체가 신고됨을 명시하며 pending·삭제·본인 메시지에는 신고 동작을 노출하지 않는다. 방 관리자는 타인 메시지에서 신고와 삭제를 함께 사용할 수 있다.
+- 별도 GRDB와 메모리 신고 캐시는 만들지 않았다. 화면 내 network 오류는 동일 UUID와 입력을 보존하고 서버 확정 failed 뒤 재시도는 새 UUID를 사용한다. 화면 종료 뒤 새 제출은 새 UUID이며 서버 transaction이 processing preparation 재사용·semantic duplicate·새 revision·삭제 선행을 최종 판정한다.
+- `messageAlreadyDeleted`는 안내 후 기존 Deletion Sync reconciliation을 즉시 실행한다. 성공·processing·duplicate는 메시지 원문이나 tombstone 표시를 변경하지 않고 신고자에게만 결과를 안내한다.
+- `OutPick-Development` generic Simulator build, 관련 iOS suite 13개, Functions build·lint 오류 0과 전체 245/245가 통과했다. 기존 warning만 남았고 Development·Production 배포 및 실기기 Dynamic Type·VoiceOver/keyboard 수동 QA는 수행하지 않았다. 다음 순차 단계는 Phase 7.5F 통합 회귀·하네스다.
+
+## Phase 7.5F 자동 통합 회귀·문서 cutover 완료, 수동 QA 대기 — 2026-08-27
+
+- 공용 계약에서 신규 쓰기와 충돌하던 `moderationRemoved` presentation enum과 관리자 삭제 설명을 제거했다. 신규 tombstone은 `deletionPresentation`을 쓰지 않고 모든 `isDeleted` 메시지를 같은 일반 삭제 tombstone으로 렌더링한다.
+- 자동 hide/restore producer와 기존 Firestore deletion listener·`fetchDeletionStates/syncDeletedStates`는 신규 실행 경로에 남지 않았다. Socket media watcher의 `hiddenPendingReview` read는 구형 문서 미디어 재전송을 막는 호환 guard로만 유지한다.
+- Functions 245/245, lint 오류 0·기존 warning 24건, Rules·Storage 46/46, Firestore transaction 52/52, Socket check·103/103을 통과했다. 계약/index JSON parse와 `git diff --check`도 통과했다.
+- iPhone 17 Pro Max iOS 26.2 Simulator에서 GRDB Deletion Sync·migration·Socket binder·신고 ViewModel/repository/action policy·메시지 주변 회귀 9개 suite 60/60을 통과했고 `OutPick-Development` generic Simulator build도 성공했다.
+- cutover 감사에서 `isDeleted=true`지만 `deletionRevision`이 없는 Phase 7.5 이전 tombstone 가능성을 발견했다. 현재 server page는 안전하지만 window 밖 기존 로컬 원문·reply preview의 delta 정리를 보장하려면 환경별 읽기 전용 감사 후 0건이면 migration 생략, 존재하면 방별 연속 revision backfill 승인이 필요하다.
+- 2026-08-27 내용·사용자 식별자 비출력 읽기 전용 감사를 실행했다. Development는 Rooms 2개, 삭제 10건, revision 보유 0/누락 10, 영향 방 1개와 current head 0이었다. 누락 10건의 경로·roomID·messageID·seq·deletedAt은 모두 유효하고 seq 중복은 0이다. Production은 Rooms 1개, 삭제 0건이었다. Firestore·Storage write는 없었다.
+- Development 10건은 attachment/storage target 0이지만 cleanup job 10건 모두 `attempt=20`, `failed/cleanup_failed`이고 media index가 메시지마다 1건 남았다. reply preview cleanup query만 `FAILED_PRECONDITION(9)` 10/10, media index query는 성공했으며 manifest가 `Messages.replyPreview.messageID`의 COLLECTION_GROUP ASC만 보유한 것이 원인이었다.
+- 승인 뒤 `firestore.indexes.json`에 COLLECTION ASC를 추가하고 field-level exact patch로 Development 두 scope READY를 확인했다. cleanup job 10건을 attempt 0으로 재개하고 scheduler 실행 뒤 모두 attempt 1 `completed`, reply/media 잔존 0으로 수렴했다. 이후 dry-run과 transaction fence를 거쳐 최소 tombstone revision 1...10·Room head 10을 11 writes로 반영했고 delivery outbox는 0건이다. 사후 감사는 Development revision 10/10·누락 0·max=head 10·mismatch 0, Production 삭제 0건이다.
+- 이 Phase 7.5F 완료 시점에는 Development·Production 배포를 하지 않았다. 이후 Development rollout은 아래 Phase 7.6 기록대로 수행했으며 Production은 미변경이다.
+
+## Phase 7.6 Development backend rollout 완료, 공동 수동 QA 대기 — 2026-08-27
+
+- 전체 index manifest의 기존 drift를 보존하기 위해 exact 배포만 사용했다. Firestore Rules를 Development에 release하고 `chatMessageDeletionDeliveryJobs`의 due/stale lease 복합 인덱스 2개를 `READY`, `expiresAt` TTL을 `ACTIVE`로 확인했다.
+- `submitMessageReport`, `deleteChatMessage`, `resolveMessageModeration`, `finalizeExpiredAccountDeletions` 네 함수만 배포했다. 모두 asia-northeast3 Node.js 24 `ACTIVE`, 배포 직후 ERROR 0이다. lint는 오류 0·기존 warning 24건이고 build가 통과했다.
+- Socket `outpick-socket-development-p75-del-0827`(digest `sha256:e3d26a46a75252ae683a14c8f0aa8e9e3cef28e72e019d02abdb080b5e591625`)을 0% candidate로 배포했다. tagged readiness 200, 설정 동일성, 기존 active 계정의 메모리 custom token 인증 handshake, ERROR 0을 확인한 뒤 traffic 100%로 전환했다. 직전 `00015-ruw`는 rollback용 0%로 유지한다.
+- 전환 후 canonical readiness 200, revision 10/10·head 10·mismatch 0, reply/media 잔존 0, deletion delivery job 0을 재감사했다. Socket check·103/103, Development generic Simulator build와 iPhone 17 Pro Max iOS 26.2의 Phase 7.5 관련 9개 suite 60/60도 재통과했다.
+- 남은 공동 수동 QA는 실제 A/B/admin fixture의 신고 결과, 활성 방 즉시 삭제, 비활성·앱 종료·오프라인 delta 복구, 열린 viewer/player와 durable cache cleanup, 접근성/keyboard, disposable 계정 탈퇴 bulk다. Production은 Functions·Rules·indexes·TTL·Socket·데이터 모두 변경하지 않았다.
+
+## Phase 7.6 공동 QA 메시지 메뉴 보정 — 2026-08-27
+
+- 공동 QA에서 방장 A가 타인 B 메시지의 삭제 권한 때문에 신고 액션을 보지 못하는 결함을 확인했다. 이는 방 생성자가 타인 메시지를 신고한 뒤 삭제할 수 있다는 기존 제품 결정과 충돌했다.
+- `ChatMessageActionPolicy`는 pending·삭제·본인 메시지만 신고를 차단하고, 방장은 타인 메시지에서 신고와 삭제를 동시에 허용하도록 보정했다. 이미지 viewer의 신고 가능 판정도 같은 정책을 사용한다.
+- 화면 경계를 직접 계산하던 `ChatCustomPopUpMenu`와 collection view long-press recognizer를 제거하고 UIKit native context menu로 전환했다. 답장·복사·공지와 신고·삭제·차단·내보내기를 권한별 별도 항목으로 구성해 touch 종료 뒤 유지, 외부 탭 dismissal, safe-area 배치와 접근성을 시스템에 맡긴다.
+- `ChatMessageActionPolicyTests` 7/7과 Development build/run이 통과했다. iPhone 17 Pro Max iOS 26.2 Simulator에서 방장 B가 타인 A 메시지를 long press해 7개 항목 전체와 `신고 + 삭제`, 잘리지 않은 `내보내기`를 확인했고 touch 종료 뒤 유지, 외부 탭 종료, `복사` 실행 뒤 종료도 통과했다. Development 실기기에서도 같은 네이티브 메뉴 동작을 확인했다.
+
+## Phase 7.6 공동 QA 신고 화면 UI 보정 — 2026-08-27
+
+- UIKit 기본 폼으로 남아 있던 `ChatMessageReportViewController`를 OutPick 패션 매거진 디자인 언어로 재구성했다. serif headline, monospaced eyebrow·section index, accent line, scope card, reason card, placeholder·counter detail editor와 accent capsule CTA를 적용했다.
+- 상세 입력창 밖 tap gesture는 `cancelsTouchesInView=false`로 reason·취소·제출 control의 원래 touch를 보존하면서 `view.endEditing(true)`만 실행한다. 입력창 내부 touch는 gesture delegate에서 제외하고 scroll drag에는 interactive keyboard dismissal을 적용했다.
+- CTA 문구와 이미지를 `신고` 두 글자로 단순화했다. 사유 미선택은 surface/text-disabled 색상과 disabled action, 사유 선택 뒤에는 accent 색상과 enabled action으로 전환하며 ViewModel의 사유 누락 검증은 유지한다.
+- 접근성 최대 글자 크기에서 reason symbol만 과도하게 커지고 안내·placeholder·CTA가 고정 크기 또는 잘림 상태로 남는 결함을 확인했다. reason title·monospaced label·CTA에 `UIFontMetrics`를 적용하고 symbol은 최대 30pt로 제한했으며, 안내·placeholder는 multiline, CTA는 최소 높이 기반으로 확장되게 보정했다. content size 변경 시 reason configuration을 재구성하면서 선택·제출 상태는 유지한다.
+- 신고 ViewModel·Coordinator·Repository·서버 계약은 변경하지 않았다. 보정 후 `ChatMessageReportViewModelTests` 3/3과 Development build가 재통과했다. iPhone 17 Pro Max iOS 26.2 Simulator 최대 Dynamic Type에서 header·scope·reason·detail·CTA의 scroll 도달, 잘림 해소, reason 선택 상태와 활성 CTA를 확인했고 테스트 입력은 제출 없이 취소한 뒤 Simulator 글자 크기를 `large`로 복원했다.
+- 2026-08-28 사용자 결정으로 기존 UIKit 접근성 label/value와 오류 announcement는 유지하되 VoiceOver 전용 기능 확장과 실제 발화·포커스 실기기 QA는 이번 Phase 완료 기준에서 제외했다. 접근성 최대 글자 크기 검증은 완료 상태로 유지하며, 전체 앱에서 App Store VoiceOver 지원 표시를 검토할 때 별도 접근성 감사 대상으로 재검토한다.
+- 2026-08-28 일반 사용자 실제 텍스트 신고 첫 제출에서 Firestore `reporters(priorityClass ASC, createdAt DESC, __name__ DESC)` COLLECTION 복합 인덱스 누락을 확인했다. transaction이 쓰기 전에 중단돼 부분 신고 상태는 없었고, manifest에 인덱스를 추가한 뒤 Development exact index `CICAgNjp84oK`만 생성해 `READY`를 확인했다. 동일 화면의 UUID·입력 유지 재시도는 `accepted`, 같은 B 사용자의 새 UUID 재신고는 `alreadyReported`로 수렴했다. 서버 incident는 `open/reviewable/holding`, `caseVersion=1`, 고유 신고자 1명, 원문 `visible`을 유지했으며 Production은 변경하지 않았다.
+- 다음 `processing` 신고 QA용 이미지 전송에서 ready message seq 5와 room preview는 생성됐지만 활성 방의 B에게 `receiveImages`가 오지 않았다. Development 원격에 manifest의 `chatMediaDeliveryJobs(status, nextAttemptAt)`와 `(status, leaseExpiresAt)` COLLECTION 복합 인덱스가 빠져 있었고, media watcher가 pending/retry/expired-lease 세 쿼리를 `Promise.all`로 실행해 한 인덱스 오류가 pending drain까지 막은 것이 원인이었다. 두 exact index `CICAgNi4t5oK`, `CICAgOj3gpIK`를 Development에만 생성해 `READY`를 확인했다. 이후 seq 5를 포함한 밀린 job은 `attempt=1/completed`로 자동 수렴했고 READY 이후 watcher 오류는 없다. B가 방을 계속 보고 있는 상태에서 A가 보낸 새 이미지 seq 6은 재진입·새로고침 없이 즉시 표시됐고 서버 delivery job도 `attempt=1/completed`, 오류 없음으로 확인했다. manifest는 이미 정확해 파일 변경이 없으며 Production은 변경하지 않았다. 다음은 seq 6 이미지의 `processing` 신고 결과다.
+- seq 6 이미지 신고 첫 시도는 receipt 생성 전 `failed-precondition` 400으로 거부됐다. local `readyService`와 회귀는 evidence descriptor를 Message/mediaIndex에 기록하지만 Development의 `onChatMediaWorkerCompleted` 배포본이 오래돼 실제 attachment에 `generationOriginal/contentTypeOriginal`이 없었던 것이 원인이다. Functions 245/245·build·lint 오류 0 후 trigger 하나만 Development에 재배포해 Node.js 24 `ACTIVE`, 기존 전용 service account·512MiB·120초를 확인했다. seq 6은 terminal `MediaUploads.normalizedManifest`와 ID·seq·attachment ID·bucket·path·bytes를 transaction에서 exact 대조한 뒤 두 문서의 누락 필드만 보정했다. Production은 미변경이다.
+- 사용자 결정으로 신고 CTA의 `showsActivityIndicator`를 제거했다. 제출 중에는 `신고` 문구를 유지한 비활성 버튼만 표시하며 ViewModel의 중복 제출 차단, network 실패 reason/detail/UUID 보존은 그대로다. 관련 ViewModel 3/3과 Development build가 통과했다. 수정 빌드에서 B가 seq 6 이미지 신고의 `신고를 처리 중이에요` 결과를 확인했고, 서버는 request/preparation `accepted`, copy job `attempt=1/succeeded`, bundle `available`·evidence object 1개·pending 0, incident `open/reviewable/holding`, 고유 신고자 1명과 원문 `visible`로 최종 수렴했다. 이후 delete-first 제출에서 spinner 미표시와 비활성 `신고` 버튼도 명시적으로 확인했다.
+
+## Phase 7.6 공동 QA delete-first·tombstone UI 보정 — 2026-08-28
+
+- A가 seq 7 메시지를 삭제한 뒤 B가 이미 열어 둔 신고 화면에서 제출해 `이미 삭제된 메시지예요` 결과를 확인했다. 제출 중 CTA는 회전 indicator 없이 `신고` 문구를 유지한 비활성 버튼만 표시했다.
+- 최초 보정에서는 삭제 행을 중앙 시스템 문구로 바꿨으나, 사용자 피드백으로 presentation 변경은 범위 밖임을 확정했다. 삭제 전용 중앙 행과 전용 Auto Layout을 제거하고 기존 메시지 셀의 정렬·버블·프로필·닉네임·시간을 그대로 사용하며 텍스트·이미지·비디오·룩북 본문만 `삭제된 메시지입니다`로 교체한다.
+- 신고 결과 네 문구와 채팅·방 목록·답장 preview의 삭제 문구에서 문장 끝 마침표를 제거했다. 사용자 확정에 따라 일반·관리자 tombstone은 sender UID·닉네임·아바타·전송 시각·답장 presentation을 보존하고 원문·미디어·검색 데이터만 제거하며, 계정 탈퇴 bulk만 UID·아바타·답장 정보를 제거하고 `알 수 없는 사용자`와 전송 시각을 남기도록 서버·iOS·GRDB 계약을 분리했다. GRDB marker에 `anonymizesSender`를 추가해 stale 메시지 재노출도 같은 정책으로 차단한다. Functions build·lint 오류 0(기존 warning 24건), chat moderation emulator 10/10, moderation reports emulator 28/28, iOS build-for-testing, GRDB deletion sync 6개와 migration 2개가 통과했다.
+- 사용자 승인으로 Development `outpick-test`에 `deleteChatMessage`, `resolveMessageModeration`, `finalizeExpiredAccountDeletions` 세 함수만 exact-target 배포했다. 세 함수는 Node.js 24 `ACTIVE`, callable 두 함수는 256MiB/60초, finalizer는 1GiB/540초이며 Scheduler는 `0 * * * *`·Asia/Seoul·`ENABLED`를 유지한다. 배포 후 세 Cloud Run service의 최근 20분 ERROR는 0건이다. 최종 앱 원격 삭제 UI QA는 iPhone 17 Pro Max Simulator 부팅 뒤 진행한다.
+- iPhone 17 Pro Max iOS 26.2 Simulator의 활성 방에서 B 작성자 답장 메시지(seq 9)를 실제 `deleteChatMessage`로 삭제했다. 재진입·새로고침 없이 우측 정렬·기존 버블·닉네임 `AD`·시간 `01:52`·답장 원문 영역은 유지되고 본문만 `삭제된 메시지입니다`로 즉시 교체됐다. Development Firestore에서도 sender UID·닉네임·아바타·전송 시각·replyPreview 보존, msg·attachments 제거, `isDeleted=true`, Room head/deletion revision 2와 delivery outbox `completed/attempt=1`을 확인했다. Production은 변경하지 않았다.
+- 비활성 방 재진입 QA에서 AD2가 방 밖에 있는 동안 방장 AD가 seq 11을 삭제했다. 서버 tombstone은 sender 표시 필드를 보존하고 Room head/revision 3, delivery outbox `completed/attempt=1`로 수렴했으며, AD2 재진입 시 원문 flash 없이 처음부터 `삭제된 메시지입니다`가 표시됐다.
+- 이 과정에서 서버에 닉네임이 남은 과거 seq 9가 AD2 기기에서 무기명으로 보이는 결함을 발견했다. `ChatMessageRecordMapper`가 모든 삭제 메시지의 sender·시간·reply 필드를 nil 처리했고, migration으로 `true` backfill된 legacy marker가 서버 tombstone보다 먼저 적용되며 `MAX` upsert로 교정되지 않는 것이 원인이었다. mapper는 tombstone presentation을 보존하고 content만 scrub하도록 변경했다. `ChatDeletionSyncUseCase`는 서버가 직접 반환한 tombstone policy를 marker보다 먼저 기록하며, 같은/더 최신 revision은 `anonymizesSender`를 exact 교정한다. 오래된 visible 메시지는 marker가 계속 우선해 재노출을 막는다. mapper·GRDB deletion sync 11/11과 Development build가 통과했고, 수정 앱 재진입에서 seq 9 닉네임 `AD` 복구와 seq 11 tombstone 유지를 확인했다.
+- 앱 종료·오프라인 복구는 AD2가 `앱 종료 오프라인 QA`(seq 12)를 전송한 뒤 방 밖에서 앱을 완전히 종료하고 네트워크를 끈 상태로 진행했다. 방장 AD가 삭제한 뒤 서버는 Room head/message deletion revision 4, sender 표시 필드 보존, msg·attachments 제거, delivery outbox `completed/attempt=1`로 수렴했다. AD2가 온라인 복귀 후 앱을 실행해 방에 진입했을 때 원문 flash 없이 처음부터 닉네임·시간·버블을 유지한 `삭제된 메시지입니다`가 표시됐고, 방 검색에서도 삭제 원문이 나오지 않았다. 비활성 방과 앱 종료·오프라인 deletion delta 복구 QA를 모두 통과했다.
+
+## Phase 7.6 공동 QA 열린 미디어·durable cache cleanup 완료 — 2026-08-28
+
+- 사용자 공동 QA 완료 보고 기준으로, 삭제 대상 이미지 viewer와 video player가 열려 있는 동안 원본 메시지를 삭제했을 때 신규 미디어 read가 중단되고 열린 화면이 안전하게 닫힌 뒤 채팅의 기존 메시지 셀 tombstone으로 복귀하는 흐름을 확인했다.
+- 미디어 삭제 직후 앱을 강제 종료하고 재실행하는 경계에서도 tombstone이 유지되고 durable cleanup queue가 재개돼 로컬 이미지·영상 파일과 Storage download URL cache 정리가 수렴하는 것을 확인했다.
+- 이 결과로 Phase 7.5F 공동 수동 QA의 `열린 미디어 삭제`와 `durable cache cleanup` 항목을 완료 처리한다. 다음 순서는 플랫폼 관리자 `resolveMessageModeration` 처리 → disposable 계정 탈퇴 bulk → 종료 감사다.
+
+## Phase 7.6 공동 QA 플랫폼 관리자 처리 완료 — 2026-08-28
+
+- Development 사전 감사에서 Auth 2명(Google 1/Kakao 1), 두 provider eligible active 1명씩, active platform admin 0명을 식별정보 없이 확인했다. 단일 Kakao 계정을 audited CLI로 일시 승격하고 미처리 incident 2건 중 attachment가 있는 미디어 incident 정확히 1건만 선택했다.
+- 실제 배포 `resolveMessageModeration` callable을 active admin Auth·App Check와 함께 `violation + contentAction=delete + accountAction=none`으로 호출했다. 동일 `clientRequestID` replay는 같은 결과를 반환했고 관리자 audit은 1건만 생성됐다.
+- incident는 `resolved`, caseVersion 2로 1회 증가했고 메시지는 일반 삭제 revision 5, Room head 일치, sender 표시 보존 tombstone으로 수렴했다. Socket delivery outbox는 `completed/attempt=1`, Evidence cleanup은 `succeeded/completed/attempt=1`, bundle 잔여 0이다.
+- iPhone 17 Pro Max iOS 26.2 Simulator의 기존 Development 세션을 재실행해 방 목록 preview도 `삭제된 메시지입니다` 일반 tombstone으로 반영된 것을 확인했다. 처리 시간대 `resolveMessageModeration` Function과 Development Socket의 ERROR는 0건이다.
+- QA 직후 Kakao platform admin을 회수해 Google/Kakao active platform admin 모두 0명으로 원복했다. 다음은 disposable 계정 탈퇴 bulk다.
+
+## Phase 7.6 공동 QA 계정 탈퇴 bulk 완료 — 2026-08-28
+
+- 기존 Google/Kakao QA 계정과 분리한 disposable password Auth 1개, 전용 방 2개, 작성 메시지 3개(텍스트 2·이미지 1), 기존 사용자 답장 참조 1개, ready bucket 이미지 객체 1개와 mediaIndex 1개를 Development에 만들었다. 요청은 7일 유예가 지난 `deletionPending` fixture로 제한했다.
+- 첫 finalizer 실행은 메시지 tombstone과 cleanup job을 만든 뒤 `verify/message_cleanup_pending`에서 `retryPending`으로 멈췄다. 이때 개인 user/moderation/profile은 제거됐지만 Auth와 요청 UID/generation은 유지돼 cleanup 완료 전 탈퇴 완료를 선언하지 않는 gate를 확인했다.
+- cleanup 3건이 모두 `completed/attempt=1`로 수렴한 뒤 5분 backoff를 지켜 finalizer를 재실행했다. 요청은 `completed/stage completed/attemptCount 2`, `lastErrorCode=null`이고 UID·accountGenerationID가 receipt에서 제거됐으며 disposable Auth도 삭제됐다.
+- 두 방의 작성 메시지 3건은 모두 원문·첨부·senderUID·아바타가 제거되고 `알 수 없는 사용자`, `senderAnonymized=true`, 전송 시각을 보존한 tombstone으로 수렴했다. 방별 revision은 0→2와 4→5, 답장 preview는 삭제 상태로 scrub, mediaIndex와 실제 ready Storage 객체는 0이다.
+- 방별 head-advanced delivery outbox 2건은 모두 `completed/attempt=1`, 오류 0이다. 다음은 남은 텍스트 신고 종결과 QA fixture 제거를 포함한 종료 감사다.
+
+## Phase 7.6 공동 QA 종료 감사 완료 — 2026-08-28
+
+- 남은 text reviewable incident 정확히 1건을 일시 Kakao platform admin과 실제 callable로 `dismissed + keep + none` 처리했다. 같은 request replay는 동일 결과·audit 1건으로 수렴했고 원문은 `visible`, Evidence cleanup은 `succeeded/attempt=1`, bundle은 제거됐다. 이후 admin을 다시 회수했다.
+- bulk QA 전용 방 2개, cleanup job 3개, head-advanced delivery 2개, notification outbox 1개, account deletion audit 1개, suppression 1개, message guard 3개, scrubbed request 1개와 QA marker 1개만 exact 제거했다. 기존 Google/Kakao 사용자와 기존 채팅방은 삭제하지 않았다.
+- 종료 감사는 Auth 2명, active platform admin 0, incident 2건 모두 terminal(open 0), Evidence bundle/object 0을 확인했다. preparation/copy/evidence cleanup/message cleanup/deletion delivery/media delivery의 non-terminal·failed는 모두 0이고 bulk QA marker·방·ready Storage 잔여도 0이다.
+- deletion revision 읽기 전용 감사는 Rooms 4개, 삭제 메시지 21건 모두 revision 보유·누락 0, reply/media 잔존 0, probe 실패 0이다. 삭제가 있는 방 3개 모두 max revision과 Room head가 일치하고 delivery 11건은 모두 `completed`, invalid status/event 0이다.
+- 2026-08-28T08:00Z 이후 `resolveMessageModeration`, `finalizeExpiredAccountDeletions`, `onChatMessageCleanupQueued`, Development Socket의 ERROR는 0건이다. Production은 변경하지 않았다. 다음은 최종 자동 회귀 검증이다.
+
+## Phase 7.6 최종 자동 회귀 완료 — 2026-08-28
+
+- Functions 전체 245/245, build, lint 오류 0을 통과했다. lint에는 기존 non-null assertion warning 24건만 남았다.
+- Firestore·Storage Rules 46/46과 Firestore transaction 52/52, Socket check·103/103을 통과했다.
+- iPhone 17 Pro Max iOS 26.2 Simulator에서 GRDB deletion sync·migration·Socket binder·신고 ViewModel/repository/action policy·메시지 주변 회귀 10개 suite 66/66을 통과했고 `OutPick-Development` Simulator build도 성공했다.
+- 첫 iOS 실행에서 방 생성자의 타인 메시지 신고를 금지하는 과거 테스트 기대값 1건을 발견했다. 확정 정책인 `신고 + 삭제` 동시 허용에 맞게 테스트 이름과 기대값을 보정한 뒤 해당 suite 16/16과 전체 66/66을 재통과했다.
+- `contracts/chat-moderation-v1.json`, `firestore.indexes.json` parse와 `git diff --check`가 통과했다. 다음은 전체 diff 리뷰·수정이다.
+
+## Phase 7.6 전체 diff 리뷰·수정 — 2026-08-28
+
+- 앱·GRDB·Functions/Rules·Socket·계약·하네스 diff를 경계별로 검토했다. 삭제 admission이 중복 message ID 배열을 `Dictionary(uniqueKeysWithValues:)`로 변환해 예외적으로 크래시할 수 있는 위험을 발견해, tombstone과 높은 deletion revision을 우선하는 결정적 병합으로 보정했다.
+- 직접 닫힌 미디어 화면의 `ObjectIdentifier`만 남던 추적 상태가 향후 재사용될 수 있는 위험을 발견해 약한 controller 참조를 함께 검증하고 소멸 항목을 정리하도록 보정했다. 불필요한 migration `var`와 동기 메서드 `await`도 제거했다.
+- 중복 ID admission 회귀를 추가한 뒤 GRDB deletion sync·migration 10/10, 전체 관련 iOS 10개 suite 67/67과 Development Simulator build를 재통과했다. 앱의 기존 actor isolation warning 1건, `UIApplication.windows` deprecation warning 4건, 누락된 resolver search path warning 1건은 이번 변경 범위 밖 기존 경고다.

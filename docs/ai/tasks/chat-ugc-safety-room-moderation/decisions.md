@@ -3,7 +3,7 @@
 ## 상태
 
 - 작업명: `chat-ugc-safety-room-moderation`
-- 상태: Phase 0~6 구현·검증 범위 완료. Phase 7 제품·보존·가시성·아키텍처와 Phase 7.1 transport source·저장·처리량·cleanup 설계 확정, Phase 7.0 기술 검증 완료; Phase 7.1 로컬 코드 구현 승인, Development·Production 리소스 생성·배포 미승인
+- 상태: Phase 0~6 완료, Phase 7.0~7.4D 구현·검증·승인 범위 완료. Phase 7.5 신고 UX·관리자 종결 분리·Deletion Sync 설계는 2026-08-27 확정했고 Phase 7.5A~C를 로컬 구현·자동 검증했다. Development·Production 변경은 미승인이다.
 - Phase 4 완료 경계: 실제 기기 background FCM/APNs 검증은 Apple Developer Program 가입과 APNs 설정 후 수행하는 출시 전 외부 gate이며 Phase 4 완료를 막지 않는다. Development 중복 수동 QA는 최신 앱 단일 Production 전환 결정과 Production 두 계정 QA로 대체했다.
 - 목적: 채팅 UGC의 서버 권위 삭제, 사용자·방 신고, 전역 사용자 차단, 방 내보내기, 플랫폼 총관리자 사후 제재와 기술적 전송 남용 방어를 하나의 안전 경계로 통합한다.
 - 운영 출시 전 필수 확인 조건: 계정 삭제 후 제재 우회 방지용 HMAC 원장과 신고 evidence의 적법한 보존 근거·기간·고지/동의 방식은 개인정보 법률 검토가 필요하다. 이미지·동영상도 자동 의미 검사 없이 신고·관리자 사후 처리로 운영하는 모델이 App Review Guidelines 1.2를 충족하는지는 **확실하지 않음**이며 App Review Notes와 실제 심사 피드백을 출시 gate로 둔다.
@@ -42,6 +42,22 @@
 - 삭제 서버 흐름은 메시지 공개 payload, attachments, `mediaIndex`, reply preview, active announcement, `Rooms.lastMessage*`, Storage와 로컬 GRDB/FTS 반영을 하나의 일관된 결과로 수렴시킨다. 즉시 transaction으로 끝낼 수 없는 Storage·projection 정리는 재시도 가능한 서버 cleanup 상태를 사용한다.
 - 사용자 화면에는 `삭제된 메시지입니다` 계열 tombstone만 표시한다. 삭제 주체, 삭제 사유와 총관리자 조치는 메시지 문서가 아니라 서버 전용 audit에 기록한다.
 - 방 생성자는 타인 메시지에서 대상 사용자를 신고한 뒤 같은 흐름에서 메시지를 삭제할 수 있다. 작성자는 자기 메시지 또는 자기 자신을 신고할 수 없다.
+- 메시지 long press는 UIKit native context menu를 사용한다. 방 생성자의 타인 메시지 메뉴에는 신고와 삭제를 별도 항목으로 함께 제공하고, 시스템의 touch 종료 뒤 유지·외부 탭 종료·safe-area 배치·접근성 동작을 따른다.
+
+### Phase 7.5 모든 서버 확정 삭제와 Deletion Sync 확정 — 2026-08-27
+
+- 신고 임계치는 관리자 queue의 우선순위만 높이고 메시지를 자동 비노출하지 않는다. `hiddenPendingReview`, `검토 중인 메시지입니다` tombstone과 기각 restore 이벤트는 최종 제품 계약에서 폐기한다.
+- 관리자 종결은 `reviewOutcome(dismissed|violation)`, `contentAction(keep|delete)`, `accountAction(none|warning|temporaryRestriction|permanentSuspension)`을 분리한다. `dismissed`는 `keep+none`, `violation`은 콘텐츠 삭제 또는 계정 조치 중 하나 이상을 요구한다.
+- 모든 사용자에게 보이는 tombstone은 `contentAction=delete`일 때만 만들고 삭제 주체와 무관하게 `삭제된 메시지입니다` 일반 문구를 사용한다.
+- 단건 삭제 transaction은 표시 메타데이터 보존 message tombstone, `Rooms.messageDeletionRevision`, 메시지별 결정적 delivery outbox를 원자적으로 갱신한다. 일반·관리자 삭제 tombstone은 sender UID·닉네임·아바타·전송 시각·답장 presentation을 남기고 원문·미디어·검색 필드만 제거한다. 계정 탈퇴 bulk만 UID·아바타·답장 정보를 제거하고 `알 수 없는 사용자`와 전송 시각을 남긴다. 모든 사용자는 삭제 주체를 구분하지 않는 `삭제된 메시지입니다` 본문을 본다.
+- 작성자·방 관리자·플랫폼 관리자 종결·계정 탈퇴 정리 등 모든 서버 확정 메시지 삭제는 같은 공통 deletion mutation과 클라이언트 delta 적용 경로를 사용한다. 진입점별로 권한·audit·evidence 조건이 다르고, delivery는 단건 message outbox와 계정 탈퇴 방별 head-advanced outbox로 최적화한다.
+- 계정 탈퇴는 `알 수 없는 사용자 + 원문 유지`를 사용하지 않는다. collection group query로 모든 공개 메시지를 방별 batch 처리해 원문·첨부·작성자 식별정보를 제거한다. 메시지별 outbox 대신 방별 revision 범위의 결정적 head-advanced outbox 하나를 만들고 클라이언트 delta reconciliation을 시작한다.
+- 현재 해당 방에 join한 Socket 연결에는 `chat:messageDeleted(roomID,messageID,seq,deletionRevision)`를 emit한다. Socket은 fast path이며 정답 원장이 아니다.
+- Phase 7.5C outbox 소비는 별도 Functions→Socket HTTP API 없이 Socket runtime의 Firestore watcher로 고정한다. 60초 lease와 최대 10회 bounded retry를 사용하고 만료 processing은 같은 attempt로 회수하며 terminal job은 처리 시점부터 7일 TTL을 적용한다.
+- iOS는 계정·방별 `lastAppliedDeletionRevision`을 보존한다. room head가 더 크면 `deletionRevision > cursor`인 tombstone message만 조회해 GRDB 원문·FTS·media index·cache를 정리한다.
+- 참여자별 deletion inbox, 삭제 push fan-out과 별도 deletion journal collection은 만들지 않는다. 메시지 tombstone 자체를 durable delta로 사용하고 방이 존재하는 동안 유지한다.
+- 다른 화면·다른 방·앱 종료·오프라인에서는 즉시 로컬 삭제를 보장하지 않는다. 온라인으로 해당 방에 다시 접근할 때 delta를 적용하며 오프라인 cache가 잠시 보일 수 있는 한계를 수용한다.
+- 상세 계약은 `phase-7-5-design.md`를 따른다. Phase 7.4D에 구현된 자동 hide/restore와 단일 decision enum은 Phase 7.5 구현에서 이 확정안으로 migration한다.
 
 ## 신고 모델
 
@@ -51,7 +67,7 @@
 - 방 설정에는 방 신고 진입점을 제공한다.
 - 사용자 신고 submission은 대상 사용자, 신고자, 사유, 선택적 상세, 신고가 발생한 방과 선택적 `triggerMessageID`를 문맥으로 저장한다. `triggerMessageID`는 신고 case의 identity가 아니다.
 - 사용자 신고는 대상 사용자 중심 aggregate에서 고유 신고자 수, 전체 사건 수, 사유별 집계, 최초·최근 신고 일시와 관련 방을 제공한다. 사건별 submission은 서버 전용 하위 문서로 분리하며, 같은 신고자의 새로운 사건 신고는 허용한다.
-- `submitMessageReport`는 evidence가 완전히 확보되기 전 `processing`이며 이 상태를 신고 접수, 신고자 수, queue, 작성자 반복 패턴과 전역 비노출 임계치에 반영하지 않는다. 텍스트 snapshot 또는 메시지 전체 미디어 evidence가 `available`이 된 뒤에만 `accepted`와 canonical incident/reporter/aggregate를 확정한다. evidence 준비가 확정 실패하면 `failed`로 끝내고 부분 evidence와 source hold를 정리한다.
+- `submitMessageReport`는 evidence가 완전히 확보되기 전 `processing`이며 이 상태를 신고 접수, 신고자 수, queue와 작성자 반복 패턴에 반영하지 않는다. 텍스트 snapshot 또는 메시지 전체 미디어 evidence가 `available`이 된 뒤에만 `accepted`와 canonical incident/reporter/aggregate를 확정한다. evidence 준비가 확정 실패하면 `failed`로 끝내고 부분 evidence와 source hold를 정리한다.
 - 같은 `clientRequestID` 재전송은 transport replay로 보고 revision과 무관한 최상위 `moderationMessageReportRequests/{requestID}`를 현재 review revision 결정 전에 먼저 조회한다. 앱은 최초 신고 UUID를 로컬에 보존해 terminal 결과까지 같은 ID로 확인한다. `processing`이면 같은 준비 작업을, `accepted | failed | messageAlreadyDeleted`면 최초 결과를 반환하므로 관리자 종결 뒤 늦게 도착한 과거 요청이 새 revision 신고가 되지 않으며 transport quota도 다시 소비하지 않는다. 같은 reporter/message/reviewRevision의 새 `clientRequestID`는 새 receipt transport slot 1개를 소비하되 준비 중이면 기존 결정적 bundle 작업을 이어서 확인하고, 이미 접수됐으면 `alreadyReported`를 반환해 앱이 `이미 신고한 메시지예요`를 표시한다. evidence·moderation 신고 집계는 중복 증가시키지 않는다.
 - 메시지 신고는 review revision별 reporter 한 건만 저장하고 기각·해결 뒤 새 revision이 열리면 같은 reporter도 다시 신고할 수 있다. 프로필 사용자 신고와 방 신고는 기존 사건별 새 UUID 허용 계약을 유지한다.
 - 사용자·방 신고 aggregate의 누적 통계는 닫히거나 다시 열리는 case가 아니다. 관리자 작업 상태 `reviewState`만 `open → inReview → resolved | dismissed`로 전이하며, 종료 뒤 새 사건이 접수되면 `reviewState`를 `open`으로 바꾸고 `reviewRevision`을 증가시킨다.
@@ -59,11 +75,11 @@
 - 신고 사유는 채팅과 룩북에서 공통 canonical taxonomy를 사용하고 화면 표시명만 기능별로 분리한다. 초기 canonical 사유는 `욕설·괴롭힘`, `혐오 표현`, `성적 콘텐츠`, `스팸·광고`, `개인정보 노출`, `불법·위험`, `기타`다.
 - 메시지 신고는 attachment 선택이나 동영상 시점 입력을 요구하지 않는다. 텍스트는 제한된 원문 snapshot, 이미지 묶음은 해당 메시지의 정규화 `display` 전체, 동영상은 정규화 원본 전체 1개를 서버 전용 evidence로 보존한다. 프로필 사용자 신고처럼 특정 메시지가 없으면 미디어 evidence를 만들지 않는다.
 - 결정적 `moderationMessageEvidence` bundle은 versioned canonical tuple의 `roomID + messageID + reviewRevision` 기준으로 만들고 제한된 text snapshot과 전체 attachment manifest를 공통 소유한다. 첫 신고 준비가 전체 attachment copy를 요청하고 같은 revision의 후속 요청은 기존 bundle/object를 재사용해 중복 복사하지 않는다. incident는 `roomID + messageID`, submission은 incident/revision/reporter/clientRequestID의 versioned canonical tuple SHA-256이며 최초 review revision은 기존 신고 계약과 같은 0이다.
-- 신고 성공만으로 신고자 화면의 메시지를 자동 숨기지 않는다. 신고, 개인 메시지 숨김, 사용자 차단, 서버 전역 비노출을 서로 다른 사용자 액션과 상태로 유지한다. 개인 `이 메시지 숨기기`는 후속 UX 범위이며 자동 실행하지 않는다.
+- 신고 성공만으로 신고자 화면의 메시지를 자동 숨기지 않는다. 신고, 개인 메시지 숨김, 사용자 차단과 관리자 명시 삭제를 서로 다른 사용자 액션과 상태로 유지한다. 개인 `이 메시지 숨기기`는 후속 UX 범위이며 자동 실행하지 않는다.
 - 별도 `moderationReviewQueue` projection은 만들지 않는다. `moderationMessageIncidents`, `moderationUserReports`, `moderationRoomReports`가 canonical 원장이자 관리자 조회 source이며 관리자 API가 각 원장을 직접 필터·정렬한다.
 - 일반 단일 메시지 신고는 incident `queueClass=holding`에 저장해 검색·사용자/메시지 상세에서 조회 가능하게 한다. 같은 메시지 고유 신고자 2명이면 `reviewRequired`, 긴급 첫 신고면 `urgent`로 바꾼다. `holding && reviewDueAt <= serverNow`는 문서 상태를 바꾸는 scheduler 없이 관리자 조회 조건으로 검토 목록에 포함한다.
 - 같은 작성자의 최근 7일 서로 다른 신고 메시지 3개 이상과 그 메시지 전체의 고유 신고자 2명 이상이 함께 충족되면 사용자 aggregate를 검토 대상으로 표시한다. 작성자 아래 `reportedMessages`와 `messageReporters` marker를 분리해 최근 3개/2개까지만 읽고, `messagePatternReviewUntil = min(세 번째 최신 메시지 시각, 두 번째 최신 신고자 시각) + 7일`을 서버 시각과 비교해 scheduler 없이 만료한다. 한 사람이 메시지 3개를 연속 신고하거나 한 메시지를 여러 명이 신고한 경우는 이 반복 작성자 기준을 충족하지 않는다.
-- 긴급 사유(`sexual`, `privacy`, `illegalDangerous`)는 첫 신고부터 긴급 큐에 표시한다. 전역 임시 비노출은 같은 review revision의 24시간 기준 긴급 고유 신고자 2명 또는 사유와 관계없는 전체 고유 신고자 3명에 도달하거나 관리자가 수동 조치할 때만 적용한다.
+- 긴급 사유(`sexual`, `privacy`, `illegalDangerous`)는 첫 신고부터 긴급 큐에 표시한다. 같은 review revision의 24시간 기준 긴급 고유 신고자 2명 또는 사유와 관계없는 전체 고유 신고자 3명은 queue 우선순위 신호로만 사용하며 메시지 visibility를 바꾸지 않는다.
 - 24시간·7일 rolling window는 transaction에서 고정한 단일 서버 시각을 사용하고 시작 경계를 포함한다. `reviewDueAt <= serverNow`는 overdue, `messagePatternReviewUntil > serverNow`만 활성으로 판정한다.
 - 총 submission 수, 고유 신고자 수, 신고된 서로 다른 메시지 수와 관리자 확정 경고 수를 분리한다. 신고만으로 경고나 계정 제재를 자동 증가시키지 않으며, 확정 위반은 최근 90일 `confirmedViolationCount90d`와 활성 경고를 관리자 판단 보조 정보로만 제공한다. 1회 경고·2회 제한 검토·3회 이상 장기 제한/정지 검토는 운영 권고일 뿐 자동 제재 규칙이 아니다.
 - Evidence 원본은 클라이언트에 공개되지 않으며, active admin·App Check·5분 recent-auth를 통과한 관리자가 read-only signer의 5분 exact-generation V4 signed GET URL로 특정 객체 하나만 조회한다. byte 전달·감사 방식은 Phase 7.4D 계약으로 확정했고 `admin-web-operations-migration`은 이 API를 사용하는 접근 UI와 exact-origin CORS만 담당한다. 브라우저에 service account credential을 두거나 일괄 다운로드를 허용하지 않는다.
@@ -82,11 +98,11 @@
 - evidence 실패 request receipt는 원래 generation의 failed 결과로 남긴다. bundle `state=failed`는 partial destination cleanup 완료와 빈 `objectPaths`까지 포함하는 terminal 상태이며, 이 상태와 preparation/copy job의 동일 generation을 확인한 뒤 새 `clientRequestID`만 같은 deterministic preparation/bundle/job ID를 모두 `attemptGeneration + 1`로 원자 재시작할 수 있다. processing alias receipt는 preparation이 terminal이면 재조회 시 한 건씩 결과를 수렴하고, receipt generation보다 preparation generation이 높으면 이전 attempt가 failed였음을 확정한다. 이전 generation worker·callback은 generation precondition이 다르면 아무 상태도 변경하지 않는다.
 - evidence available drain은 preparation 최대 30건과 각 preparation의 `initialRequestID` receipt만 함께 확정한다. 같은 preparation을 가리키는 추가 UUID receipt 전체를 무제한 query/write하지 않으며, 각 alias는 동일 UUID 재조회 때 preparation의 저장된 queue/visibility/accepted 시각으로 개별 수렴한다.
 - `requestedAt`은 최초 유효 신고 intent 시각, `acceptedAt`은 evidence 전체 확보 시각이다. canonical `receivedAt`, 24시간·7일 window와 운영 SLO는 `requestedAt`을 사용하지만 count·queue·visibility 효과는 `acceptedAt` 이후에만 기록한다.
-- 신고 권한은 `report` capability와 활성 room read context를 함께 요구한다. 현재 member와 기존 메시지 read가 유지된 active room-ban 사용자를 허용하고, 자기 신고는 UID가 아니라 canonical moderation principal 기준으로 거부한다. `visible | hiddenPendingReview`는 신고 가능하며 삭제 tombstone은 `messageAlreadyDeleted`로 끝낸다.
+- 신고 권한은 `report` capability와 활성 room read context를 함께 요구한다. 현재 member와 기존 메시지 read가 유지된 active room-ban 사용자를 허용하고, 자기 신고는 UID가 아니라 canonical moderation principal 기준으로 거부한다. visible 메시지는 신고 가능하며 삭제 tombstone은 `messageAlreadyDeleted`로 끝낸다.
 - public ready media 삭제를 담당하는 기존 `chatMessageCleanupJobs`에 `awaitingEvidence`를 추가하고 cleanup worker는 이 상태를 claim하지 않는다. text evidence는 즉시 available이므로 public cleanup을 바로 pending으로 만들고, media는 copy 성공 또는 terminal failure로 source read가 끝난 뒤 pending으로 전환한다. copied moderation evidence cleanup은 별도 `moderationEvidenceCleanupJobs`가 담당한다.
-- 최초 media bundle이 available이 되면 processing preparation들을 accepted로 drain하는 동안 incident를 `draining`, 모두 확정된 뒤 `reviewable`로 둔다. 관리자는 `reviewable` revision만 종결할 수 있다. 관리자 삭제가 먼저면 남은 요청은 `messageAlreadyDeleted`와 client-safe `moderationRemoved` tombstone으로 끝내고, 기각 뒤 메시지가 남아 있으면 이후 유효 신고는 새 revision과 새 evidence bundle로 시작한다.
+- 최초 media bundle이 available이 되면 processing preparation들을 accepted로 drain하는 동안 incident를 `draining`, 모두 확정된 뒤 `reviewable`로 둔다. 관리자는 `reviewable` revision만 종결할 수 있다. 관리자 삭제가 먼저면 남은 요청은 `messageAlreadyDeleted`와 일반 삭제 tombstone으로 끝내고, 기각 뒤 메시지가 남아 있으면 이후 유효 신고는 새 revision과 새 evidence bundle로 시작한다.
 - 신고 기술 limiter는 reporter moderation principal 기준 user/room/message 합산 1분 10회다. 기존 accepted user/room 요청과 이전에 보지 못한 message `clientRequestID`의 최상위 transport receipt 생성을 합산한다. 정확히 같은 `clientRequestID` replay만 무료이며, 새 UUID는 기존 processing preparation 재사용·`alreadyReported`·`messageAlreadyDeleted` 결과여도 receipt 1건을 만들므로 transport slot 1개를 소비한다. 이는 moderation 신고 count·queue·evidence 증가와 분리된다. 새 semantic preparation 여부는 별도 `messagePreparationCount`로 관측하되 한 요청을 기술 작업 2회로 세지 않는다.
-- 관리자 삭제 tombstone은 구체적 신고 사유·신고자·관리자 정보를 client에 노출하지 않고 `deletionPresentation=moderationRemoved`만 제공한다. 일반 자기 삭제·방장 삭제는 기존 generic `deleted` 표시를 유지한다.
+- 관리자 삭제 tombstone은 구체적 신고 사유·신고자·관리자 정보를 client에 노출하지 않고 자기 삭제·방장 삭제와 같은 generic `deleted` 표시를 사용한다.
 
 ## Phase 7.4C-1 evidence copy·cleanup 확정 — 2026-08-25
 
@@ -95,7 +111,7 @@
 - source descriptor는 현재 환경의 exact ready bucket, `rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}/display`, 양의 generation/bytes와 message type별 개수·MIME를 다시 검증한다. 이미지는 1...30개의 JPEG/PNG/GIF, 동영상은 MP4 정확히 1개만 허용하며 thumbnail·quarantine·다른 환경/메시지 path는 거부한다.
 - retry 중에는 report-first 삭제의 public ready media cleanup을 `awaitingEvidence`로 유지한다. 3회째 실패하면 generation-scoped partial destination을 모두 삭제한 뒤 processing preparation과 각 최초 receipt를 최대 30건씩 `failed`로 drain하고, bundle을 원문·경로 없는 최소 failed tombstone으로 만든 뒤 guard `failed`와 public cleanup `pending`을 원자 확정한다. 추가 alias receipt는 기존 조회 시 failure에 수렴한다.
 - copy job은 `copying → acceptanceDrain` 또는 `cleaningPartial → failureDrain` phase를 가지며, Storage metadata 검증은 `copying` 안에서 수행한다. bytes가 available이고 preparation drain이 모두 끝난 뒤에만 `succeeded`다. Function timeout은 9분, lease는 12분, onCreate와 5분 recovery scheduler를 사용한다. scheduler는 회당 최대 10개를 순차 처리하고 maxInstances는 Development 1, Production 초기 2다. 마지막 copy/cleanup 시도의 worker가 종료되면 만료 lease를 같은 시도 번호로 회수해 정리·종결하며 새 물리 copy 시도로 계산하지 않는다.
-- accepted evidence retention cleanup은 Storage 객체를 generation 조건으로 먼저 모두 삭제한 뒤 `moderationMessageEvidence/{bundleID}` 자체를 삭제한다. 완료 cleanup job에는 bundle hash·상태·시각 등 비민감 영수증만 남겨 7일 TTL 처리하며, copy job도 성공 뒤 source/evidence/room/message 연결을 scrub하고 7일 TTL 처리한다. revision-independent request receipt는 30일 TTL이고 iOS 미확정 UUID는 Phase 7.5에서 최대 7일 보존한다.
+- accepted evidence retention cleanup은 Storage 객체를 generation 조건으로 먼저 모두 삭제한 뒤 `moderationMessageEvidence/{bundleID}` 자체를 삭제한다. 완료 cleanup job에는 bundle hash·상태·시각 등 비민감 영수증만 남겨 7일 TTL 처리하며, copy job도 성공 뒤 source/evidence/room/message 연결을 scrub하고 7일 TTL 처리한다. revision-independent request receipt는 30일 TTL이다. iOS는 별도 GRDB·메모리 신고 캐시를 만들지 않고 신고 화면 생명주기 동안만 reason/detail/clientRequestID를 유지한다. 화면 종료 뒤 재신고는 새 UUID를 사용하며 서버 transaction이 processing preparation 재사용, `alreadyReported`, 새 preparation 또는 `messageAlreadyDeleted`를 최종 판정한다.
 - evidence bucket은 `asia-northeast3` Standard, uniform bucket-level access와 public access prevention, soft delete/versioning/retention lock 비활성으로 확정한다. C-1은 로컬 코드·테스트만 구현하며 bucket/IAM/Functions export·배포는 하지 않는다. C-2는 별도 승인 뒤 Development 리소스, C-3는 30장/350 MiB·IAM·삭제 실측이며 Production은 별도 rollout이다.
 - 외부 활성화는 Phase 7.4D Rules/index/admin query, audited 단건 evidence 조회, Phase 7.5 iOS UX, Development 실측, 개인정보/App Privacy와 운영 경고 준비가 모두 끝날 때까지 금지한다. processing 15분 warning, 45분 또는 terminal failed critical, backlog 10건 warning을 사용하되 원문·bucket/path·프로필은 로그에 남기지 않는다.
 
@@ -118,7 +134,7 @@
 - 발급 로그와 Evidence bucket `DATA_READ`는 환경별 전용 `moderation-evidence-audit` user-defined log bucket으로 route한다. bucket은 `asia-northeast3`, Log Analytics 활성, retention 1,095일, lock, 최소 read IAM을 사용하고 일반 `_Default` 접근 범위에 민감 audit 사본을 남기지 않는다. 날짜·actorUID·incidentID·revision·object·issuanceID·결과별 조회를 지원한다. 실제 Development bucket/sink/Data Access 설정·lock은 되돌리기 어려운 변경이므로 Phase 7.4D 로컬 검증 후 별도 Development 승인에 포함하고 Production은 별도 gate다.
 - Evidence object 응답은 `Cache-Control: private, no-store, max-age=0` metadata를 사용하고 관리자 웹·서버는 signed URL을 DB·로그·영속 상태에 저장하지 않는다. 이는 정상 브라우저·공유 cache의 불필요한 사본을 줄이는 조치이며 관리자 저장·화면 캡처·권한 있는 사용자의 고의 유출을 막는 DRM으로 간주하지 않는다.
 - signed URL과 프록시 모두 권한 있는 관리자의 저장·캡처·재유출을 완전히 막지 못한다. 현재 신뢰된 소수 관리자·낮은 조회량에서는 프록시의 350 MiB Range 스트리밍·비용·운영 복잡도보다 단건 최소 권한, 짧은 만료, 식별 가능한 발급 audit과 retention을 선택한다. 관리자 규모·외부 위탁 운영·실제 URL 유출·발급 후 즉시 회수 요구가 생기면 인증 프록시 또는 별도 전달 계층을 재검토한다.
-- Phase 7.4D는 message query뿐 아니라 `resolveMessageModeration` 서버 계약을 포함한다. `dismissed`는 같은 seq를 복원하고, `contentDeleted|warningOnly|temporaryRestriction|permanentSuspension`은 관리자 삭제 tombstone을 만든다. 앞의 세 non-sanction 결정 중 `dismissed|contentDeleted|warningOnly` Evidence는 즉시 cleanup하고 계정 restriction/suspension Evidence는 30일 보존하며 appeal/legal hold는 기존 계약대로 보류한다. 요청은 incidentID, reviewRevision, decision, 조건부 restrictedUntil, expectedCaseVersion, 계정 조치 시 expectedAccountStateVersion, reasonCode, clientRequestID만 받고 room/message/bundle/작성자 UID는 서버가 유도한다.
+- Phase 7.4D는 message query뿐 아니라 당시 `resolveMessageModeration` 단일 decision 서버 계약을 구현했다. 이 문장은 완료 이력이며 최종 제품 계약이 아니다. Phase 7.5에서 이를 `reviewOutcome + contentAction + accountAction`으로 migration하고 `contentAction=keep`인 warning/restriction/suspension은 원문을 삭제하지 않도록 변경한다. 요청은 계속 incidentID/revision/version/reason/clientRequestID만 신뢰하고 room/message/bundle/작성자 UID는 서버가 유도한다.
 - message queue는 `acceptanceState=reviewable`을 actionable view의 공통 조건으로 사용한다. urgent/reviewRequired는 `reviewState=open`과 queueClass equality 뒤 `slaDueAt ASC,lastReportedAt DESC,__name__ ASC`, overdueHolding은 open+holding과 `reviewDueAt<=serverNow` 뒤 `reviewDueAt ASC,lastReportedAt DESC,__name__ ASC`, inReview는 `reviewState=inReview` 뒤 `priorityClass DESC,slaDueAt ASC,lastReportedAt DESC,__name__ ASC`, resolved/dismissed는 각 reviewState 뒤 `updatedAt DESC,__name__ DESC`로 고정한다.
 - terminal `moderationMessageReportPreparations`는 reason/detail과 중복 room/message/source 식별 정보를 scrub하고 수렴에 필요한 최소 상태만 `createdAt + 30일`까지 유지한 뒤 TTL 삭제한다. Evidence 접근 감사는 Firestore TTL 대상이 아니며 잠긴 log bucket에서 1,095일 보존한다.
 - Evidence Storage Rules는 환경별 `moderationEvidence` Firebase target과 전용 deny-all rules file로 분리한다. Firebase client read/write는 모두 거부하고 signed URL 접근 권위는 IAM·UBLA·public access prevention으로 유지한다. 관리자 웹 origin이 확정되기 전에는 wildcard CORS를 설정하지 않으며 Phase 7.4D backend QA는 HTTP client로 수행한다.
@@ -224,8 +240,12 @@
 ## Phase 3 메시지 삭제·방 폐쇄·안내 확정 — 2026-08-10
 
 - 메시지 삭제는 `deleteChatMessage`만 수행한다. 작성자는 자기 메시지, 방 생성자는 자기 방의 모든 메시지, 활성 platform admin은 최근 인증과 사유가 있을 때 모든 메시지를 삭제할 수 있다.
-- 삭제 transaction은 `seq`와 `isDeleted` tombstone을 유지하고 본문·첨부·공유 payload·검색 payload·발신자 snapshot을 즉시 제거한다. 마지막 메시지와 공지 projection도 같은 transaction에서 정리한다.
+- 삭제 transaction은 `seq`와 `isDeleted` tombstone을 유지하고 본문·첨부·공유 payload·검색 payload를 즉시 제거한다. 일반·관리자 삭제의 발신자·시간·답장 presentation은 유지하고 계정 탈퇴에서만 발신자 식별정보를 제거한다. 마지막 메시지와 공지 projection도 같은 transaction에서 정리한다.
 - reply preview·media index·Storage는 deterministic `chatMessageCleanupJobs`가 정리하며 5분 scheduler와 최대 20회 재시도로 수렴한다. 완료 job은 7일 TTL, 최종 실패 job은 TTL 없이 운영 확인 대상으로 남긴다.
+- Phase 7.5B부터 삭제 공통 코어는 자체 transaction을 열지 않는 `functions/src/chat/deletion/mutation.ts`로 고정한다. 작성자·방 관리자 service, 플랫폼 관리자 resolution, 계정 탈퇴 worker가 transaction과 snapshot 조회를 소유하고 코어는 tombstone·revision·projection·cleanup job·outbox write만 구성한다.
+- 단건과 bulk outbox 문서 생성은 삭제 원장과 원자적이어야 하므로 Phase 7.5B가 소유한다. Phase 7.5C는 claim/lease/retry/TTL과 Socket emit만 추가한다.
+- 계정 탈퇴 message query와 방별 chunk는 최대 30건이며 같은 방은 `seq`, 동률이면 document ID 순으로 연속 revision을 배정한다. replay와 legacy deleted 정규화는 새 revision을 소비하지 않고 영구 batch journal을 만들지 않는다.
+- 계정 탈퇴가 생성·재사용한 `chatMessageCleanupJobs`에는 서버 전용 `accountDeletionRequestID`를 연결한다. 최종 verify는 해당 요청의 job이 모두 `completed`일 때만 통과하며 evidence 대기·재시도·failed가 남으면 계정 탈퇴 완료를 금지한다.
 - 방장 삭제는 `closedByOwner`, 관리자 폐쇄는 `closedByModeration`으로 구분한다. 두 경로 모두 room lifecycle을 즉시 닫아 Firestore read/join/write, Storage read/write와 Socket 입장을 차단하고 방 콘텐츠 물리 정리를 바로 시작한다.
 - 방장 삭제는 삭제를 수행한 creator를 제외한 당시 member에게, 관리자 종료는 creator를 포함한 당시 member에게 `users/{uid}/roomClosureNotices/{roomID}`를 만든다. 사용자가 확인하면 해당 notice를 즉시 삭제하며, 미확인 notice만 `expiresAt` 기준 최대 30일 보존한다.
 - 30일은 방과 메시지 콘텐츠 보존 기간이 아니다. 방 콘텐츠는 안내 생성 후 즉시 삭제하고, 안내 projection에는 맥락 표시용 방 이름·room ID·종료 유형·안내 코드·종료 시각만 둔다. 사용자 문구는 `“{방 이름}” 채팅방이 종료됐어요`를 사용하고 `폐쇄` 표현은 노출하지 않는다.
@@ -283,8 +303,8 @@
 - 이미지에서는 GPS, 촬영 시각, 기기·카메라·렌즈·일련번호·소유자·software·MakerNote·XMP/IPTC·편집 이력·얼굴 영역·embedded thumbnail·unique ID·원본 파일명·depth/portrait·Live Photo 연결 등 불필요 metadata를 제거한다. 동영상에서도 위치·시각·기기·제목·comment·QuickTime location·불필요 metadata와 보조 track을 제거한다. 사용자의 로컬 원본은 변경하지 않는다.
 - 업로드 상태는 `uploading → queued → processing → ready`, 종료 상태는 `canceled | failed | expired`다. 발신자는 ready 전 취소할 수 있고 최초 server transaction commit이 이긴다. 기술 오류는 서버가 최대 3회 재시도한 뒤 사용자 수동 재시도로 전환하며, 실패한 로컬 outbox 원본은 7일 뒤 자동 삭제한다.
 - 신고 성공만으로 개인 숨김을 만들지 않는다. 추후 사용자가 명시적으로 `이 메시지 숨기기`를 선택하면 전체 메시지를 개인 숨김하며, 사용자 차단은 기존 전역 차단 관계로 별도 처리한다.
-- 전역 임시 비노출은 관리자 수동 조치 또는 같은 `reviewRevision`에서 24시간 이내 서로 다른 canonical principal의 긴급 사유 2명이나 전체 사유 합계 3명에 도달할 때 적용한다. 자동 제재는 하지 않으며 관리자가 evidence를 확인한 뒤 콘텐츠 결정과 계정 조치를 각각 명시적으로 선택한다.
-- 전역 비노출 메시지는 동일 seq를 유지하며 `검토 중인 메시지입니다` tombstone으로 보이고 공개 media 접근·room preview·앱 내부 cache를 정리한다. 기각 시 같은 messageID/seq의 내용을 복원하되 새 push·banner·latestSeq·read frontier rollback·인위적 unread를 만들지 않는다. 위반 확정 시 기존 seq를 삭제 tombstone으로 전환한다. 기각 전 신고 수가 다음 revision을 즉시 재비노출시키지 않는다.
+- 신고 임계치와 작성자 반복 패턴은 관리자 queue의 우선순위·정렬·경고에만 사용한다. 신고만으로 전역 임시 비노출이나 자동 제재를 만들지 않으며 관리자가 evidence를 확인한 뒤 콘텐츠 결정과 계정 조치를 각각 명시적으로 선택한다.
+- 관리자가 `contentAction=delete`를 선택하기 전까지 공개 메시지 원문을 유지한다. 삭제 확정 뒤에만 기존 seq의 일반 삭제 tombstone으로 전환하고 Deletion Sync로 활성·비활성 클라이언트를 수렴시킨다.
 - 신고와 삭제는 server-only `moderationMessageGuards/{incidentID}`를 함께 읽고 쓰는 transaction으로 first-commit-wins를 보장한다. Firestore client가 읽는 message document에는 신고 여부나 evidence hold를 노출하는 server-only 필드를 넣지 않는다.
 - 삭제가 먼저 commit되면 신고 문서·aggregate·evidence·moderation count를 만들지 않고 `messageAlreadyDeleted`와 messageID/seq를 반환한다. 다만 이전에 보지 못한 `clientRequestID`의 최상위 transport receipt와 공유 limiter slot 1개는 만들며, 앱은 `이미 삭제된 메시지예요`를 표시하고 같은 messageID/seq를 즉시 삭제 tombstone으로 갱신한다.
 - 신고 준비가 먼저 commit되면 server-only guard와 evidence hold/copy job만 만들고 이후 삭제는 화면상 tombstone을 즉시 적용하되 Storage cleanup을 `awaitingEvidence`에서 기다린다. evidence copy 완료 뒤에만 신고를 `accepted`로 확정하고 guard를 `available`로 바꿔 cleanup을 재개한다. copy가 확정 실패하면 신고 집계 없이 `failed`로 끝내고 hold를 해제해 원본 cleanup을 재개한다.
