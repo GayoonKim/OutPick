@@ -1,10 +1,5 @@
 /* eslint-disable require-jsdoc, max-len */
-import {createHash} from "node:crypto";
-import {
-  FieldValue,
-  Firestore,
-  Timestamp,
-} from "firebase-admin/firestore";
+import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
@@ -15,13 +10,20 @@ import {
 } from "../../moderation/audit/contracts.js";
 import {messageIncidentID} from "../../moderation/messageEvidence/contracts.js";
 import {
+  applySingleMessageDeletionMutation,
+  messageCleanupJobID,
+} from "../deletion/mutation.js";
+import {
   AcknowledgeRoomClosureInput,
   CloseOwnedChatRoomInput,
   CloseRoomByModerationInput,
   DeleteChatMessageInput,
 } from "./contracts.js";
 
-const DELETED_MESSAGE_PREVIEW = "삭제된 메시지입니다.";
+export {
+  messageCleanupJobID,
+  messageStorageTargets,
+} from "../deletion/mutation.js";
 
 type DeleteActorKind = "author" | "roomOwner" | "platformAdmin";
 type ClosureType = "closedByOwner" | "closedByModeration";
@@ -40,48 +42,8 @@ function roomIsActive(data: FirebaseFirestore.DocumentData): boolean {
     (data.lifecycleStatus === undefined || data.lifecycleStatus === "active");
 }
 
-export type MessageStorageTarget = {bucket: string | null; prefix: string};
-
-export function messageStorageTargets(
-  roomID: string,
-  messageID: string,
-  data: FirebaseFirestore.DocumentData,
-): MessageStorageTarget[] {
-  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-  const expected = `rooms/${roomID}/messages/${messageID}`;
-  const targets = new Map<string, MessageStorageTarget>();
-  for (const attachment of attachments) {
-    if (!attachment || typeof attachment !== "object") continue;
-    for (const [pathField, bucketField] of [
-      ["pathThumb", "bucketThumb"],
-      ["pathOriginal", "bucketOriginal"],
-    ] as const) {
-      const value = attachment[pathField];
-      if (typeof value !== "string" ||
-          (value !== expected && !value.startsWith(`${expected}/`))) continue;
-      const bucketValue = attachment[bucketField];
-      const bucket = typeof bucketValue === "string" && bucketValue.length > 0 ?
-        bucketValue : null;
-      targets.set(bucket ?? "__default__", {bucket, prefix: expected});
-    }
-  }
-  return [...targets.values()];
-}
-
-export function messageCleanupJobID(roomID: string, messageID: string): string {
-  return createHash("sha256").update(`${roomID}:${messageID}`).digest("hex");
-}
-
 function messageTargetID(roomID: string, messageID: string): string {
   return `${roomID}:${messageID}`;
-}
-
-function cleanupStatusForEvidenceGuard(
-  guard: FirebaseFirestore.DocumentData | undefined,
-): "awaitingEvidence" | "pending" {
-  if (guard?.guardWinner !== "reportFirst") return "pending";
-  return guard.evidenceState === "available" || guard.evidenceState === "failed" ?
-    "pending" : "awaitingEvidence";
 }
 
 async function deleteActor(
@@ -193,93 +155,32 @@ export async function deleteChatMessageService(
       });
     }
     const nowTimestamp = Timestamp.fromDate(now);
-    const guardData = currentGuard.data();
-    const cleanupStatus = cleanupStatusForEvidenceGuard(guardData);
+    const mutation = applySingleMessageDeletionMutation(
+      transaction,
+      firestore,
+      roomRef,
+      currentRoom,
+      {
+        messageRef,
+        message: currentMessage,
+        cleanupRef: jobRef,
+        cleanup: currentJob,
+        guardRef,
+        guard: currentGuard,
+      },
+      input.roomID,
+      input.messageID,
+      nowTimestamp,
+    );
     const result = {
       messageID: input.messageID,
       seq: input.expectedSeq,
       isDeleted: true,
-      cleanupStatus: currentJob.exists && currentJob.get("status") === "completed" ?
-        "completed" : currentJob.exists && currentJob.get("status") === "awaitingEvidence" ?
-          "awaitingEvidence" : cleanupStatus,
+      deletionRevision: mutation.deletionRevision,
+      cleanupStatus: mutation.cleanupStatus,
       deduplicated: message.isDeleted === true,
-      deletedAt: message.deletedAt instanceof Timestamp ?
-        message.deletedAt.toDate().toISOString() : now.toISOString(),
+      deletedAt: mutation.deletedAt.toDate().toISOString(),
     };
-    if (message.isDeleted !== true) {
-      const storageTargets = messageStorageTargets(input.roomID, input.messageID, message);
-      transaction.update(messageRef, {
-        isDeleted: true,
-        deletedAt: nowTimestamp,
-        deletionPresentation: actorKind === "platformAdmin" ?
-          "moderationRemoved" : "deleted",
-        moderationVisibilityState: "deleted",
-        msg: FieldValue.delete(),
-        attachments: FieldValue.delete(),
-        sharedContent: FieldValue.delete(),
-        replyPreview: FieldValue.delete(),
-        searchNormalized: FieldValue.delete(),
-        searchChars: FieldValue.delete(),
-        searchNgrams2: FieldValue.delete(),
-        searchIndexVersion: FieldValue.delete(),
-        senderEmail: FieldValue.delete(),
-        senderNickname: FieldValue.delete(),
-        senderAvatarPath: FieldValue.delete(),
-        messageType: FieldValue.delete(),
-        isFailed: FieldValue.delete(),
-      });
-      if (currentRoom.get("lastMessageSeq") === input.expectedSeq) {
-        transaction.update(roomRef, {
-          lastMessage: DELETED_MESSAGE_PREVIEW,
-          updatedAt: nowTimestamp,
-        });
-      }
-      if (currentRoom.get("activeAnnouncementID") === input.messageID) {
-        transaction.update(roomRef, {
-          activeAnnouncementID: FieldValue.delete(),
-          activeAnnouncement: FieldValue.delete(),
-          announcementUpdatedAt: nowTimestamp,
-        });
-      }
-      if (!currentJob.exists) {
-        transaction.create(jobRef, {
-          schemaVersion: 2,
-          roomID: input.roomID,
-          messageID: input.messageID,
-          expectedSeq: input.expectedSeq,
-          storageTargets,
-          storagePrefixes: storageTargets
-            .filter((target) => target.bucket === null)
-            .map((target) => target.prefix),
-          status: cleanupStatus,
-          attempt: 0,
-          nextAttemptAt: cleanupStatus === "awaitingEvidence" ? null : nowTimestamp,
-          leaseExpiresAt: null,
-          lastErrorCode: null,
-          createdAt: nowTimestamp,
-          updatedAt: nowTimestamp,
-          expiresAt: null,
-        });
-      }
-    }
-    if (!currentGuard.exists) {
-      transaction.create(guardRef, {
-        schemaVersion: 1,
-        roomID: input.roomID,
-        messageID: input.messageID,
-        contentState: "deleted",
-        guardWinner: "deleteFirst",
-        evidenceState: "none",
-        bundleID: null,
-        reviewRevision: null,
-        updatedAt: nowTimestamp,
-      });
-    } else if (guardData?.contentState !== "deleted") {
-      transaction.update(guardRef, {
-        contentState: "deleted",
-        updatedAt: nowTimestamp,
-      });
-    }
     const reasonCode = input.reasonCode ?? "selfDelete";
     transaction.create(auditRef, {
       schemaVersion: 1,

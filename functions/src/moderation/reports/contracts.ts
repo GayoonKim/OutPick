@@ -62,7 +62,7 @@ export type MessageReportReceipt = {
   deduplicated: boolean;
   alreadyReported: boolean;
   queueClass: "holding" | "reviewRequired" | "urgent" | null;
-  visibilityState: "visible" | "hiddenPendingReview" | "deleted";
+  visibilityState: "visible" | "deleted";
   receivedAt: string | null;
   originalReceivedAt: string | null;
   seq: number | null;

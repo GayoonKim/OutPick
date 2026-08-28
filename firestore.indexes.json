@@ -50,6 +50,22 @@
       ]
     },
     {
+      "collectionGroup": "chatMessageDeletionDeliveryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chatMessageDeletionDeliveryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "leaseExpiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "moderationRoomCleanupJobs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -874,6 +890,24 @@
       ]
     },
     {
+      "collectionGroup": "reporters",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "priorityClass",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "moderationMessageIncidents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -1054,6 +1088,12 @@
       "indexes": []
     },
     {
+      "collectionGroup": "chatMessageDeletionDeliveryJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "moderationRoomCleanupJobs",
       "fieldPath": "expiresAt",
       "ttl": true,
@@ -1085,6 +1125,10 @@
       "collectionGroup": "Messages",
       "fieldPath": "replyPreview.messageID",
       "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"

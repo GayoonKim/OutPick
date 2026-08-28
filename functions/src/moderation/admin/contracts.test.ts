@@ -23,7 +23,7 @@ test("메시지 목록은 명시적인 queue view를 요구한다", () => {
   }).messageQueueView, "overdueHolding");
 });
 
-test("메시지 제재 결정의 버전과 만료 계약을 검증한다", () => {
+test("메시지 관리자 결정은 검토·콘텐츠·계정 조치를 분리해 검증한다", () => {
   const base = {
     incidentID: "incident-1",
     reviewRevision: 0,
@@ -32,17 +32,55 @@ test("메시지 제재 결정의 버전과 만료 계약을 검증한다", () =>
     clientRequestID: "123e4567-e89b-42d3-a456-426614174000",
   };
   assert.throws(
-    () => parseResolveMessageModerationInput({...base, decision: "temporaryRestriction"}),
+    () => parseResolveMessageModerationInput({
+      ...base,
+      reviewOutcome: "violation",
+      contentAction: "keep",
+      accountAction: "temporaryRestriction",
+    }),
     (error) => error instanceof HttpsError && error.code === "invalid-argument",
   );
   const parsed = parseResolveMessageModerationInput({
     ...base,
-    decision: "temporaryRestriction",
+    reviewOutcome: "violation",
+    contentAction: "keep",
+    accountAction: "temporaryRestriction",
     restrictedUntil: "2030-01-01T00:00:00.000Z",
     expectedAccountStateVersion: 3,
   });
   assert.equal(parsed.expectedAccountStateVersion, 3);
   assert.equal(parsed.restrictedUntil?.toISOString(), "2030-01-01T00:00:00.000Z");
+
+  assert.throws(
+    () => parseResolveMessageModerationInput({
+      ...base,
+      reviewOutcome: "dismissed",
+      contentAction: "delete",
+      accountAction: "none",
+    }),
+    (error) => error instanceof HttpsError && error.code === "invalid-argument",
+  );
+  assert.throws(
+    () => parseResolveMessageModerationInput({
+      ...base,
+      reviewOutcome: "violation",
+      contentAction: "keep",
+      accountAction: "none",
+    }),
+    (error) => error instanceof HttpsError && error.code === "invalid-argument",
+  );
+  assert.equal(parseResolveMessageModerationInput({
+    ...base,
+    reviewOutcome: "violation",
+    contentAction: "keep",
+    accountAction: "warning",
+  }).accountAction, "warning");
+  assert.equal(parseResolveMessageModerationInput({
+    ...base,
+    reviewOutcome: "violation",
+    contentAction: "delete",
+    accountAction: "none",
+  }).contentAction, "delete");
 });
 
 test("Evidence URL 입력은 current revision 비교에 필요한 식별자를 모두 요구한다", () => {

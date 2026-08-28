@@ -21,6 +21,10 @@ import {
   processMessageCleanupJob,
   processRoomCleanupJob,
 } from "../functions/lib/chat/cleanup/moderationCleanup.js";
+import {
+  hasIncompleteAccountDeletionMessageCleanup,
+  scrubMessagePage,
+} from "../functions/lib/accountDeletion/cleanup.js";
 
 const ownerUID = "chat-owner";
 const memberUID = "chat-member";
@@ -50,9 +54,11 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("moderationAccounts").doc(memberUID)),
     db.recursiveDelete(db.collection("userPublicProfiles").doc(memberUID)),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
+    db.recursiveDelete(db.collection("chatMessageDeletionDeliveryJobs")),
     db.recursiveDelete(db.collection("moderationRoomCleanupJobs")),
     db.recursiveDelete(db.collection("roomOwnershipSuccessionJobs")),
     db.recursiveDelete(db.collection("moderationAuditLogs")),
+    db.recursiveDelete(db.collection("Rooms").doc("account-deletion-room")),
     ...bulkMemberUIDs.map((uid) => db.recursiveDelete(db.collection("users").doc(uid))),
   ]);
 }
@@ -101,9 +107,16 @@ async function seedFixtures() {
       roomID,
       senderUID: ownerUID,
       senderNickname: "방장",
+      senderAvatarPath: "avatars/owner/profile.jpg",
       seq: 1,
       msg: "삭제 대상",
+      sentAt: now,
       isDeleted: false,
+      replyPreview: {
+        messageID: "source-message",
+        sender: "이전 작성자",
+        text: "이전 메시지",
+      },
       attachments: [{
         pathOriginal: `rooms/${roomID}/messages/${messageID}/images/1/original.jpg`,
       }],
@@ -293,9 +306,25 @@ describe("chat moderation lifecycle transactions", () => {
     const message = await room.ref.collection("Messages").doc(messageID).get();
     const reply = await room.ref.collection("Messages").doc("reply-1").get();
     const media = await room.ref.collection("mediaIndex").get();
-    assert.equal(room.data()?.lastMessage, "삭제된 메시지입니다.");
+    assert.equal(room.data()?.lastMessage, "삭제된 메시지입니다");
+    assert.equal(room.data()?.messageDeletionRevision, 1);
     assert.equal(message.data()?.seq, 1);
     assert.equal(message.data()?.isDeleted, true);
+    assert.equal(message.data()?.deletionRevision, 1);
+    assert.deepEqual(Object.keys(message.data()).sort(), [
+      "ID", "deletedAt", "deletionRevision", "isDeleted", "replyPreview", "roomID",
+      "senderAnonymized", "senderAvatarPath", "senderNickname", "senderUID", "sentAt", "seq",
+    ]);
+    assert.equal(message.data()?.senderUID, ownerUID);
+    assert.equal(message.data()?.senderNickname, "방장");
+    assert.equal(message.data()?.senderAvatarPath, "avatars/owner/profile.jpg");
+    assert.equal(message.data()?.sentAt.toMillis(), now.getTime());
+    assert.deepEqual(message.data()?.replyPreview, {
+      messageID: "source-message",
+      sender: "이전 작성자",
+      text: "이전 메시지",
+    });
+    assert.equal(message.data()?.senderAnonymized, false);
     assert.equal("msg" in message.data(), false);
     assert.equal("attachments" in message.data(), false);
     assert.deepEqual(reply.data()?.replyPreview, {
@@ -307,7 +336,87 @@ describe("chat moderation lifecycle transactions", () => {
       isDeleted: true,
     });
     assert.equal(media.empty, true);
+    assert.equal((await db.collection("chatMessageDeletionDeliveryJobs").get()).size, 1);
     assert.deepEqual(deletedPrefixes, [`rooms/${roomID}/messages/${messageID}/`]);
+
+    const replay = await deleteChatMessageService(ownerUID, null, {
+      roomID,
+      messageID,
+      expectedSeq: 1,
+      reasonCode: "chatMessageDeletion",
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: "223e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    assert.equal(replay.deduplicated, true);
+    assert.equal((await room.ref.get()).data()?.messageDeletionRevision, 1);
+    assert.equal((await db.collection("chatMessageDeletionDeliveryJobs").get()).size, 1);
+  });
+
+  test("계정 탈퇴 메시지는 방별 연속 revision과 cleanup 완료 gate로 수렴한다", async () => {
+    const generation = "generation-1";
+    const deletionRequestID = "account-deletion-request-1";
+    await db.collection("users").doc(ownerUID).set({
+      accountStatus: "deletionPending",
+      accountGenerationID: generation,
+    }, {merge: true});
+    const secondRoom = db.collection("Rooms").doc("account-deletion-room");
+    await secondRoom.set({
+      lifecycleStatus: "active",
+      messageDeletionRevision: 4,
+      lastMessageSeq: 11,
+      lastMessage: "개인정보 원문",
+    });
+    await Promise.all([
+      secondRoom.collection("Messages").doc("account-message-b").set({
+        ID: "account-message-b", roomID: secondRoom.id, senderUID: ownerUID,
+        senderNickname: "탈퇴 대상", sentAt: now.toISOString(), seq: 11,
+        msg: "두 번째", message: "두 번째", isDeleted: false,
+      }),
+      secondRoom.collection("Messages").doc("account-message-a").set({
+        ID: "account-message-a", roomID: secondRoom.id, senderUID: ownerUID,
+        senderNickname: "탈퇴 대상", sentAt: now.toISOString(), seq: 10,
+        msg: "첫 번째", message: "첫 번째", isDeleted: false,
+      }),
+    ]);
+
+    assert.equal(await scrubMessagePage(
+      ownerUID,
+      deletionRequestID,
+      generation,
+      now,
+    ), true);
+    const [first, second, secondRoomAfter] = await Promise.all([
+      secondRoom.collection("Messages").doc("account-message-a").get(),
+      secondRoom.collection("Messages").doc("account-message-b").get(),
+      secondRoom.get(),
+    ]);
+    assert.equal(first.data()?.deletionRevision, 5);
+    assert.equal(second.data()?.deletionRevision, 6);
+    assert.equal(secondRoomAfter.data()?.messageDeletionRevision, 6);
+    assert.equal(secondRoomAfter.data()?.lastMessage, "삭제된 메시지입니다");
+    assert.equal("senderUID" in first.data(), false);
+    assert.equal(first.data()?.senderNickname, "알 수 없는 사용자");
+    assert.equal(first.data()?.senderAnonymized, true);
+    assert.equal("msg" in first.data(), false);
+    assert.equal("message" in first.data(), false);
+    assert.equal("senderAvatarPath" in first.data(), false);
+    assert.equal(first.data()?.sentAt, now.toISOString());
+    assert.equal((await db.collection("chatMessageDeletionDeliveryJobs").get()).size, 2);
+    assert.equal(await hasIncompleteAccountDeletionMessageCleanup(deletionRequestID), true);
+
+    const jobs = await db.collection("chatMessageCleanupJobs")
+      .where("accountDeletionRequestID", "==", deletionRequestID).get();
+    const bucket = {deleteFiles: async () => {}};
+    for (const job of jobs.docs) {
+      assert.equal(await processMessageCleanupJob(
+        job.id,
+        db,
+        cleanupBucketResolver(bucket),
+        now,
+      ), true);
+    }
+    assert.equal(await hasIncompleteAccountDeletionMessageCleanup(deletionRequestID), false);
   });
 
   test("방장 종료는 공용 tombstone을 남기고 확인한 참여자만 정리한다", async () => {

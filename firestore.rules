@@ -312,6 +312,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /chatMessageDeletionDeliveryJobs/{jobID} {
+      allow read, write: if false;
+    }
+
     match /moderationRoomCleanupJobs/{jobID} {
       allow read, write: if false;
     }

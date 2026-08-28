@@ -5,12 +5,14 @@ import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
 import {
   parseSubmitRoomReportInput,
+  parseSubmitMessageReportInput,
   parseSubmitUserReportInput,
 } from "./contracts.js";
 import {
   submitRoomReportService,
   submitUserReportService,
 } from "./service.js";
+import {submitMessageReportService} from "../messageEvidence/service.js";
 
 const securedCallableOptions = {
   region: FUNCTIONS_REGION,
@@ -27,6 +29,11 @@ export async function handleSubmitRoomReport(authUID: string | undefined, data: 
   const uid = requiredAuthUID(authUID);
   await assertAccountCapability(uid, "report");
   return submitRoomReportService(uid, parseSubmitRoomReportInput(data));
+}
+
+export async function handleSubmitMessageReport(authUID: string | undefined, data: unknown) {
+  const uid = requiredAuthUID(authUID);
+  return submitMessageReportService(uid, parseSubmitMessageReportInput(data));
 }
 
 function callableError(error: unknown, operation: string): never {
@@ -53,6 +60,17 @@ export const submitRoomReport = onCall(
       return await handleSubmitRoomReport(request.auth?.uid, request.data);
     } catch (error) {
       return callableError(error, "submitRoomReport");
+    }
+  },
+);
+
+export const submitMessageReport = onCall(
+  securedCallableOptions,
+  async (request) => {
+    try {
+      return await handleSubmitMessageReport(request.auth?.uid, request.data);
+    } catch (error) {
+      return callableError(error, "submitMessageReport");
     }
   },
 );
