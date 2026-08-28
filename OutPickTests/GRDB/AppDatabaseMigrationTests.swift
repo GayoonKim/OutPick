@@ -3,25 +3,32 @@ import Testing
 @testable import OutPick
 
 struct AppDatabaseMigrationTests {
-    @Test func freshDatabaseAppliesNineteenMigrationsWithoutLegacyColumns() throws {
+    @Test func freshDatabaseAppliesTwentyOneMigrationsWithoutLegacyColumns() throws {
         let database = try TemporaryAppDatabase.make()
 
         try database.dbPool.read { db in
             let identifiers = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid")
             #expect(identifiers == GRDBMigrationRegistry.identifiers)
-            #expect(identifiers.count == 19)
+            #expect(identifiers.count == 21)
             #expect(try db.tableExists("roomImage") == false)
             #expect(try db.tableExists("LocalChatUser"))
             #expect(try db.tableExists("RoomProfileDisplayCache"))
             #expect(try db.tableExists("chatMessage"))
             let chatMessageColumns = try db.columns(in: "chatMessage").map(\.name)
             #expect(!chatMessageColumns.contains("senderEmail"))
+            #expect(chatMessageColumns.contains("deletionRevision"))
+            #expect(chatMessageColumns.contains("deletedAt"))
             #expect(try db.tableExists("chatMessageFTS"))
             #expect(try db.tableExists("imageIndex"))
             #expect(try db.tableExists("videoIndex"))
             #expect(try db.tableExists("chatOutgoingOutbox"))
             let outboxColumns = try db.columns(in: "chatOutgoingOutbox").map(\.name)
             #expect(outboxColumns.contains("sessionPayloadJSON"))
+            #expect(try db.tableExists("chatDeletionCursor"))
+            #expect(try db.tableExists("chatDeletedMessageMarker"))
+            let deletionMarkerColumns = try db.columns(in: "chatDeletedMessageMarker").map(\.name)
+            #expect(deletionMarkerColumns.contains("anonymizesSender"))
+            #expect(try db.tableExists("chatDeletionCleanup"))
         }
     }
 

@@ -5,14 +5,13 @@
 //  Created by Codex on 6/17/26.
 //
 
-import Combine
 import Foundation
 import Testing
 @testable import OutPick
 
 @MainActor
 struct ChatRoomViewModelMessageActionTests {
-    @Test func messageActionPolicyUsesCurrentRoomCreator() {
+    @Test func roomCreatorCanModerateAndReportAnotherUsersMessage() {
         let viewModel = makeViewModel(
             room: makeRoom(id: "room-1", creatorUID: "admin-uid"),
             currentUserProvider: CurrentUserProviderStub(email: "admin@example.com", canonicalUserID: "admin-uid")
@@ -23,7 +22,7 @@ struct ChatRoomViewModelMessageActionTests {
 
         #expect(policy.canAnnounce)
         #expect(policy.canDelete)
-        #expect(policy.canReport == false)
+        #expect(policy.canReport)
     }
 
     @Test func performDeleteServerActionDelegatesToMessageUseCase() async throws {
@@ -497,10 +496,6 @@ private final class ChatRoomMessageUseCaseSpy: ChatRoomMessageUseCaseProtocol {
 
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
         throw MessageActionTestError.unimplemented
-    }
-
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        AnyCancellable {}
     }
 
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {

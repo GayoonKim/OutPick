@@ -20,6 +20,7 @@ enum GRDBTestFixtures {
         senderUID: String = "user-1",
         text: String = "hello",
         attachments: [Attachment] = [],
+        replyPreview: ReplyPreview? = nil,
         isFailed: Bool = false
     ) -> ChatMessage {
         ChatMessage(
@@ -34,7 +35,7 @@ enum GRDBTestFixtures {
             sentAt: Date(timeIntervalSince1970: TimeInterval(seq)),
             attachments: attachments,
             sharedContent: nil,
-            replyPreview: nil,
+            replyPreview: replyPreview,
             isFailed: isFailed,
             isDeleted: false
         )

@@ -1,4 +1,3 @@
-import FirebaseFirestore
 import Foundation
 import Testing
 @testable import OutPick
@@ -204,17 +203,6 @@ private final class VisibleUnreadMessageRepositoryFake: FirebaseMessageRepositor
     ) async throws -> [ChatMessage] {
         requestedAfterSeqs.append(afterSeq)
         return Array(messages.filter { $0.seq > afterSeq }.prefix(limit))
-    }
-
-    func listenToDeletedMessages(
-        roomID: String,
-        onDeleted: @escaping (String) -> Void
-    ) -> ListenerRegistration {
-        fatalError("unexpected call")
-    }
-
-    func fetchDeletionStates(roomID: String, messageIDs: [String]) async throws -> [String: Bool] {
-        throw VisibleUnreadTestError.unexpectedCall
     }
 
     func fetchMessagesPaged(for room: ChatRoom, pageSize: Int, reset: Bool) async throws -> [ChatMessage] {

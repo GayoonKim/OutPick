@@ -73,11 +73,62 @@ struct CloudFunctionsChatModerationReportingRepositoryTests {
         }
         #expect(repository.callCount == 0)
     }
+
+    @Test
+    func mapsMessageReportCallableContract() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [[
+            "status": "alreadyReported",
+            "submissionID": "submission-message",
+            "deduplicated": false,
+            "alreadyReported": true,
+            "visibilityState": "visible",
+            "seq": 42,
+            "receivedAt": NSNull(),
+            "originalReceivedAt": "2026-08-10T12:00:00.000Z"
+        ]]
+        let repository = CloudFunctionsChatModerationReportingRepository(transport: transport)
+        let requestID = UUID(uuidString: "123E4567-E89B-42D3-A456-426614174000")!
+
+        let receipt = try await repository.submitMessageReport(
+            ChatMessageReportCommand(
+                roomID: "room-1",
+                messageID: "message-1",
+                reason: .privacy,
+                detail: "전화번호가 보여요",
+                clientRequestID: requestID
+            )
+        )
+
+        #expect(transport.calls.map(\.name) == ["submitMessageReport"])
+        #expect(transport.calls[0].data["roomID"] as? String == "room-1")
+        #expect(transport.calls[0].data["messageID"] as? String == "message-1")
+        #expect(transport.calls[0].data["reason"] as? String == "privacy")
+        #expect(receipt.status == .alreadyReported)
+        #expect(receipt.isAlreadyReported)
+        #expect(receipt.seq == 42)
+    }
 }
 
 private final class ChatModerationReportingRepositoryFake:
     ChatModerationReportingRepositoryProtocol {
     private(set) var callCount = 0
+
+    func submitMessageReport(
+        _ command: ChatMessageReportCommand
+    ) async throws -> ChatMessageReportReceipt {
+        callCount += 1
+        return ChatMessageReportReceipt(
+            status: .accepted,
+            submissionID: "unused",
+            isDeduplicated: false,
+            isAlreadyReported: false,
+            visibilityState: "visible",
+            seq: 1,
+            receivedAt: Date(),
+            originalReceivedAt: nil
+        )
+    }
 
     func submitUserReport(
         _ command: ChatUserReportCommand
