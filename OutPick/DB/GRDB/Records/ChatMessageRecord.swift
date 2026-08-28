@@ -7,8 +7,8 @@ struct ChatMessageRecord: Codable, FetchableRecord, PersistableRecord {
     let id: String
     let seq: Int64
     let roomID: String
-    let senderUID: String
-    let senderNickname: String
+    let senderUID: String?
+    let senderNickname: String?
     let senderAvatarPath: String?
     let messageType: String?
     let msg: String?
@@ -18,4 +18,6 @@ struct ChatMessageRecord: Codable, FetchableRecord, PersistableRecord {
     let isFailed: Bool
     let replyPreview: String?
     let isDeleted: Bool
+    let deletionRevision: Int64?
+    let deletedAt: Date?
 }

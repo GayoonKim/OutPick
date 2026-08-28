@@ -133,6 +133,11 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         await pipelines.outgoingPreview.cachedImage(path: outgoingPreviewKey(for: key))
     }
 
+    func removeCachedImage(for path: String) async {
+        imageDataCache.removeObject(forKey: path as NSString)
+        await pipelines.remote.removeImage(path: path)
+    }
+
     private func thumbnailPaths(for message: ChatMessage) -> [String] {
         var seen = Set<String>()
         return message.displayableAttachments

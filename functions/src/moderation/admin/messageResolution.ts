@@ -2,7 +2,10 @@
 import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
-import {messageCleanupJobID, messageStorageTargets} from "../../chat/moderation/service.js";
+import {
+  applySingleMessageDeletionMutation,
+  messageCleanupJobID,
+} from "../../chat/deletion/mutation.js";
 import {roomOwnershipSuccessionJobID} from "../../chat/moderation/roomMembershipSweep.js";
 import {moderationAuditActionID} from "../audit/contracts.js";
 import {
@@ -13,12 +16,18 @@ import {
 } from "../messageEvidence/contracts.js";
 import {ResolveMessageModerationInput} from "./contracts.js";
 
-const DELETED_MESSAGE_PREVIEW = "삭제된 메시지입니다.";
-
 function replayResult(data: FirebaseFirestore.DocumentData, input: ResolveMessageModerationInput): Record<string, unknown> {
+  const restrictedUntil = input.restrictedUntil?.toISOString() ?? null;
   if (data.action !== "resolveMessageModeration" || data.targetType !== "message" ||
       data.targetID !== input.incidentID || data.requestID !== input.clientRequestID ||
-      data.after?.decision !== input.decision || data.after?.reviewRevision !== input.reviewRevision) {
+      data.after?.reviewOutcome !== input.reviewOutcome ||
+      data.after?.contentAction !== input.contentAction ||
+      data.after?.accountAction !== input.accountAction ||
+      data.after?.reviewRevision !== input.reviewRevision ||
+      data.after?.restrictedUntil !== restrictedUntil ||
+      data.before?.caseVersion !== input.expectedCaseVersion ||
+      data.before?.accountStateVersion !== input.expectedAccountStateVersion ||
+      data.reasonCode !== input.reasonCode) {
     throw new HttpsError("already-exists", "같은 clientRequestID가 다른 관리자 작업에 사용됐습니다.");
   }
   return data.after as Record<string, unknown>;
@@ -59,8 +68,9 @@ export async function resolveMessageModerationService(
     const roomRef = firestore.collection("Rooms").doc(roomID);
     const messageRef = roomRef.collection("Messages").doc(messageID);
     const guardRef = firestore.collection("moderationMessageGuards").doc(input.incidentID);
-    const [revision, room, message] = await Promise.all([
+    const [revision, room, message, guard] = await Promise.all([
       transaction.get(revisionRef), transaction.get(roomRef), transaction.get(messageRef),
+      transaction.get(guardRef),
     ]);
     if (!revision.exists || revision.get("reviewState") !== incident.get("reviewState")) {
       throw new HttpsError("failed-precondition", "현재 review revision 상태가 올바르지 않습니다.");
@@ -76,8 +86,8 @@ export async function resolveMessageModerationService(
       throw new HttpsError("failed-precondition", "결정 가능한 Evidence bundle 상태가 아닙니다.");
     }
 
-    const sanctionsAccount = input.decision === "temporaryRestriction" || input.decision === "permanentSuspension";
-    const confirmedViolation = input.decision !== "dismissed";
+    const sanctionsAccount = input.accountAction === "temporaryRestriction" || input.accountAction === "permanentSuspension";
+    const confirmedViolation = input.reviewOutcome === "violation";
     const linkedAccountsQuery = firestore.collection("moderationAccounts").where("moderationPrincipalID", "==", targetPrincipalID);
     const principalRef = firestore.collection("moderationPrincipals").doc(targetPrincipalID);
     const [principal, linkedAccounts] = sanctionsAccount ? await Promise.all([
@@ -96,7 +106,7 @@ export async function resolveMessageModerationService(
       if (adminSnapshots.some((snapshot) => snapshot.exists && snapshot.get("isActive") === true && !(snapshot.get("revokedAt") instanceof Timestamp))) {
         throw new HttpsError("failed-precondition", "활성 플랫폼 관리자는 일반 API로 제재할 수 없습니다.", {errorCode: "PROTECTED_ADMIN_TARGET"});
       }
-      if (input.decision === "temporaryRestriction" && (!input.restrictedUntil || input.restrictedUntil.getTime() <= now.getTime())) {
+      if (input.accountAction === "temporaryRestriction" && (!input.restrictedUntil || input.restrictedUntil.getTime() <= now.getTime())) {
         throw new HttpsError("invalid-argument", "제한 만료 시각은 미래여야 합니다.");
       }
     }
@@ -113,12 +123,12 @@ export async function resolveMessageModerationService(
     ]) : [null, null, null];
 
     const nowTimestamp = Timestamp.fromDate(now);
-    const nextReviewState = input.decision === "dismissed" ? "dismissed" : "resolved";
+    const nextReviewState = input.reviewOutcome === "dismissed" ? "dismissed" : "resolved";
     const nextCaseVersion = input.expectedCaseVersion + 1;
-    const restoresMessage = input.decision === "dismissed" && messageData.isDeleted !== true;
+    const keepsExistingContent = input.contentAction === "keep" && messageData.isDeleted !== true;
     const retention = messageEvidenceRetention({
       reviewState: nextReviewState,
-      decision: input.decision,
+      accountAction: input.accountAction,
       decisionAt: now,
       appealState: "none",
       appealResolvedAt: null,
@@ -128,11 +138,14 @@ export async function resolveMessageModerationService(
       incidentID: input.incidentID,
       reviewRevision: input.reviewRevision,
       reviewState: nextReviewState,
-      decision: input.decision,
+      reviewOutcome: input.reviewOutcome,
+      contentAction: input.contentAction,
+      accountAction: input.accountAction,
+      restrictedUntil: input.restrictedUntil?.toISOString() ?? null,
       caseVersion: nextCaseVersion,
-      messageVisibilityState: restoresMessage ? "restored" : "deleted",
-      accountModerationStatus: input.decision === "temporaryRestriction" ? "restricted" :
-        input.decision === "permanentSuspension" ? "suspended" : null,
+      messageVisibilityState: keepsExistingContent ? "visible" : "deleted",
+      accountModerationStatus: input.accountAction === "temporaryRestriction" ? "restricted" :
+        input.accountAction === "permanentSuspension" ? "suspended" : null,
       retentionClass: retention.retentionClass,
       evidenceDeleteAfter: retention.deleteAfter?.toISOString() ?? null,
       accountStateVersion: sanctionsAccount ? input.expectedAccountStateVersion! + 1 : null,
@@ -141,15 +154,21 @@ export async function resolveMessageModerationService(
     transaction.update(incidentRef, {
       reviewState: nextReviewState,
       caseVersion: nextCaseVersion,
-      decision: input.decision,
+      decision: FieldValue.delete(),
+      reviewOutcome: input.reviewOutcome,
+      contentAction: input.contentAction,
+      accountAction: input.accountAction,
       resolvedAt: nowTimestamp,
       resolutionActionID: actionID,
-      visibilityState: restoresMessage ? "visible" : "deleted",
+      visibilityState: keepsExistingContent ? "visible" : "deleted",
       updatedAt: nowTimestamp,
     });
     transaction.update(revisionRef, {
       reviewState: nextReviewState,
-      decision: input.decision,
+      decision: FieldValue.delete(),
+      reviewOutcome: input.reviewOutcome,
+      contentAction: input.contentAction,
+      accountAction: input.accountAction,
       resolvedAt: nowTimestamp,
       resolutionActionID: actionID,
       updatedAt: nowTimestamp,
@@ -161,56 +180,46 @@ export async function resolveMessageModerationService(
       updatedAt: nowTimestamp,
     });
 
-    if (input.decision === "dismissed") {
-      if (restoresMessage) transaction.update(messageRef, {moderationVisibilityState: "visible"});
-      transaction.set(guardRef, {contentState: restoresMessage ? "active" : "deleted", evidenceState: "available", updatedAt: nowTimestamp}, {merge: true});
+    if (input.contentAction === "keep") {
+      if (keepsExistingContent) transaction.update(messageRef, {moderationVisibilityState: "visible"});
+      transaction.set(guardRef, {contentState: keepsExistingContent ? "active" : "deleted", evidenceState: "available", updatedAt: nowTimestamp}, {merge: true});
     } else {
-      if (messageData.isDeleted !== true) {
-        transaction.update(messageRef, {
-          isDeleted: true,
-          deletedAt: nowTimestamp,
-          deletionPresentation: "moderationRemoved",
-          moderationVisibilityState: "deleted",
-          msg: FieldValue.delete(),
-          message: FieldValue.delete(),
-          attachments: FieldValue.delete(),
-          sharedContent: FieldValue.delete(),
-          replyPreview: FieldValue.delete(),
-          searchNormalized: FieldValue.delete(),
-          searchChars: FieldValue.delete(),
-          searchNgrams2: FieldValue.delete(),
-          searchIndexVersion: FieldValue.delete(),
-          senderEmail: FieldValue.delete(),
-          senderNickname: FieldValue.delete(),
-          senderAvatarPath: FieldValue.delete(),
-          messageType: FieldValue.delete(),
-          isFailed: FieldValue.delete(),
-        });
-        if (room.get("lastMessageSeq") === messageData.seq) {
-          transaction.update(roomRef, {lastMessage: DELETED_MESSAGE_PREVIEW, updatedAt: nowTimestamp});
-        }
-        if (!publicCleanup?.exists) {
-          const storageTargets = messageStorageTargets(roomID, messageID, messageData);
-          transaction.create(publicCleanupRef, {
-            schemaVersion: 2, roomID, messageID, expectedSeq: messageData.seq, storageTargets,
-            storagePrefixes: storageTargets.filter((target) => target.bucket === null).map((target) => target.prefix),
-            status: "pending", attempt: 0, nextAttemptAt: nowTimestamp, leaseExpiresAt: null,
-            lastErrorCode: null, createdAt: nowTimestamp, updatedAt: nowTimestamp, expiresAt: null,
-          });
-        }
+      if (!publicCleanup) {
+        throw new HttpsError("failed-precondition", "삭제 cleanup 상태를 확인할 수 없습니다.");
       }
-      transaction.set(guardRef, {contentState: "deleted", evidenceState: "available", updatedAt: nowTimestamp}, {merge: true});
+      const deletion = applySingleMessageDeletionMutation(
+        transaction,
+        firestore,
+        roomRef,
+        room,
+        {
+          messageRef,
+          message,
+          cleanupRef: publicCleanupRef,
+          cleanup: publicCleanup,
+          guardRef,
+          guard,
+        },
+        roomID,
+        messageID,
+        nowTimestamp,
+      );
+      result.deletionRevision = deletion.deletionRevision;
+    }
+
+    if (confirmedViolation) {
       transaction.set(violationsRef, {
         schemaVersion: 1,
         confirmedCount90Days: (recentViolations?.size ?? 0) + 1,
         confirmedCount90DaysAsOf: nowTimestamp,
-        activeWarningCount: (typeof violations?.get("activeWarningCount") === "number" ? violations.get("activeWarningCount") : 0) + (input.decision === "warningOnly" ? 1 : 0),
+        activeWarningCount: (typeof violations?.get("activeWarningCount") === "number" ? violations.get("activeWarningCount") : 0) + (input.accountAction === "warning" ? 1 : 0),
         latestConfirmedAt: nowTimestamp,
         updatedAt: nowTimestamp,
       }, {merge: true});
       transaction.create(violationsRef.collection("incidents").doc(actionID), {
         schemaVersion: 1, incidentID: input.incidentID, reviewRevision: input.reviewRevision,
-        decision: input.decision, reasonCode: input.reasonCode, confirmedAt: nowTimestamp,
+        reviewOutcome: input.reviewOutcome, contentAction: input.contentAction,
+        accountAction: input.accountAction, reasonCode: input.reasonCode, confirmedAt: nowTimestamp,
         expiresAt: null,
       });
     }
@@ -226,12 +235,12 @@ export async function resolveMessageModerationService(
 
     if (sanctionsAccount && principal && linkedAccounts) {
       const nextStateVersion = input.expectedAccountStateVersion! + 1;
-      const moderationStatus = input.decision === "temporaryRestriction" ? "restricted" : "suspended";
+      const moderationStatus = input.accountAction === "temporaryRestriction" ? "restricted" : "suspended";
       const restrictedUntil = input.restrictedUntil ? Timestamp.fromDate(input.restrictedUntil) : null;
       transaction.update(principalRef, {moderationStatus, restrictedUntil, stateVersion: nextStateVersion, noticeReasonCode: input.reasonCode, updatedAt: nowTimestamp});
       for (const account of linkedAccounts.docs) {
         transaction.update(account.ref, {moderationStatus, restrictedUntil, stateVersion: nextStateVersion, noticeReasonCode: input.reasonCode, updatedAt: nowTimestamp});
-        if (input.decision === "permanentSuspension") {
+        if (input.accountAction === "permanentSuspension") {
           const jobID = roomOwnershipSuccessionJobID(account.id, "permanentSuspension", nextStateVersion);
           transaction.create(firestore.collection("roomOwnershipSuccessionJobs").doc(jobID), {
             schemaVersion: 1, targetUID: account.id, cause: "permanentSuspension", expectedStateVersion: nextStateVersion,

@@ -2,7 +2,7 @@
 import {createHash} from "node:crypto";
 
 export const MESSAGE_EVIDENCE_CONTRACT_VERSION = 1;
-export const MESSAGE_GLOBAL_VISIBILITY_WINDOW_MILLIS = 24 * 60 * 60 * 1000;
+export const MESSAGE_REPORT_SIGNAL_WINDOW_MILLIS = 24 * 60 * 60 * 1000;
 export const MESSAGE_AUTHOR_PATTERN_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000;
 export const MESSAGE_SANCTION_APPEAL_RETENTION_MILLIS = 30 * 24 * 60 * 60 * 1000;
 export const MESSAGE_EVIDENCE_MAX_COPY_ATTEMPTS = 3;
@@ -13,7 +13,7 @@ export const MESSAGE_REPORT_PREPARATION_TTL_MILLIS = 30 * 24 * 60 * 60 * 1000;
 
 export type MessageReviewState = "open" | "inReview" | "resolved" | "dismissed";
 export type MessageQueueClass = "holding" | "reviewRequired" | "urgent";
-export type MessageVisibilityState = "visible" | "hiddenPendingReview" | "deleted";
+export type MessageVisibilityState = "visible" | "deleted";
 export type MessageReportStatus =
   "processing" | "accepted" | "alreadyReported" | "failed" | "messageAlreadyDeleted";
 export type MessageEvidenceState =
@@ -37,9 +37,10 @@ export type MessageReportReason =
 export type MessageEvidenceRetentionClass =
   "reviewOpen" | "deleteAfterDecision" | "sanctionAppeal30Days" |
   "appealOpen" | "legalHold";
-export type MessageEvidenceDecision =
-  "dismissed" | "contentDeleted" | "warningOnly" |
-  "temporaryRestriction" | "permanentSuspension";
+export type MessageReviewOutcome = "dismissed" | "violation";
+export type MessageContentAction = "keep" | "delete";
+export type MessageAccountAction =
+  "none" | "warning" | "temporaryRestriction" | "permanentSuspension";
 export type MessageEvidenceAppealState = "none" | "open" | "resolved";
 
 type CanonicalIDPart = string | number;
@@ -226,15 +227,14 @@ export type MessageReporterSignal = {
   receivedAt: Date;
 };
 
-export function messageGlobalVisibilityEvaluation(
+export function messageReportQueueEvaluation(
   signals: MessageReporterSignal[],
   now: Date,
 ): {
   urgentDistinctReporterCount: number;
   totalDistinctReporterCount: number;
-  shouldHide: boolean;
 } {
-  const cutoff = now.getTime() - MESSAGE_GLOBAL_VISIBILITY_WINDOW_MILLIS;
+  const cutoff = now.getTime() - MESSAGE_REPORT_SIGNAL_WINDOW_MILLIS;
   const reporters = new Map<string, boolean>();
   for (const signal of signals) {
     const receivedAt = signal.receivedAt.getTime();
@@ -251,7 +251,6 @@ export function messageGlobalVisibilityEvaluation(
   return {
     urgentDistinctReporterCount,
     totalDistinctReporterCount,
-    shouldHide: urgentDistinctReporterCount >= 2 || totalDistinctReporterCount >= 3,
   };
 }
 
@@ -314,7 +313,7 @@ export type MessageEvidenceRetention = {
 
 export function messageEvidenceRetention(input: {
   reviewState: MessageReviewState;
-  decision: MessageEvidenceDecision | null;
+  accountAction: MessageAccountAction | null;
   decisionAt: Date | null;
   appealState: MessageEvidenceAppealState;
   appealResolvedAt: Date | null;
@@ -326,7 +325,7 @@ export function messageEvidenceRetention(input: {
   if (input.reviewState === "open" || input.reviewState === "inReview") {
     return {retentionClass: "reviewOpen", deleteAfter: null};
   }
-  if (input.decision === null || input.decisionAt === null) {
+  if (input.accountAction === null || input.decisionAt === null) {
     throw new Error("terminal review requires a decision and decisionAt");
   }
   if (input.appealState === "open") {
@@ -341,8 +340,8 @@ export function messageEvidenceRetention(input: {
       deleteAfter: new Date(input.appealResolvedAt.getTime()),
     };
   }
-  const sanctionDecision = input.decision === "temporaryRestriction" ||
-    input.decision === "permanentSuspension";
+  const sanctionDecision = input.accountAction === "temporaryRestriction" ||
+    input.accountAction === "permanentSuspension";
   if (sanctionDecision) {
     return {
       retentionClass: "sanctionAppeal30Days",

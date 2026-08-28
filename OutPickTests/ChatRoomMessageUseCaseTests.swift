@@ -5,7 +5,6 @@
 //  Created by Codex on 6/17/26.
 //
 
-import Combine
 import Foundation
 import Testing
 @testable import OutPick
@@ -64,7 +63,7 @@ struct ChatRoomMessageUseCaseTests {
         let room = makeRoom(id: "room-1")
         let message = try #require(useCase.makeTextMessage(text: "안녕", replyPreview: nil, room: room))
 
-        try await useCase.sendPreparedMessage(message, room: room)
+        _ = try await useCase.sendPreparedMessage(message, room: room)
 
         #expect(repository.calls.count == 1)
         #expect(repository.calls.first?.message.ID == "message-1")
@@ -221,20 +220,12 @@ private final class ChatMessageManagerStub: ChatMessageManaging {
         return latestWindow
     }
 
-    func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String] {
-        throw StubError.unimplemented
-    }
-
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
         throw StubError.unimplemented
     }
 
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
         // 성공 경로 spy
-    }
-
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        AnyCancellable {}
     }
 
     func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws {
@@ -299,10 +290,6 @@ private final class ChatMessageDeleteManagerSpy: ChatMessageManaging {
         throw StubError.unimplemented
     }
 
-    func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String] {
-        throw StubError.unimplemented
-    }
-
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
         deletedMessages.append(message)
         deletedRooms.append(room)
@@ -310,10 +297,6 @@ private final class ChatMessageDeleteManagerSpy: ChatMessageManaging {
 
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
         throw StubError.unimplemented
-    }
-
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        AnyCancellable {}
     }
 
     func saveMessage(_ message: ChatMessage, room: ChatRoom) async throws {

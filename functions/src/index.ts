@@ -1,6 +1,7 @@
 export {exchangeKakaoToken} from "./auth/functions.js";
 export {getMyModerationState} from "./moderation/functions.js";
 export {
+  submitMessageReport,
   submitRoomReport,
   submitUserReport,
 } from "./moderation/reports/functions.js";

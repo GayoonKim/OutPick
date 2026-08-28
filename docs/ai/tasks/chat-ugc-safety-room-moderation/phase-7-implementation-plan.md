@@ -3,9 +3,9 @@
 ## 상태
 
 - 작성일: 2026-08-18
-- 상태: Phase 7.0~7.3 로컬 구현·Development/Production rollout·확장 QA, Phase 7.4A 순수 계약, 7.4B preparation/accepted 확정·삭제 transaction, 2026-08-25 Phase 7.4C-1~C-3 generation-scoped evidence copy/cleanup의 로컬 구현과 Development 전용 bucket/IAM/세 Function/필수 인덱스 3개/경계 용량·접근 거부·무잔여 E2E를 완료했다. Rules·TTL·관리자 query와 Production rollout은 미수행이며 Phase 7.4D 이후 별도 승인 gate다.
+- 상태: Phase 7.0~7.5F 구현·자동 검증과 deletion cutover를 완료했다. 2026-08-27 Phase 7.6 Development Rules/index/TTL·영향 Functions·Socket rollout과 배포 후 iOS 자동 회귀까지 완료했으며, 실제 A/B/admin 공동 수동 QA와 Production 변경은 별도 gate다.
 - 상위 계약: `decisions.md`, `contracts/chat-moderation-v1.json`, ADR-024
-- 범위: 신규 채팅 이미지·동영상의 격리 업로드, 기술 검증·metadata 제거, ready 전달, 메시지 전체 evidence, 관리자 queue 승격, 전역 비노출과 복원
+- 범위: 신규 채팅 이미지·동영상의 격리 업로드, 기술 검증·metadata 제거, ready 전달, 메시지 전체 evidence, 관리자 queue 승격, 명시적 관리자 삭제와 모든 서버 확정 메시지 삭제의 공통 Deletion Sync
 - 비범위: 외부 유해성 의미 판정, 관리자 웹 evidence byte 전달 UI, 댓글·답글 미디어, 기존 미디어 소급 정규화, 자동 계정 제재
 
 ### Phase 7.0 feasibility 완료 결과 — 2026-08-18
@@ -31,7 +31,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 2. ready 전에는 공개 객체·message·seq·Socket·FCM·room preview가 없다.
 3. 장시간 동영상을 duration으로 거부하지 않으면서 request timeout에 종속되지 않는다.
 4. 신고·삭제·취소·worker 완료가 경합해도 한 가지 서버 상태로 수렴한다.
-5. evidence 원본과 복원 payload는 일반 클라이언트가 읽을 수 없다.
+5. evidence 원본과 deletion delivery server-only payload는 일반 클라이언트가 읽을 수 없다.
 6. 기존 realtime ordering, read frontier와 outbox 재실행 복원을 깨지 않는다.
 
 ## 기술 선택
@@ -121,20 +121,22 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - `moderationMessageIncidents/{incidentID}`와 revision별 reporter 문서가 메시지 신고의 canonical 원장이다. 작성자 aggregate에는 `reportedMessages/{incidentID}`와 `messageReporters/{reporterID}` marker를 함께 기록한다.
 - 일반 단일은 `holding`, 같은 메시지 고유 신고자 2명은 `reviewRequired`, 긴급 사유 첫 신고는 `urgent`다. 기한 경과 holding은 `reviewDueAt <= serverNow` 관리자 조회에 포함할 뿐 scheduler로 상태를 바꾸지 않는다.
 - 작성자 패턴은 최근 7일 `reportedMessages` 최대 3개와 `messageReporters` 최대 2개를 각각 조회해 둘 다 충족할 때만 성립한다.
-- global threshold transaction은 최근 24시간 reporter marker를 읽고 새 submission을 포함해 긴급 고유 2명 또는 전체 사유 고유 3명인지 계산한다.
+- queue threshold transaction은 최근 24시간 reporter marker를 읽고 새 submission을 포함해 긴급 고유 2명 또는 전체 사유 고유 3명인지 계산한다. 계산 결과는 visibility를 변경하지 않는다.
 - `moderationMessageEvidence/{bundleID}`는 제한된 text snapshot과 신고된 메시지의 전체 attachment manifest를 기록한다. `bundleID`와 object path는 message/revision/attachment 기준 결정적 ID다.
 - `moderationEvidenceCopyJobs/{bundleID}`와 `moderationEvidenceCleanupJobs/{bundleID}`가 복사·삭제를 멱등 처리한다.
 - `moderationMessageGuards/{incidentID}`는 신고/삭제 transaction의 server-only first-commit-wins 원장이다.
-- `moderationHiddenMessagePayloads/{roomID_messageID}`는 전역 숨김 전 복원 가능한 공개 payload만 서버 전용으로 보관한다.
+- Phase 7.4에서 사용한 `moderationHiddenMessagePayloads/{roomID_messageID}`는 Phase 7.5에서 신규 생성을 중단하고 기존 Development 잔여 여부를 감사한 뒤 제거한다.
 - 신고 성공은 개인 숨김을 자동 생성하지 않는다. 명시적 `이 메시지 숨기기`를 후속 구현할 경우 신고와 분리된 owner-only 전체 메시지 hide relation으로 설계한다.
 
-### 전역 visibility
+### 서버 확정 메시지 삭제 visibility와 Deletion Sync
 
-- `Messages/{messageID}.moderationVisibilityState`는 누락 또는 `visible`, `hiddenPendingReview`, `deleted`를 사용한다.
-- 전역 숨김 transaction은 server-only 복원 payload를 저장하고 공개 message를 같은 seq의 `검토 중인 메시지입니다` tombstone으로 바꾼다.
-- 기각 복원은 같은 messageID/seq와 기존 sentAt을 복원하고 delivery event를 `restore`로 생성한다. room latestSeq, lastReadSeq와 unread는 변경하지 않는다.
-- 위반 확정은 같은 seq의 삭제 tombstone으로 전환한다.
-- 기각 시 `reviewRevision`을 증가시키고 이전 reporter marker가 새 threshold에 포함되지 않게 한다.
+- 신고 임계치와 관리자 검토 시작은 message visibility를 변경하지 않는다. `hiddenPendingReview`, `검토 중인 메시지입니다` tombstone과 자동 restore 이벤트는 Phase 7.5 최종 계약에서 사용하지 않는다.
+- 모든 사용자에게 보이는 tombstone은 관리자가 명시적으로 `contentAction=delete`를 확정했을 때만 생성하고 `삭제된 메시지입니다` 일반 문구만 표시한다.
+- 위 조건은 신고 처리 경로의 삭제 조건이다. 작성자·방 관리자·플랫폼 관리자·계정 탈퇴 정리를 포함한 모든 서버 확정 삭제는 같은 일반 tombstone과 공통 deletion mutation을 사용한다.
+- 단건 삭제 transaction은 `Rooms/{roomID}.messageDeletionRevision`을 증가시키고 표시 메타데이터 보존 tombstone message에 같은 `deletionRevision`과 `deletedAt`을 기록하며 메시지별 결정적 delivery outbox를 함께 만든다. 계정 탈퇴 bulk는 collection group query 결과를 방별 batch로 처리해 발신자를 익명화하고 revision 범위와 head-advanced outbox 하나를 만든다.
+- 활성 Socket room은 `chat:messageDeleted`로 즉시 반영한다. 다른 화면·다른 방·앱 종료·오프라인과 Socket 유실은 방별 로컬 `lastAppliedDeletionRevision` 이후 tombstone delta query로 복구한다.
+- 사용자별 deletion inbox, 삭제 push fan-out과 별도 deletion journal collection은 만들지 않는다. 메시지 tombstone 자체를 durable deletion delta로 사용하고 방이 존재하는 동안 유지한다.
+- 세부 계약은 `phase-7-5-design.md`를 따른다.
 
 ## API·이벤트 계약
 
@@ -151,7 +153,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 - `chat:mediaProcessingStatusChanged`: 발신자의 pending UI 갱신.
 - 기존 `receiveImages`/`receiveVideo`: ready delivery job 이후에만 발행.
-- `chat:messageModerationVisibility`: `hiddenPendingReview | restored | deleted`, messageID, seq, reviewRevision을 전달.
+- `chat:messageDeleted`: `roomID`, `messageID`, `seq`, `deletionRevision`을 전달. Socket은 fast path이고 Firestore tombstone Deletion Sync가 최종 정합성을 보장한다.
 
 ### 신고 API
 
@@ -263,7 +265,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 - ready 전 read/broadcast/push/preview가 모두 0이다.
 - text Socket transaction과 media Function transaction이 같은 room seq에서 경합해도 중복·gap이 없다.
-- room preview는 ready 또는 restore 시점에만 바뀐다.
+- room preview는 ready 또는 명시적 삭제 cleanup 시점에만 바뀐다.
 - public message가 없는 ready object는 Rules로 읽히지 않고 cleanup된다.
 
 ### Phase 7.3 — iOS upload·pending·outbox
@@ -390,7 +392,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - evidence가 available인 신규 accepted 확정에서만 user aggregate와 reported-message/reporter marker
 - text/manifest evidence bundle과 media가 있으면 copy job
 - user/room accepted 요청과 이전에 보지 못한 message `clientRequestID` transport receipt는 principal당 UTC 1분 10회 기술 limiter를 공유한다. 정확히 같은 UUID replay만 무료다. 새 UUID는 preparation 재사용·alreadyReported·messageAlreadyDeleted여도 receipt slot 1개를 소비하지만 moderation 신고 count/queue/evidence에는 포함하지 않는다. 신규 semantic preparation은 별도 관측 count만 증가시키며 같은 요청을 이중 과금하지 않는다.
-- global threshold 충족 시 message `moderationVisibilityState=hiddenPendingReview`와 server-only 복원 payload
+- Phase 7.4B 당시 global threshold hide write를 구현했으나 Phase 7.5에서 제거 또는 비활성화한다. threshold는 queue 승격만 갱신한다.
 - `requestedAt`과 `acceptedAt`을 분리하고 canonical received/window/SLO 시각은 requestedAt을 사용한다.
 - 최초 bundle available 뒤 processing preparation을 최대 30건씩 accepted로 확정하는 동안 incident는 `draining`, 모두 끝난 뒤 `reviewable`이다. 각 preparation의 `initialRequestID` receipt만 drain에서 함께 확정하고 추가 alias receipt는 같은 UUID 재조회 시 terminal generation 결과로 개별 수렴한다. 관리자 종결은 reviewable에서만 허용한다.
 
@@ -401,7 +403,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - guard가 report-first hold면 message tombstone은 즉시 적용하고 public ready media용 `chatMessageCleanupJobs`를 `awaitingEvidence`로 만든다. cleanup worker는 이 상태를 claim하지 않으며 evidence copy 성공 또는 terminal failure 뒤 `pending`으로 전환한다.
 - 두 transaction이 같은 guard를 읽고 쓰므로 동시 실행은 Firestore 재시도로 한 순서에 수렴한다.
 - 이전에 보지 못한 새 `clientRequestID`의 delete-first와 semantic duplicate는 최상위 transport receipt를 만들고 공유 limiter slot 1개를 소비한다. 정확히 같은 UUID replay만 quota를 다시 소비하지 않는다.
-- 관리자 confirmed delete는 client-safe `deletionPresentation=moderationRemoved`를 tombstone에 남기고 처리 중 preparation을 messageAlreadyDeleted로 종료한다. dismiss 뒤 새 유효 신고는 reviewRevision을 증가시켜 새 bundle로 시작한다.
+- 관리자 confirmed delete는 다른 삭제 주체와 같은 일반 tombstone을 남기고 처리 중 preparation을 messageAlreadyDeleted로 종료한다. dismiss 뒤 메시지가 유지된 상태에서 새 유효 신고는 reviewRevision을 증가시켜 새 bundle로 시작한다.
 
 멱등성·재시도:
 
@@ -435,7 +437,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - 서버는 URL 응답 전에 Cloud Logging API로 `EVIDENCE_VIEW_URL_ISSUED` 구조화 로그 write 성공을 기다린다. 로그 실패 시 URL을 전달하지 않고, 재발급은 새 서버 생성 issuanceID와 새 로그를 만든다. 로그에는 actorUID와 incident/revision/bundle/논리 object/generation, requestID, issuanceID, 발급·만료 시각과 결과만 포함하며 URL·signature/query, bucket/path, 원문·bytes와 관리자 이메일·프로필은 기록하지 않는다.
 - signed URL에는 actorUID가 아닌 opaque `x-goog-custom-audit-issuance-id`를 서명해 넣고 Evidence bucket의 Cloud Storage `DATA_READ`를 명시적으로 활성화한다. 실제 GET/Range audit을 issuanceID로 발급 로그와 연결하며 여러 Range는 한 열람 세션으로 묶는다. 발급과 실제 GET audit은 `asia-northeast3`, Log Analytics, 1,095일 retention, lock, 최소 read IAM의 환경별 `moderation-evidence-audit` log bucket으로 route한다. 일반 `_Default` 접근 범위에는 민감 audit 사본을 두지 않는다.
 - Development 승인 뒤 log 인프라는 되돌릴 수 있는 순서로 적용한다: unlocked+Analytics+1,095일 bucket 생성 → 전용 sink/view와 `_Default` exclusion 구성 → Evidence `DATA_READ` 활성화 → 발급/GET/Range routing·query·권한 smoke → 누락 0 확인 뒤 마지막에 bucket lock. lock 이후 retention 축소·조기 삭제는 rollback하지 못하므로 smoke 전 lock하지 않고, Production은 같은 절차를 별도 승인으로 반복한다.
-- message 종결은 `resolveMessageModeration` 하나가 incident/revision, 동일 seq restore 또는 관리자 삭제 tombstone, confirmed violation, 조건부 계정 조치, retention/cleanup job과 mutation audit을 일관되게 갱신한다. `dismissed|contentDeleted|warningOnly`은 Evidence 즉시 cleanup, `temporaryRestriction|permanentSuspension`은 30일 보존이며 appeal/legal hold는 기존 계약을 따른다. stale case/account version과 `acceptanceState!=reviewable`은 거부한다.
+- Phase 7.4D 당시 message 종결은 단일 decision 계약으로 구현됐다. Phase 7.5는 `reviewOutcome + contentAction + accountAction`으로 migration하고 `contentAction=delete`만 일반 tombstone을 만든다. incident/revision, confirmed violation, 조건부 계정 조치, retention/cleanup job과 mutation audit의 transaction 일관성 및 stale case/account version·`acceptanceState!=reviewable` 거부는 유지한다.
 - terminal preparation은 reason/detail과 중복 room/message/source 식별자를 scrub하고 멱등 수렴에 필요한 최소 상태만 createdAt부터 30일 유지한 뒤 TTL 삭제한다. Evidence 접근 audit은 Firestore collection이나 TTL 대상이 아니다.
 - evidence copy는 destination object에 `Cache-Control: private, no-store, max-age=0`를 명시한다. URL은 DB·audit·애플리케이션 로그에 저장하지 않고 만료 뒤 재열람은 새 검증·audit·URL 발급으로 처리한다. Cloud Run 프록시 스트리밍과 관리자 저장·캡처 방지 DRM은 범위에서 제외한다.
 
@@ -458,19 +460,20 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 
 - 30장 이미지 메시지 신고는 30장 전체가 한 evidence bundle에 존재하고 동일 revision 후속 신고가 object를 늘리지 않는다.
 - 같은 request replay는 일반 성공, 같은 reporter의 새 request는 already-reported, delete-first는 already-deleted로 구분된다.
-- 3 messages + 2 reporters/7일, urgent/general queue와 24시간 global threshold가 경계 시각±1 ms에서 일치한다.
+- 3 messages + 2 reporters/7일, urgent/general queue와 24시간 queue threshold가 경계 시각±1 ms에서 일치하며 visibility를 변경하지 않는다.
 - delete/report 동시 transaction 두 순서가 guard에 의해 각각 계약대로 수렴한다.
 - 72시간 holding은 scheduler/write 없이 server-now query에서만 overdue 목록에 포함된다.
 - cleanup 실패는 retryPending/failed로 남고 evidence를 조용히 유실하지 않는다.
 - 일반 사용자·비활성 admin·권한 없는 server identity가 evidence를 읽지 못한다.
 - current revision만 열람되고 과거 revision·cleanup 시작·만료·stale generation은 거부되며, 발급 로그와 실제 GET/Range가 issuanceID로 연결된다.
-- message decision별 restore/delete/account action/retention/cleanup이 원자적으로 일치하고 terminal preparation은 scrub 후 30일 TTL로 정리된다.
+- Phase 7.4D 당시 decision별 restore/delete/account action/retention/cleanup이 원자적으로 일치함을 검증했다. Phase 7.5에서 분리 action 계약과 Deletion Sync 회귀로 교체하고 terminal preparation scrub·30일 TTL은 유지한다.
 
-### Phase 7.5 — 신고 UX·관리자 queue·전역 숨김/복원
+### Phase 7.5 — 신고 UX·관리자 queue·Deletion Sync
 
 목표:
 
-- 실제 사용자 신고 흐름을 서버 계약에 연결하고 관리자 queue 승격과 동일 seq 전역 복원을 앱 전체에 적용한다.
+- 실제 사용자 신고 흐름을 서버 계약에 연결하고 관리자 queue 승격을 적용한다. 명시적 관리자 삭제를 포함한 모든 서버 확정 메시지 삭제는 공통 mutation, Socket fast path와 방별 Deletion Sync로 앱 전체에 적용한다.
+- 상세 제품·데이터·API·로컬 정리 계약은 `phase-7-5-design.md`를 따른다.
 
 변경 파일 후보:
 
@@ -485,23 +488,276 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - `OutPick/DB/GRDB/` message/media index store·migration
 - `OutPick/Features/Chat/{ChatCoordinator,ChatContainer,ChatCompositionRoot}.swift`
 
-구현:
+구현 순서와 의존성:
 
-1. 현재 stub `handleReport`를 attachment 선택 없는 메시지 신고 reason/detail 화면으로 연결한다.
-2. image viewer 진입도 현재 image 한 장이 아니라 해당 메시지 전체 신고임을 명시한다.
-3. report 성공은 접수 안내만 표시하고 메시지를 자동 숨기지 않는다. 명시적 개인 메시지 숨김은 후속 범위로 분리한다.
-4. 관리자 API는 canonical incident를 직접 조회해 일반 단일 holding, 같은 메시지 고유 2명 reviewRequired, 긴급 단일 urgent와 `holding && reviewDueAt<=serverNow` overdue 목록을 제공한다. 작성자 반복 패턴은 서로 다른 메시지 3개와 고유 신고자 2명/7일을 모두 요구한다.
-5. global hide event는 GRDB public payload/media index와 앱 내부 media cache를 정리하고 동일 seq 검토 tombstone으로 바꾼다.
-6. restore event는 authoritative message를 다시 받아 같은 seq에 복원하며 unread/banner/push를 만들지 않는다.
-7. 일반 사용자 신고 화면은 Phase 7에서 message/image-viewer 경로만 구현한다. 프로필·참여자 목록·방 설정 신고와 제한/정지/지원 통합은 Phase 8에 남긴다.
+```text
+7.5A 서버 신고·관리자 계약 cutover
+  → 7.5B 공통 삭제 core·계정 탈퇴 bulk
+    → 7.5C delivery outbox·Socket fast path
+      → 7.5D iOS/GRDB Deletion Sync
+        → 7.5E 신고 UX·Coordinator 연결
+          → 7.5F 통합 회귀·하네스 정리
+```
+
+- `messageResolution.ts`, 공통 deletion service, `ChatViewController`, `ChatContainer`는 같은 계약·조립부를 연속해서 변경하므로 병렬 구현하지 않는다.
+- Phase 7.5 전체 코드와 로컬 검증이 끝나기 전에는 Development·Production을 변경하지 않는다. 환경 배포와 호환 matrix는 Phase 7.6 승인 범위다.
+- 각 하위 phase 종료 시 변경 파일, 계약, 검증 결과와 다음 phase 전제를 `progress.md`에 기록한다.
+
+#### Phase 7.5A — 신고 queue-only·관리자 종결 계약 cutover
+
+목표:
+
+- Phase 7.4의 자동 `hiddenPendingReview`·restore 계약을 제거하고 신고 집계는 관리자 queue만 바꾸게 한다.
+- 관리자 종결 입력을 `reviewOutcome + contentAction + accountAction`으로 분리하고 잘못된 조합을 서버에서 거부한다.
+
+변경 범위:
+
+- `functions/src/moderation/reports/{contracts,service}.ts`
+- `functions/src/moderation/messageEvidence/{contracts,service}.ts`
+- `functions/src/moderation/admin/{contracts,messageResolution,functions}.ts`
+- `functions/src/moderation/{state,functions}.ts`, `functions/src/index.ts`, `functions/src/index.contract.test.ts`
+- `contracts/chat-moderation-v1.json`, `firestore.indexes.json`, 필요한 server-only Rules
 
 완료 기준:
+
+- 신고 수·긴급 사유·작성자 반복 패턴은 queue state와 정렬만 바꾸고 공개 Message visibility를 쓰지 않는다.
+- `dismissed=keep+none`, `violation=delete 또는 account action 포함` 조합만 허용한다.
+- report/delete guard, evidence preparation·retention과 terminal receipt 멱등 계약은 유지한다.
+- 기존 `hiddenPendingReview`, 검토 tombstone, restore payload를 신규 계약에서 생성하지 않는다.
+
+검증:
+
+- Functions contract/unit: 관리자 action 조합, queue 경계 시각, duplicate/replay, 자동 hide 미발생.
+- `firestore-tests/moderation-reports.emulator.test.mjs`: report-first/delete-first, queue-only visibility, 기존 evidence 경합 회귀.
+- `npm run lint`, `npm run build`, 관련 Functions targeted/full test는 데이터 삭제 계약 변경이므로 phase 완료 전 실행한다.
+
+논의 필요 사항:
+
+- 없음. 기존 schema가 분리 action을 표현하지 못하면 임의 호환 필드를 추가하지 않고 blocked로 보고한다.
+
+#### Phase 7.5B — 공통 deletion mutation·계정 탈퇴 bulk
+
+상태: 2026-08-27 로컬 구현·자동 검증 완료. Development·Production 미배포.
+
+목표:
+
+- 작성자·방 관리자·플랫폼 관리자 삭제를 하나의 단건 deletion mutation으로 통합한다.
+- 계정 탈퇴 메시지를 collection group query로 모두 찾아 방별 revision batch와 `알 수 없는 사용자` 익명화 tombstone으로 정리한다.
+
+변경 범위:
+
+- 신규 공통 deletion service/contracts 모듈 후보: `functions/src/chat/deletion/`
+- `functions/src/chat/moderation/{service,functions}.ts`
+- `functions/src/moderation/admin/messageResolution.ts`
+- `functions/src/accountDeletion/{cleanup,drain}.ts`
+- `functions/src/chat/cleanup/{moderationCleanup,moderationCleanupFunctions}.ts`
+- `functions/src/index.ts`, `firestore.indexes.json`, `firestore.rules`
+
+구현 계약:
+
+- 단건은 최초 visible→deleted 전환에서 Message scrub, Room revision `+1`, 같은 `deletionRevision`, cleanup job과 message outbox를 한 transaction에 기록한다.
+- 계정 탈퇴는 먼저 `deletionPending` fence를 확인하고 `collectionGroup("Messages").where("senderUID", "==", uid)` 결과를 방별로 그룹화한다.
+- 방 batch는 Firestore write 한도 안에서 연속 revision 범위를 예약하고 각 Message를 ID/roomID/seq/isDeleted/deletionRevision/deletedAt만 남긴 tombstone으로 바꾼다.
+- 계정 탈퇴 방 batch는 메시지별 outbox 대신 revision 범위당 head-advanced outbox 하나를 만든다.
+- replay·단건/bulk 경합은 최초 tombstone 전환만 revision을 소비하고 결정적 outbox를 중복 생성하지 않는다.
+- reply preview, room lastMessage/announcement, public media index와 Storage cleanup job을 빠뜨리지 않는다.
+- transaction과 snapshot 조회는 각 orchestrator가 소유하고 공통 mutation은 중첩 transaction 없이 write만 구성한다.
+- 계정 탈퇴 query/page와 방별 chunk는 최대 30건, 방 안 revision 할당은 `seq → message document ID` 순서다.
+- Phase 7.5B가 outbox를 원자 생성하고 Phase 7.5C는 claim/lease/retry/Socket emit만 소유한다.
+- 계정 탈퇴 cleanup job에 서버 전용 `accountDeletionRequestID`를 연결하고 최종 verify는 연결된 job 전부의 `completed`를 요구한다. 별도 영구 batch journal은 만들지 않는다.
+
+완료 기준:
+
+- 모든 공개 삭제 원인에서 사용자에게 같은 시스템 tombstone만 남고 actor/reason은 server audit에만 존재한다.
+- 계정 탈퇴 cleanup 마지막 verify에서 해당 `senderUID` Message, 공개 media index·Storage·room preview가 0건이다.
+- 대량 메시지는 여러 retry로 이어져도 revision gap·중복·영구 processing 없이 완료된다.
+
+검증:
+
+- 신규 deletion service unit test: 최초 삭제, replay, stale seq, 동시 삭제 원인, lastMessage/announcement projection.
+- `functions/src/accountDeletion/` test: 여러 방·다중 page·같은 방 write-limit chunk·중간 실패 재시작·최종 0건 verify.
+- `firestore-tests/{chat-moderation,account-deletion}.emulator.test.mjs`: 실제 transaction, collection group index, Rules client deny, tombstone 최소 필드.
+- Functions lint/build/full test와 Rules emulator를 phase 완료 전 실행한다.
+
+논의 필요 사항:
+
+- 없음. legacy Message에서 canonical `senderUID`가 누락된 실제 데이터가 발견되면 migration 범위가 달라지므로 blocked로 보고한다.
+
+#### Phase 7.5C — transactional outbox·Socket fast path
+
+목표:
+
+- Firestore commit과 Socket emit 사이 장애 구간을 서버 전용 임시 outbox로 복구한다.
+- 단건과 계정 탈퇴 bulk를 참여자별 fan-out 없이 현재 연결된 room에만 전달한다.
+
+변경 범위:
+
+- `chatMessageDeletionDeliveryJobs/{deliveryID}` claim/lease/retry/TTL 계약
+- Functions export 또는 기존 Socket runtime watcher 접합부
+- `Socket/src/app/`, `Socket/src/handlers/`, 필요 시 전용 deletion delivery 모듈
+- `Socket/test/` 단위·통합 테스트
+- `functions/src/index.ts`, Rules/index/TTL manifest와 contract test
+
+구현 계약:
+
+- 단건 outbox는 `messageDeleted(roomID,messageID,seq,deletionRevision)`을 emit한다.
+- bulk outbox는 `messageDeletionHeadAdvanced(roomID,fromRevision,toRevision)`만 emit하고 message 배열을 전송하지 않는다.
+- claim은 lease 기반 at-least-once이며 단건은 messageID+revision, bulk는 roomID+toRevision으로 소비자가 멱등 처리한다.
+- completed/terminal outbox는 짧은 운영 retry 기간 뒤 TTL 제거하며 deletion truth로 사용하지 않는다.
+
+완료 기준:
+
+- DB commit 뒤 Socket 프로세스 종료·재시작·중복 claim에도 이벤트가 재전달되고 outbox가 terminal로 수렴한다.
+- 연결되지 않은 참여자에게 사용자별 문서·push를 만들지 않는다.
+- Socket 실패와 outbox TTL 이후에도 Firestore revision delta가 최종 정합성을 보장한다.
+
+검증:
+
+- Functions/Socket unit: 결정적 ID, lease 만료 회수, 중복 delivery, terminal retry 한도.
+- Socket integration: room-scoped emit, 다른 room 미수신, 단건/bulk payload validation.
+- `npm run check`, `npm test` in `Socket`; Functions lint/build/관련 test.
+
+논의 필요 사항:
+
+- 없음. 현재 단일 인스턴스 memory adapter 한계는 Phase 7.5 범위 밖이며 다중 인스턴스가 필요해질 때 별도 검토한다.
+
+#### Phase 7.5D — iOS/GRDB Deletion Sync·기존 listener cutover
+
+목표:
+
+- Socket fast path와 방 진입 delta query를 하나의 멱등 로컬 삭제 적용 경로로 통합한다.
+- 기존 Firestore `isDeleted == true` listener와 message-ID 단위 보정을 안전하게 제거한다.
+
+변경 범위:
+
+- ChatMessage Firestore/GRDB DTO·mapper의 표시 보존/계정 익명화 tombstone decoding
+- `OutPick/DB/Firebase/DatabaseManager/{Protocols,Repositories}/FirebaseMessageRepository*`
+- `OutPick/Features/Chat/Managers/{Protocols,Implementations}/ChatMessageManager*`
+- `OutPick/Features/Chat/Domain/UseCases/{ChatInitialLoadUseCase,ChatRoomMessageUseCase}.swift`
+- 신규 deletion reconciliation Repository/UseCase 모델 후보
+- `OutPick/DB/GRDB/` cursor·cleanup queue migration와 message/media/FTS store
+- `OutPick/Infra/Realtime/{RealtimeSocketService,RealtimeSocketListenerBinder}.swift`
+- `OutPick/Features/Chat/Services/MediaPreview/`, 이미지 viewer·video playback cache cancellation
+- `ChatContainer`, `ChatCompositionRoot` DI
+
+구현 계약:
+
+- GRDB에 account+room별 `lastAppliedDeletionRevision`과 durable file cleanup queue를 추가한다.
+- 방 화면 admission 전에 Room head를 비교하고 cursor보다 큰 tombstone을 revision ASC, 100개 page로 server head까지 적용한다.
+- 한 GRDB transaction에서 tombstone scrub, reply preview·FTS·media index 제거, cleanup queue 기록과 cursor 전진을 수행한다.
+- commit 뒤 memory cache eviction과 in-flight media request 취소를 수행하고 disk worker가 재실행 가능한 파일 삭제를 담당한다.
+- Socket 단건은 연속 revision이면 즉시 적용하고 gap은 delta reconciliation으로 전환한다. bulk head event는 항상 room delta reconciliation을 시작한다.
+- 새 경로가 server window·history·Socket 중복을 처리하는 targeted test를 통과한 뒤 기존 Firestore 삭제 listener와 `fetchDeletionStates/syncDeletedStates`를 제거한다.
+
+완료 기준:
+
+- 일반 tombstone은 senderUID/sentAt을 보존해 기존 좌우 정렬·말풍선·프로필·시간을 유지하고 삭제 원인은 노출하지 않는다. 계정 탈퇴 tombstone만 빈 UID와 `알 수 없는 사용자`로 렌더링한다.
+- 다른 방·앱 종료·오프라인 뒤 재진입 시 원문 flash 없이 server head까지 수렴한다.
+- cursor 저장 직후 앱이 종료돼도 durable cleanup queue가 파일 삭제를 재개한다.
+- 방 전용 검색·미디어 갤러리 접근도 렌더링 전에 같은 reconciliation gate를 사용한다.
+
+검증:
+
+- GRDB migration/store: 표시 보존/계정 익명화 tombstone, `anonymizesSender` marker, rollback, cursor 원자성, cleanup queue 재시작, FTS/media/reply scrub.
+- Repository/UseCase fake: head 동일 no-op, multi-page, gap/empty delta fallback, Socket 중복·역순·유실, 계정 cursor 격리.
+- Realtime binder: 단건/bulk event decode와 room ownership.
+- 수동 QA: 활성 viewer 종료, 다른 방 재진입, offline→online, 오래된 local cache 원문 flash 없음.
+- targeted Swift tests와 `OutPick-Development` Simulator build를 phase 완료 전 실행한다.
+
+논의 필요 사항:
+
+- 없음. 기존 `ChatMessage` non-optional 필드 때문에 범용 모델 전체를 크게 바꿔야 한다면 전용 tombstone DTO/mapper를 우선하고 요청 밖 모델 리팩토링은 하지 않는다.
+
+구현 결과 — 2026-08-27:
+
+- account+room cursor, `anonymizesSender` 방 수명 로컬 삭제 마커, durable media cleanup queue와 표시 보존/계정 익명화 tombstone migration을 구현했다.
+- 초기 진입·pagination·검색·Socket admission을 공통 sanitizer/reconciliation으로 통합하고 기존 Firestore 삭제 listener와 message-ID window 전체 보정을 제거했다.
+- Socket 단건 연속 revision은 즉시 적용하고 중복·gap·bulk head는 Room head 기반 delta reconciliation으로 수렴한다.
+- GRDB transaction은 message/reply/FTS/media index/outbox scrub, marker·cleanup queue·cursor 전진을 원자 처리한다.
+- Simulator 앱 build, 전체 테스트 타깃 build-for-testing, 신규 GRDB deletion sync 5건·migration 2건과 Realtime binder 15건 실행을 통과했다. 실제 서버와의 Development E2E는 Phase 7.5F/배포 승인 gate다.
+
+#### Phase 7.5E — 사용자 신고 UX·Coordinator 연결
+
+목표:
+
+- message/image-viewer 신고 진입을 실제 evidence-first callable에 연결하고 실패·중복·삭제 선행 결과를 사용자에게 명확히 표시한다.
+
+변경 범위:
+
+- 기존 `ChatModerationReport`, `ChatModerationReportingRepository`, `SubmitChatModerationReportUseCase`
+- 신규 `OutPick/Features/Chat/Moderation/` ViewModel·ViewController·상태 모델
+- `ChatMessageActionPolicy`, `ChatViewController{,Extension}`
+- `SimpleImageViewerVC`와 media preview report route
+- `ChatCoordinator`, `ChatContainer`, `ChatCompositionRoot`
+- `OutPickTests/CloudFunctions/` report repository tests와 신규 ViewModel/Coordinator spy tests
+
+구현 계약:
+
+- 현재 stub `handleReport`는 Coordinator에 reason/detail 화면 표시를 요청하고 ViewController가 Repository를 직접 만들지 않는다.
+- image viewer에서도 선택한 attachment가 아니라 해당 메시지 전체가 신고됨을 명시한다.
+- API 호출 중에만 일시 loading을 표시하고 관리자 검토 상태는 메시지나 tombstone에 노출하지 않는다.
+- 성공은 접수 안내, semantic duplicate는 `이미 신고한 메시지예요`, delete-first는 `이미 삭제된 메시지예요`와 동일 seq tombstone reconciliation으로 처리한다.
+- 화면이 유지된 네트워크 오류·응답 유실 재시도는 reason/detail과 같은 clientRequestID를 보존한다. 서버 확정 `failed` 뒤 명시적 재시도와 화면 종료 뒤 새 제출은 새 UUID를 사용한다. 별도 GRDB·메모리 신고 캐시는 만들지 않으며 서버 transaction이 processing 재사용과 semantic duplicate를 최종 판정한다.
+
+완료 기준:
+
+- 신고 성공만으로 개인·전역 원문이 숨겨지지 않는다.
+- pending local message와 이미 삭제된 tombstone에는 잘못된 신고 액션이 노출되지 않는다.
+- 일반 사용자 범위는 message/image-viewer만 포함하고 프로필·참여자·방 설정 신고는 Phase 8에 남긴다.
+
+검증:
+
+- UseCase/ViewModel unit: 성공, duplicate, processing/retry, already-deleted, 권한·network 실패와 입력 보존.
+- Coordinator spy: message와 image viewer가 동일 report route를 사용하고 dismiss/재시도가 중복 제출되지 않음.
+- ActionPolicy unit: pending/deleted/own message/상대 message별 신고 허용.
+- 수동 QA: Dynamic Type·VoiceOver, keyboard/detail 입력, 제출·취소·오류·중복 문구와 전체 메시지 신고 안내.
+
+논의 필요 사항:
+
+- 없음. 디자인 시스템에 기존 reason picker 패턴이 없으면 현재 Chat UIKit 패턴 안에서 최소 화면을 사용하고 새 공용 UI 추상화는 추가하지 않는다.
+
+#### Phase 7.5F — 통합 회귀·문서 cutover
+
+목표:
+
+- 서버·Socket·iOS가 같은 contract version과 삭제 상태 머신을 사용함을 검증하고 Phase 7.6 배포 준비 입력을 만든다.
+
+변경 범위:
+
+- `docs/ai/{DATA_SCHEMA,ENTRYPOINTS}.md`
+- `docs/ai/entrypoints/{CHAT,FIREBASE,TESTS}.md`
+- task `progress.md`, `qa-checklist.md`, `HANDOFF.md`
+- `contracts/chat-moderation-v1.json`, Functions/Socket/iOS contract fixtures
+
+완료 기준:
+
+- 자동 hide/restore와 기존 Firestore deletion listener가 신규 실행 경로에서 제거됐다.
+- 단건·계정 탈퇴 bulk·관리자 종결·report/delete 경합이 동일 tombstone과 revision cursor로 수렴한다.
+- schema/index/Rules/TTL/export와 iOS decoder의 호환 matrix가 문서화됐다.
+- 미실행 또는 실패한 테스트, Development에서만 확인할 QA와 Production 배포 위험을 명시한다.
+
+검증:
+
+- Functions full test + lint/build.
+- Firestore/Storage Rules와 transaction emulator 관련 suite.
+- Socket check/full test.
+- iOS targeted suite + Development generic Simulator build.
+- 실제 Development 배포·운영 데이터 mutation·Production 변경은 Phase 7.6 별도 승인 전 수행하지 않는다.
+
+논의 필요 사항:
+
+- 없음. 구현 중 새 제품/API/데이터 결정이 필요해지면 해당 하위 phase를 blocked로 보고하고 사용자 결정을 기다린다.
+
+Phase 7.5 전체 완료 기준:
 
 - 신고 전송 실패 시 사유·detail과 clientRequestID가 유지된다.
 - 신고 성공 직후 메시지는 자동으로 사라지지 않는다.
 - 같은 request replay는 일반 접수 성공, semantic duplicate는 `이미 신고한 메시지예요`, delete-first는 `이미 삭제된 메시지예요`를 표시하고 즉시 같은 seq tombstone으로 수렴한다.
-- 관리자 기각 뒤 모든 사용자는 같은 seq 내용을 복원한다.
-- hidden/restore가 visible unread, read frontier, room latestSeq를 변동시키지 않는다.
+- 신고 수·긴급 사유·작성자 패턴은 queue만 바꾸고 message visibility를 변경하지 않는다.
+- 신고 처리에서는 관리자 `contentAction=delete`만 삭제를 확정한다. 작성자·방 관리자·플랫폼 관리자·계정 탈퇴 정리를 포함한 모든 서버 확정 삭제는 활성 방에서 즉시, 비활성·오프라인 방에서 다음 reconciliation 시 같은 seq 일반 tombstone으로 수렴한다.
+- Socket 중복·유실·역순이 있어도 deletion revision과 로컬 cursor로 누락 삭제를 복구한다.
+- 비활성 참여자 수에 비례하는 사용자별 deletion inbox·push fan-out을 만들지 않는다.
+- local tombstone은 작성자 식별정보·sentAt·원문·첨부·FTS·media index·cache를 제거하고 durable cleanup retry를 보장한다.
 - Dynamic Type·VoiceOver에서 이유, 메시지 전체 신고 안내, 제출/취소와 결과 문구를 탐색할 수 있다.
 
 ### Phase 7.6 — 통합·정책·Development rollout 준비
@@ -551,21 +807,22 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - report attachment validation, reporter dedupe, 24시간 threshold, reviewRevision reset.
 - report-first/delete-later, delete-first/report-later, evidence copy dedupe.
 - dismissal/sanction/appeal retention과 cleanup retry.
-- hidden/restore의 동일 seq·latestSeq·read frontier 불변성.
+- 신고 임계치가 visibility를 바꾸지 않고 관리자 `contentAction=delete`만 deletion revision/outbox를 만드는지 검증한다.
+- deletion revision 원자 증가, 동일 삭제 replay, Socket 누락·중복·역순과 delta gap 복구.
 
 ### Socket unit
 
 - preflight/finalize/status/retry/cancel capability·room ban·rate limit.
 - finalize가 직접 message/seq/emit/push를 만들지 않는 회귀.
 - delivery watcher reconnect/duplicate snapshot의 at-least-once event와 client first-wins dedupe.
-- global visibility event의 room fan-out과 원문 로그 비노출.
+- `chat:messageDeleted`의 현재 room fan-out, 중복 전달 멱등성과 원문 로그 비노출.
 
 ### Firestore·Storage emulator
 
 - reservation owner exact quarantine write만 허용.
 - ready 전 quarantine/ready path read deny.
 - ready message 이후 public read와 canceled/failed path deny.
-- report/evidence/signal/restore payload client direct read/write deny.
+- report/evidence/signal과 deletion delivery server-only payload client direct read/write deny.
 - owner-only personal hide relation read와 client write deny.
 - moderation state client mutation deny.
 
@@ -576,7 +833,7 @@ Phase 7은 다음 경계를 동시에 바꾼다.
 - deterministic clock 기반 failed outbox 7일 retention 경계.
 - report command validation, 선택 유지, 동일 UUID retry.
 - attachment visibility reindex, representative/reply preview 선택.
-- global hidden/restore가 unread를 만들지 않고 개인 hide를 유지.
+- Deletion Sync가 unread/read frontier를 역행시키지 않고 GRDB·FTS·media cache를 scrub한다.
 - Coordinator report/image-viewer route spy와 Repository fake failure.
 
 ### 수동 QA

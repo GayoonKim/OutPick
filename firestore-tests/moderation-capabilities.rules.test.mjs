@@ -157,6 +157,16 @@ describe("moderation capability rules", () => {
       "moderationCommentWriteRateLimitBuckets",
       "principal-active_1",
     )));
+    await assertFails(getDoc(doc(
+      firestore,
+      "chatMessageDeletionDeliveryJobs",
+      "delivery-1",
+    )));
+    await assertFails(setDoc(doc(
+      firestore,
+      "chatMessageDeletionDeliveryJobs",
+      "delivery-1",
+    ), {status: "pending"}));
   });
 
   test("메시지 tombstone과 방 lifecycle은 클라이언트가 직접 변경할 수 없다", async () => {

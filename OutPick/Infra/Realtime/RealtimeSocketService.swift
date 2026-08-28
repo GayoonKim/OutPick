@@ -172,7 +172,20 @@ struct SocketDebugQAConfiguration: Sendable {
 struct ChatRoomSocketSession: Sendable {
     let roomID: String
     let messages: AsyncStream<ChatMessage>
+    let deletionEvents: AsyncStream<ChatDeletionSocketEvent>
     let close: @Sendable () async -> Void
+
+    init(
+        roomID: String,
+        messages: AsyncStream<ChatMessage>,
+        deletionEvents: AsyncStream<ChatDeletionSocketEvent> = AsyncStream { $0.finish() },
+        close: @escaping @Sendable () async -> Void
+    ) {
+        self.roomID = roomID
+        self.messages = messages
+        self.deletionEvents = deletionEvents
+        self.close = close
+    }
 }
 
 struct RealtimeVisibleRoomLease: Equatable, Sendable {
@@ -651,6 +664,11 @@ actor RealtimeSocketService {
 
     private var roomClosedObservers = [UUID: RoomClosedObserver]()
     private var roomMembershipRemovedObservers = [UUID: RoomMembershipRemovedObserver]()
+    private struct DeletionObserver {
+        let roomID: String
+        let continuation: AsyncStream<ChatDeletionSocketEvent>.Continuation
+    }
+    private var deletionObservers = [UUID: DeletionObserver]()
     private var removedMembershipEvents = [String: RealtimeRoomMembershipRemovalEvent]()
     private var authoritativeRoomClosureState = RealtimeAuthoritativeRoomClosureState()
 
@@ -783,14 +801,17 @@ actor RealtimeSocketService {
             throw error
         }
 
+        let deletionConsumer = makeDeletionConsumer(roomID: roomID)
         return ChatRoomSocketSession(
             roomID: roomID,
             messages: consumer.stream,
+            deletionEvents: deletionConsumer.stream,
             close: { [weak self] in
                 await self?.closeBackgroundRoomSession(
                     roomID: roomID,
                     consumerID: consumer.id
                 )
+                await self?.removeDeletionContinuation(deletionConsumer.id)
             }
         )
     }
@@ -830,13 +851,31 @@ actor RealtimeSocketService {
         }
         await strictActor.start()
 
+        let deletionConsumer = makeDeletionConsumer(roomID: roomID)
         return ChatRoomSocketSession(
             roomID: roomID,
             messages: strictActor.messages,
+            deletionEvents: deletionConsumer.stream,
             close: { [weak self] in
                 await self?.closeVisibleRoomSession(lease: lease)
+                await self?.removeDeletionContinuation(deletionConsumer.id)
             }
         )
+    }
+
+    private func makeDeletionConsumer(
+        roomID: String
+    ) -> (id: UUID, stream: AsyncStream<ChatDeletionSocketEvent>) {
+        let id = UUID()
+        var continuation: AsyncStream<ChatDeletionSocketEvent>.Continuation!
+        let stream = AsyncStream<ChatDeletionSocketEvent> { continuation = $0 }
+        deletionObservers[id] = DeletionObserver(roomID: roomID, continuation: continuation)
+        return (id, stream)
+    }
+
+    private func removeDeletionContinuation(_ id: UUID) {
+        deletionObservers[id]?.continuation.finish()
+        deletionObservers.removeValue(forKey: id)
     }
 
     private func closeBackgroundRoomSession(roomID: String, consumerID: UUID) async {
@@ -1579,6 +1618,18 @@ actor RealtimeSocketService {
                         guard await self?.isCurrentSocketGeneration(generation) == true else { return }
                         await self?.handleRoomMembershipRemovedData(data)
                     }
+                },
+                messageDeleted: { [weak messageIngressQueue] data in
+                    messageIngressQueue?.enqueue(
+                        data: data,
+                        event: RealtimeSocketListenerBinder.messageDeletedEvent
+                    )
+                },
+                messageDeletionHeadAdvanced: { [weak messageIngressQueue] data in
+                    messageIngressQueue?.enqueue(
+                        data: data,
+                        event: RealtimeSocketListenerBinder.messageDeletionHeadAdvancedEvent
+                    )
                 }
             )
         )
@@ -1718,7 +1769,51 @@ actor RealtimeSocketService {
 
     private func handleIncomingData(_ data: [Any], event: String) async {
         guard let payload = data.first as? [String: Any] else { return }
+        if event == RealtimeSocketListenerBinder.messageDeletedEvent ||
+            event == RealtimeSocketListenerBinder.messageDeletionHeadAdvancedEvent {
+            handleDeletionPayload(payload, event: event)
+            return
+        }
         await handleIncomingPayload(payload, event: event)
+    }
+
+    private func handleDeletionPayload(_ payload: [String: Any], event: String) {
+        guard let roomID = payload["roomID"] as? String, !roomID.isEmpty else { return }
+        let deletionEvent: ChatDeletionSocketEvent
+        if event == RealtimeSocketListenerBinder.messageDeletedEvent {
+            guard let messageID = payload["messageID"] as? String,
+                  let revision = Self.int64Value(payload["deletionRevision"]),
+                  revision > 0 else { return }
+            deletionEvent = ChatDeletionSocketEvent(
+                roomID: roomID,
+                kind: .message(ChatDeletionDelta(
+                    messageID: messageID,
+                    roomID: roomID,
+                    seq: Self.int64Value(payload["seq"]) ?? 0,
+                    revision: revision,
+                    deletedAt: nil
+                ))
+            )
+        } else {
+            guard let from = Self.int64Value(payload["fromRevision"]),
+                  let to = Self.int64Value(payload["toRevision"]),
+                  to >= from else { return }
+            deletionEvent = ChatDeletionSocketEvent(
+                roomID: roomID,
+                kind: .headAdvanced(fromRevision: from, toRevision: to)
+            )
+        }
+        for observer in deletionObservers.values where observer.roomID == roomID {
+            observer.continuation.yield(deletionEvent)
+        }
+    }
+
+    private static func int64Value(_ value: Any?) -> Int64? {
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? Int { return Int64(value) }
+        if let value = value as? Int64 { return value }
+        if let value = value as? Double { return Int64(value) }
+        return nil
     }
 
     private func handleIncomingPayload(_ payload: [String: Any], event: String) async {

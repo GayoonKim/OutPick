@@ -24,7 +24,7 @@ import {
   messageEvidenceBundleID,
   messageEvidenceCopyJobID,
   messageAuthorPatternEvaluation,
-  messageGlobalVisibilityEvaluation,
+  messageReportQueueEvaluation,
   messageGuardID,
   messageIncidentID,
   messageReportPreparationID,
@@ -53,8 +53,8 @@ function timestampISO(value: unknown): string | null {
   return value instanceof Timestamp ? value.toDate().toISOString() : null;
 }
 
-function visibility(value: unknown): "visible" | "hiddenPendingReview" | "deleted" {
-  return value === "hiddenPendingReview" || value === "deleted" ? value : "visible";
+function visibility(value: unknown): "visible" | "deleted" {
+  return value === "deleted" ? "deleted" : "visible";
 }
 
 function queue(value: unknown): MessageQueueClass | null {
@@ -131,7 +131,7 @@ function requestDocument(input: {
   submissionID: string | null;
   status: MessageReportStatus;
   queueClass: MessageQueueClass | null;
-  visibilityState: "visible" | "hiddenPendingReview" | "deleted";
+  visibilityState: "visible" | "deleted";
   seq: number | null;
   attemptGeneration: number;
   requestedAt: Timestamp;
@@ -380,7 +380,7 @@ export async function submitMessageReportService(
     const nextQueue = immediatelyAccepted ? nextMessageQueueClass({currentQueueClass: currentQueue, reason: input.reason, distinctAcceptedReporterCount: nextCount}) : currentQueue;
     const requestDoc = requestDocument({incidentID, reporterID, clientRequestID: input.clientRequestID, reviewRevision, preparationID, submissionID, status, queueClass: nextQueue, visibilityState: visibility(messageData.moderationVisibilityState), seq, attemptGeneration, requestedAt: nowTimestamp, acceptedAt: immediatelyAccepted ? nowTimestamp : null});
 
-    let acceptedVisibility = visibility(messageData.moderationVisibilityState);
+    const acceptedVisibility = visibility(messageData.moderationVisibilityState);
     let acceptedUrgentCount = (continuesCurrentRevision ? integer(incident.get("urgentDistinctReporterCount24h")) : 0) + (priorityClass === "urgent" ? 1 : 0);
     let acceptedTotalCount = nextCount;
     let authorAggregate: FirebaseFirestore.DocumentSnapshot | null = null;
@@ -401,12 +401,9 @@ export async function submitMessageReportService(
         receivedAt: document.get("createdAt") instanceof Timestamp ? document.get("createdAt").toDate() : now,
       }));
       signals.push({reporterModerationPrincipalID: reporterID, priority: priorityClass, receivedAt: now});
-      const globalEvaluation = messageGlobalVisibilityEvaluation(signals, now);
+      const globalEvaluation = messageReportQueueEvaluation(signals, now);
       acceptedUrgentCount = globalEvaluation.urgentDistinctReporterCount;
       acceptedTotalCount = globalEvaluation.totalDistinctReporterCount;
-      if (globalEvaluation.shouldHide) {
-        acceptedVisibility = "hiddenPendingReview";
-      }
 
       const authorAggregateRef = firestore.collection("moderationUserReports").doc(senderPrincipalID);
       const authorReporterRef = authorAggregateRef.collection("reporters").doc(reporterPrincipalID);
@@ -461,9 +458,6 @@ export async function submitMessageReportService(
       const previousReasonCounts = continuesCurrentRevision && incident.get("reasonCounts") && typeof incident.get("reasonCounts") === "object" && !Array.isArray(incident.get("reasonCounts")) ? incident.get("reasonCounts") as Record<string, number> : {};
       const revisionReasonCounts = {...previousReasonCounts, [input.reason]: integer(previousReasonCounts[input.reason]) + 1};
       transaction.set(incidentRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, senderModerationPrincipalID: senderPrincipalID, reviewRevision, reviewState: "open", acceptanceState: "reviewable", pendingPreparationCount: 0, caseVersion: integer(incident.get("caseVersion")) + 1, queueClass: nextQueue, priorityClass, reasonCounts: revisionReasonCounts, urgentDistinctReporterCount24h: acceptedUrgentCount, totalDistinctReporterCount24h: acceptedTotalCount, reviewDueAt: Timestamp.fromDate(reportSlaDueAt("other", now)), slaDueAt: Timestamp.fromDate(reportSlaDueAt(input.reason, now)), visibilityState: acceptedVisibility, evidenceState: "available", firstReportedAt: continuesCurrentRevision ? incident.get("firstReportedAt") ?? nowTimestamp : nowTimestamp, lastReportedAt: nowTimestamp, updatedAt: nowTimestamp});
-      if (acceptedVisibility === "hiddenPendingReview" && visibility(messageData.moderationVisibilityState) === "visible") {
-        transaction.update(messageRef, {moderationVisibilityState: "hiddenPendingReview"});
-      }
       if (authorAggregate && authorReporter && reportedMessageMarker && messageReporterMarker && authorPattern) {
         const authorAggregateRef = firestore.collection("moderationUserReports").doc(senderPrincipalID);
         const previousReasons = authorAggregate.get("reasonCounts");
@@ -572,7 +566,7 @@ export async function acceptMessageEvidenceBundleService(
         receivedAt: preparation.get("requestedAt") instanceof Timestamp ? preparation.get("requestedAt").toDate() : now,
       });
     }
-    const globalEvaluation = messageGlobalVisibilityEvaluation(signals, now);
+    const globalEvaluation = messageReportQueueEvaluation(signals, now);
     let queueClass = continuesCurrentRevision ? queue(incident.get("queueClass")) : null;
     for (const preparation of acceptedPreparations) {
       queueClass = nextMessageQueueClass({
@@ -581,9 +575,8 @@ export async function acceptMessageEvidenceBundleService(
         distinctAcceptedReporterCount: globalEvaluation.totalDistinctReporterCount,
       });
     }
-    const hidden = globalEvaluation.shouldHide && message.exists && message.get("isDeleted") !== true;
     const visibilityState = message.exists && message.get("isDeleted") === true ? "deleted" as const :
-      hidden ? "hiddenPendingReview" as const : visibility(message.get("moderationVisibilityState"));
+      visibility(message.get("moderationVisibilityState"));
     const senderPrincipalID = preparationDocuments[0].get("senderModerationPrincipalID");
     if (typeof senderPrincipalID !== "string" || !senderPrincipalID) {
       throw new HttpsError("failed-precondition", "evidence 작성자 제재 주체가 올바르지 않습니다.");
@@ -644,7 +637,6 @@ export async function acceptMessageEvidenceBundleService(
     transaction.set(revisionRef, {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, reviewState: "open", queueClass, openedAt: revisionFirstReportedAt, acceptanceState, resolvedAt: null, resolutionActionID: null, evidenceBundleID: bundleID, updatedAt: nowTimestamp}, {merge: true});
     transaction.set(bundleRef, {acceptanceState, pendingPreparationCount: remainingPreparationCount, updatedAt: nowTimestamp}, {merge: true});
     transaction.set(guardRef, {evidenceState: "available", updatedAt: nowTimestamp}, {merge: true});
-    if (hidden) transaction.update(messageRef, {moderationVisibilityState: "hiddenPendingReview"});
     if (acceptedPreparations.length > 0) {
       const authorReasonValue = authorAggregate.get("reasonCounts");
       const authorReasonCounts = authorReasonValue && typeof authorReasonValue === "object" && !Array.isArray(authorReasonValue) ? {...authorReasonValue as Record<string, number>} : {};

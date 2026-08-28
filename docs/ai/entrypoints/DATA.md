@@ -40,6 +40,8 @@ GRDB cleanup/변경 시 우선 확인:
 4. 변경 작업에 해당하는 `OutPick/DB/GRDB/Stores/`와 `OutPick/Features/Chat/Persistence/` Protocol
 5. `OutPickTests/GRDB/`와 위 Phase 3 결정·구현·테스트 문서
 
+Phase 7.5 deletion marker는 `chatDeletedMessageMarker.anonymizesSender`를 저장한다. 일반·관리자 삭제는 `false`로 sender UID·닉네임·아바타·전송 시각·답장 presentation을 로컬 메시지에 유지하고 본문·미디어·FTS만 제거한다. 계정 탈퇴 bulk는 `true`로 UID·아바타·답장 정보를 제거하고 닉네임을 `알 수 없는 사용자`로 바꾸되 전송 시각은 유지한다. `addDeletionMarkerSenderPolicy` migration은 기존 marker를 개인정보 재노출 방지 우선의 `true`로 backfill한다. 이후 서버가 직접 반환한 같은/더 최신 revision tombstone은 canonical sender 필드 유무로 이 policy를 exact 교정한다. `ChatMessageRecordMapper`도 삭제 메시지의 presentation을 그대로 저장하고 content만 제거하므로 재진입 server fetch가 닉네임·시간·답장을 다시 지우지 않는다.
+
 ## Firestore Rules / Indexes
 
 - Firestore rules: `firestore.rules`

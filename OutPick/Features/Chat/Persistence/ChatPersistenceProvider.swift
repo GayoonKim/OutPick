@@ -4,6 +4,7 @@ struct ChatPersistenceProvider {
     let mediaStore: GRDBChatMediaIndexStore
     let profileStore: GRDBChatProfileCacheStore
     let roomLocalDataStore: GRDBChatRoomLocalDataStore
+    let deletionSyncStore: GRDBChatDeletionSyncStore
 
     init(database: AppDatabase) {
         messageStore = GRDBChatMessageStore(database: database)
@@ -11,5 +12,6 @@ struct ChatPersistenceProvider {
         mediaStore = GRDBChatMediaIndexStore(database: database)
         profileStore = GRDBChatProfileCacheStore(database: database)
         roomLocalDataStore = GRDBChatRoomLocalDataStore(database: database)
+        deletionSyncStore = GRDBChatDeletionSyncStore(database: database)
     }
 }

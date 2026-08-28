@@ -80,6 +80,34 @@ struct RealtimeSocketListenerCallbacks {
     let videoReceived: ([Any]) -> Void
     let roomClosed: ([Any]) -> Void
     let roomMembershipRemoved: ([Any]) -> Void
+    let messageDeleted: ([Any]) -> Void
+    let messageDeletionHeadAdvanced: ([Any]) -> Void
+
+    init(
+        connected: @escaping ([Any]) -> Void,
+        error: @escaping ([Any]) -> Void,
+        disconnected: @escaping ([Any]) -> Void,
+        serverConnectReady: @escaping ([Any]) -> Void,
+        chatMessage: @escaping ([Any]) -> Void,
+        imagesReceived: @escaping ([Any]) -> Void,
+        videoReceived: @escaping ([Any]) -> Void,
+        roomClosed: @escaping ([Any]) -> Void,
+        roomMembershipRemoved: @escaping ([Any]) -> Void,
+        messageDeleted: @escaping ([Any]) -> Void = { _ in },
+        messageDeletionHeadAdvanced: @escaping ([Any]) -> Void = { _ in }
+    ) {
+        self.connected = connected
+        self.error = error
+        self.disconnected = disconnected
+        self.serverConnectReady = serverConnectReady
+        self.chatMessage = chatMessage
+        self.imagesReceived = imagesReceived
+        self.videoReceived = videoReceived
+        self.roomClosed = roomClosed
+        self.roomMembershipRemoved = roomMembershipRemoved
+        self.messageDeleted = messageDeleted
+        self.messageDeletionHeadAdvanced = messageDeletionHeadAdvanced
+    }
 }
 
 final class RealtimeSocketListenerBinder {
@@ -89,6 +117,8 @@ final class RealtimeSocketListenerBinder {
     static let videoReceivedEvent = "receiveVideo"
     static let roomClosedEvent = "room:closed"
     static let roomMembershipRemovedEvent = "room:membership-removed"
+    static let messageDeletedEvent = "chat:messageDeleted"
+    static let messageDeletionHeadAdvancedEvent = "chat:messageDeletionHeadAdvanced"
 
     private(set) var isBound = false
 
@@ -109,6 +139,8 @@ final class RealtimeSocketListenerBinder {
         listener.on(Self.videoReceivedEvent, callback: callbacks.videoReceived)
         listener.on(Self.roomClosedEvent, callback: callbacks.roomClosed)
         listener.on(Self.roomMembershipRemovedEvent, callback: callbacks.roomMembershipRemoved)
+        listener.on(Self.messageDeletedEvent, callback: callbacks.messageDeleted)
+        listener.on(Self.messageDeletionHeadAdvancedEvent, callback: callbacks.messageDeletionHeadAdvanced)
         return true
     }
 }

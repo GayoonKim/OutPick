@@ -1,7 +1,14 @@
 /* eslint-disable require-jsdoc, max-len */
-import {FieldValue} from "firebase-admin/firestore";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {db, defaultStorageBucket} from "../core/firebase.js";
+import {
+  applyRoomMessageDeletionBatchMutation,
+  DELETED_MESSAGE_PREVIEW,
+  MessageDeletionTarget,
+  messageCleanupJobID,
+} from "../chat/deletion/mutation.js";
 import {resolveRoomMembershipPage} from "../chat/moderation/roomMembershipSweep.js";
+import {messageIncidentID} from "../moderation/messageEvidence/contracts.js";
 
 const PAGE_SIZE = 100;
 // 연관 컬렉션은 한 번에 여러 쿼리 결과를 단일 batch로 합치므로
@@ -211,7 +218,68 @@ export async function scrubCommentPage(uid: string): Promise<boolean> {
   return snapshot.size < PAGE_SIZE;
 }
 
-export async function scrubMessagePage(uid: string): Promise<boolean> {
+async function scrubMessageRoomBatch(
+  uid: string,
+  accountDeletionRequestID: string,
+  accountGenerationID: string,
+  documents: FirebaseFirestore.QueryDocumentSnapshot[],
+  now: Timestamp,
+): Promise<void> {
+  const first = documents[0];
+  const roomRef = first?.ref.parent.parent;
+  if (!roomRef || documents.some((document) => document.ref.parent.parent?.path !== roomRef.path)) {
+    throw new Error("account_deletion_message_room_mismatch");
+  }
+  const userRef = db.collection("users").doc(uid);
+  await db.runTransaction(async (transaction) => {
+    const messageRefs = documents.map((document) => document.ref);
+    const cleanupRefs = documents.map((document) =>
+      db.collection("chatMessageCleanupJobs").doc(messageCleanupJobID(roomRef.id, document.id)));
+    const guardRefs = documents.map((document) =>
+      db.collection("moderationMessageGuards").doc(messageIncidentID(roomRef.id, document.id)));
+    const [room, user, messages, cleanups, guards] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(userRef),
+      Promise.all(messageRefs.map((reference) => transaction.get(reference))),
+      Promise.all(cleanupRefs.map((reference) => transaction.get(reference))),
+      Promise.all(guardRefs.map((reference) => transaction.get(reference))),
+    ]);
+    if (!user.exists || user.get("accountStatus") !== "deletionPending" ||
+        user.get("accountGenerationID") !== accountGenerationID) {
+      throw new Error("account_deletion_fence_lost");
+    }
+    const targets: MessageDeletionTarget[] = [];
+    messages.forEach((message, index) => {
+      if (!message.exists || message.get("senderUID") !== uid) return;
+      targets.push({
+        messageRef: messageRefs[index],
+        message,
+        cleanupRef: cleanupRefs[index],
+        cleanup: cleanups[index],
+        guardRef: guardRefs[index],
+        guard: guards[index],
+      });
+    });
+    if (targets.length === 0) return;
+    applyRoomMessageDeletionBatchMutation(
+      transaction,
+      db,
+      roomRef,
+      room,
+      targets,
+      roomRef.id,
+      now,
+      accountDeletionRequestID,
+    );
+  });
+}
+
+export async function scrubMessagePage(
+  uid: string,
+  accountDeletionRequestID: string,
+  accountGenerationID: string,
+  now = new Date(),
+): Promise<boolean> {
   const [snapshot, roomPreviews] = await Promise.all([
     db.collectionGroup("Messages")
       .where("senderUID", "==", uid)
@@ -223,73 +291,59 @@ export async function scrubMessagePage(uid: string): Promise<boolean> {
       .get(),
   ]);
   if (snapshot.empty && roomPreviews.empty) return true;
-
-  const storagePaths: string[] = [];
-  const messagePatches = new Map<string, {
-    ref: FirebaseFirestore.DocumentReference;
-    patch: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>;
-  }>();
+  const byRoom = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
   for (const document of snapshot.docs) {
-    const data = document.data();
-    storagePaths.push(...attachmentStoragePaths(data.attachments));
-    messagePatches.set(document.ref.path, {ref: document.ref, patch: {
-      senderUID: FieldValue.delete(),
-      senderEmail: FieldValue.delete(),
-      senderNickname: "탈퇴한 사용자",
-      senderAvatarPath: FieldValue.delete(),
-      msg: "",
-      message: "",
-      attachments: [],
-      sharedContent: FieldValue.delete(),
-      replyPreview: null,
-      isDeleted: true,
-      deletionReason: "account_deleted",
-    }});
+    const roomRef = document.ref.parent.parent;
+    if (!roomRef) throw new Error("account_deletion_message_room_missing");
+    const existing = byRoom.get(roomRef.path) ?? [];
+    existing.push(document);
+    byRoom.set(roomRef.path, existing);
   }
-  const messageIDs = snapshot.docs.map((document) => document.id);
-  for (let index = 0; index < messageIDs.length; index += 10) {
-    const replySnapshots = await db.collectionGroup("Messages")
-      .where("replyPreview.messageID", "in", messageIDs.slice(index, index + 10))
-      .limit(PAGE_SIZE)
-      .get();
-    replySnapshots.docs.forEach((document) => {
-      const existing = messagePatches.get(document.ref.path);
-      const replyPreview = {
-        messageID: document.data().replyPreview?.messageID ?? "",
-        sender: "탈퇴한 사용자",
-        text: "",
-        imagesCount: 0,
-        videosCount: 0,
-        isDeleted: true,
-      };
-      if (existing) {
-        existing.patch.replyPreview = replyPreview;
-      } else {
-        messagePatches.set(document.ref.path, {
-          ref: document.ref,
-          patch: {replyPreview},
-        });
-      }
-    });
+  const nowTimestamp = Timestamp.fromDate(now);
+  for (const documents of byRoom.values()) {
+    await scrubMessageRoomBatch(
+      uid,
+      accountDeletionRequestID,
+      accountGenerationID,
+      documents,
+      nowTimestamp,
+    );
   }
-  const batch = db.batch();
-  for (const value of messagePatches.values()) {
-    batch.update(value.ref, value.patch);
+  if (!roomPreviews.empty) {
+    const user = await db.collection("users").doc(uid).get();
+    if (!user.exists || user.get("accountStatus") !== "deletionPending" ||
+        user.get("accountGenerationID") !== accountGenerationID) {
+      throw new Error("account_deletion_fence_lost");
+    }
+    const batch = db.batch();
+    roomPreviews.docs.forEach((document) => batch.set(document.ref, {
+      lastMessage: DELETED_MESSAGE_PREVIEW,
+      updatedAt: nowTimestamp,
+    }, {merge: true}));
+    await batch.commit();
   }
-  roomPreviews.docs.forEach((document) => batch.update(document.ref, {
-    "lastMessage.senderUID": FieldValue.delete(),
-    "lastMessage.senderEmail": FieldValue.delete(),
-    "lastMessage.senderNickname": "탈퇴한 사용자",
-    "lastMessage.senderAvatarPath": FieldValue.delete(),
-    "lastMessage.msg": "",
-    "lastMessage.message": "",
-    "lastMessage.attachments": [],
-    "lastMessage.sharedContent": FieldValue.delete(),
-    "lastMessage.isDeleted": true,
-  }));
-  await deleteStoragePaths(storagePaths);
-  await batch.commit();
   return snapshot.size < 30 && roomPreviews.size < PAGE_SIZE;
+}
+
+export async function hasIncompleteAccountDeletionMessageCleanup(
+  accountDeletionRequestID: string,
+): Promise<boolean> {
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  let hasMore = true;
+  while (hasMore) {
+    let query = db.collection("chatMessageCleanupJobs")
+      .where("accountDeletionRequestID", "==", accountDeletionRequestID)
+      .orderBy("__name__")
+      .limit(PAGE_SIZE);
+    if (cursor) query = query.startAfter(cursor);
+    const snapshot = await query.get();
+    if (snapshot.docs.some((document) => document.get("status") !== "completed")) {
+      return true;
+    }
+    hasMore = snapshot.size === PAGE_SIZE;
+    cursor = snapshot.docs.at(-1) ?? null;
+  }
+  return false;
 }
 
 async function activeUserIDs(userIDs: string[]): Promise<Set<string>> {

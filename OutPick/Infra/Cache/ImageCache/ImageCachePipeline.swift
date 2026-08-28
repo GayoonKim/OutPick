@@ -261,6 +261,10 @@ actor ImageCacheInFlightRegistry {
         tasks.removeValue(forKey: key)
     }
 
+    func cancel(_ key: String) {
+        tasks.removeValue(forKey: key)?.cancel()
+    }
+
     func cancelAll() {
         tasks.values.forEach { $0.cancel() }
         tasks.removeAll()
@@ -281,6 +285,10 @@ actor ImageCachePrefetchRegistry {
 
     func remove(_ key: String) {
         tasks.removeValue(forKey: key)
+    }
+
+    func cancel(_ key: String) {
+        tasks.removeValue(forKey: key)?.cancel()
     }
 
     func cancelAll() {
@@ -450,6 +458,7 @@ final class ImageCachePipeline {
                     since: decodeStartedAt
                 )
 
+                try Task.checkCancellation()
                 memory.set(image, forKey: key)
                 if storePolicy == .memoryAndDisk {
                     await disk.write(data: downloaded, forKey: key)
@@ -488,6 +497,8 @@ final class ImageCachePipeline {
 
     func removeImage(path: String) async {
         let key = canonicalKey(for: path)
+        await inflight.cancel(key)
+        await prefetchRegistry.cancel(key)
         memory.remove(forKey: key)
         await disk.remove(forKey: key)
     }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MESSAGE_AUTHOR_PATTERN_WINDOW_MILLIS,
-  MESSAGE_GLOBAL_VISIBILITY_WINDOW_MILLIS,
+  MESSAGE_REPORT_SIGNAL_WINDOW_MILLIS,
   MESSAGE_SANCTION_APPEAL_RETENTION_MILLIS,
   canTransitionMessageEvidence,
   canTransitionMessageEvidenceCleanupJob,
@@ -17,7 +17,7 @@ import {
   messageEvidenceObjectPath,
   messageEvidenceRetryDelayMillis,
   messageEvidenceRetention,
-  messageGlobalVisibilityEvaluation,
+  messageReportQueueEvaluation,
   messageGuardID,
   messageIncidentID,
   messageReportPreparationID,
@@ -150,8 +150,8 @@ test("queue는 holding에서 reviewRequired와 urgent로만 승격하고 강등�
 
 test("24시간 시작 경계를 포함하고 미래 신고와 중복 reporter를 제외한다", () => {
   const now = new Date("2026-08-21T12:00:00.000Z");
-  const cutoff = now.getTime() - MESSAGE_GLOBAL_VISIBILITY_WINDOW_MILLIS;
-  const result = messageGlobalVisibilityEvaluation([
+  const cutoff = now.getTime() - MESSAGE_REPORT_SIGNAL_WINDOW_MILLIS;
+  const result = messageReportQueueEvaluation([
     {reporterModerationPrincipalID: "a", priority: "urgent", receivedAt: new Date(cutoff)},
     {reporterModerationPrincipalID: "a", priority: "general", receivedAt: new Date(now)},
     {reporterModerationPrincipalID: "b", priority: "urgent", receivedAt: new Date(now)},
@@ -161,19 +161,18 @@ test("24시간 시작 경계를 포함하고 미래 신고와 중복 reporter를
   assert.deepEqual(result, {
     urgentDistinctReporterCount: 2,
     totalDistinctReporterCount: 2,
-    shouldHide: true,
   });
 });
 
-test("전체 사유 고유 reporter 3명도 전역 비노출을 만든다", () => {
+test("전체 사유 고유 reporter 3명은 큐 집계만 갱신한다", () => {
   const now = new Date("2026-08-21T12:00:00.000Z");
-  const result = messageGlobalVisibilityEvaluation([
+  const result = messageReportQueueEvaluation([
     {reporterModerationPrincipalID: "a", priority: "general", receivedAt: now},
     {reporterModerationPrincipalID: "b", priority: "general", receivedAt: now},
     {reporterModerationPrincipalID: "c", priority: "general", receivedAt: now},
   ], now);
-  assert.equal(result.shouldHide, true);
   assert.equal(result.urgentDistinctReporterCount, 0);
+  assert.equal(result.totalDistinctReporterCount, 3);
 });
 
 test("작성자 패턴은 서로 다른 메시지 3개와 reporter 2명을 모두 요구한다", () => {
@@ -210,7 +209,7 @@ test("작성자 패턴의 7일 시작 경계는 계산에 포함되지만 review
 
 test("검토 중과 appeal 또는 legal hold는 evidence cleanup을 보류한다", () => {
   const base = {
-    decision: null,
+    accountAction: null,
     decisionAt: null,
     appealState: "none" as const,
     appealResolvedAt: null,
@@ -224,7 +223,7 @@ test("검토 중과 appeal 또는 legal hold는 evidence cleanup을 보류한다
   const decisionAt = new Date("2026-08-21T12:00:00.000Z");
   assert.deepEqual(messageEvidenceRetention({
     reviewState: "resolved",
-    decision: "temporaryRestriction",
+    accountAction: "temporaryRestriction",
     decisionAt,
     appealState: "open",
     appealResolvedAt: null,
@@ -232,7 +231,7 @@ test("검토 중과 appeal 또는 legal hold는 evidence cleanup을 보류한다
   }), {retentionClass: "appealOpen", deleteAfter: null});
   assert.deepEqual(messageEvidenceRetention({
     reviewState: "resolved",
-    decision: "warningOnly",
+    accountAction: "warning",
     decisionAt,
     appealState: "none",
     appealResolvedAt: null,
@@ -240,11 +239,11 @@ test("검토 중과 appeal 또는 legal hold는 evidence cleanup을 보류한다
   }), {retentionClass: "legalHold", deleteAfter: null});
 });
 
-test("기각·삭제만·경고만은 즉시, 계정 제재는 30일 뒤 cleanup한다", () => {
+test("계정 restriction·suspension만 30일 보존하고 나머지는 즉시 cleanup한다", () => {
   const decisionAt = new Date("2026-08-21T12:00:00.000Z");
   const immediate = messageEvidenceRetention({
     reviewState: "dismissed",
-    decision: "dismissed",
+    accountAction: "none",
     decisionAt,
     appealState: "none",
     appealResolvedAt: null,
@@ -255,7 +254,7 @@ test("기각·삭제만·경고만은 즉시, 계정 제재는 30일 뒤 cleanup
 
   const sanction = messageEvidenceRetention({
     reviewState: "resolved",
-    decision: "permanentSuspension",
+    accountAction: "permanentSuspension",
     decisionAt,
     appealState: "none",
     appealResolvedAt: null,
@@ -271,7 +270,7 @@ test("이의제기 해결 시 해결 시각부터 즉시 cleanup할 수 있다",
   const resolvedAt = new Date("2026-08-25T12:00:00.000Z");
   const retention = messageEvidenceRetention({
     reviewState: "resolved",
-    decision: "temporaryRestriction",
+    accountAction: "temporaryRestriction",
     decisionAt: new Date("2026-08-21T12:00:00.000Z"),
     appealState: "resolved",
     appealResolvedAt: resolvedAt,

@@ -16,10 +16,13 @@ protocol ChatAttachmentImageLoading {
     func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async
     func storeOutgoingPreview(data: Data, forKey key: String) async
     func cachedOutgoingPreview(forKey key: String) async -> UIImage?
+    func removeCachedImage(for path: String) async
 }
 
 extension ChatAttachmentImageLoading {
     func loadImageData(for path: String, maxBytes: Int) async throws -> Data {
         throw URLError(.unsupportedURL)
     }
+
+    func removeCachedImage(for path: String) async {}
 }

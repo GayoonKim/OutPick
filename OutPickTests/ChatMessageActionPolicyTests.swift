@@ -80,7 +80,7 @@ struct ChatMessageActionPolicyTests {
             roomCreatorID: "admin@example.com"
         )
         #expect(adminPolicy.canDelete)
-        #expect(adminPolicy.canReport == false)
+        #expect(adminPolicy.canReport)
         #expect(adminPolicy.canBlock)
         #expect(adminPolicy.canAnnounce == false)
         #expect(adminPolicy.canRemoveMember)
@@ -103,7 +103,7 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canReply)
         #expect(policy.canCopy)
         #expect(policy.canDelete)
-        #expect(policy.canReport == false)
+        #expect(policy.canReport)
         #expect(policy.canAnnounce)
         #expect(policy.canRemoveMember)
     }
@@ -130,6 +130,28 @@ struct ChatMessageActionPolicyTests {
         #expect(memberPolicy.canRemoveMember == false)
         #expect(senderPolicy.canRemoveMember == false)
         #expect(memberPolicy.allows(.removeMember) == false)
+    }
+
+    @Test func deletedMessageExposesNoActionsIncludingReport() {
+        let message = makeMessage(
+            senderUID: "sender@example.com",
+            messageType: .text,
+            msg: nil,
+            sharedContent: nil,
+            isDeleted: true
+        )
+
+        let policy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "viewer@example.com",
+            roomCreatorID: "owner@example.com"
+        )
+
+        #expect(policy.canReply == false)
+        #expect(policy.canCopy == false)
+        #expect(policy.canDelete == false)
+        #expect(policy.canReport == false)
+        #expect(policy.canBlock == false)
     }
 
     @Test func lookbookSharePreviewUsesMessageTextThenFallback() {
@@ -164,7 +186,8 @@ struct ChatMessageActionPolicyTests {
         messageType: ChatMessageType?,
         msg: String?,
         sharedContent: LookbookSharedContent?,
-        seq: Int64 = 1
+        seq: Int64 = 1,
+        isDeleted: Bool = false
     ) -> ChatMessage {
         ChatMessage(
             ID: "message-1",
@@ -180,7 +203,7 @@ struct ChatMessageActionPolicyTests {
             sharedContent: sharedContent,
             replyPreview: nil,
             isFailed: false,
-            isDeleted: false
+            isDeleted: isDeleted
         )
     }
 

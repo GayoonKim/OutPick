@@ -10,7 +10,20 @@ import Foundation
 struct ChatRoomRealtimeSession: Sendable {
     let roomID: String
     let messages: AsyncStream<ChatMessage>
+    let deletionEvents: AsyncStream<ChatDeletionSocketEvent>
     let close: @Sendable () async -> Void
+
+    init(
+        roomID: String,
+        messages: AsyncStream<ChatMessage>,
+        deletionEvents: AsyncStream<ChatDeletionSocketEvent> = AsyncStream { $0.finish() },
+        close: @escaping @Sendable () async -> Void
+    ) {
+        self.roomID = roomID
+        self.messages = messages
+        self.deletionEvents = deletionEvents
+        self.close = close
+    }
 }
 
 protocol ChatRoomRealtimeRepositoryProtocol {
@@ -45,6 +58,7 @@ final class SocketChatRoomRealtimeRepository: ChatRoomRealtimeRepositoryProtocol
         return ChatRoomRealtimeSession(
             roomID: session.roomID,
             messages: session.messages,
+            deletionEvents: session.deletionEvents,
             close: session.close
         )
     }

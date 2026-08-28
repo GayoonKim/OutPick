@@ -35,6 +35,7 @@ const callableNames = [
   "getMyModerationState",
   "submitUserReport",
   "submitRoomReport",
+  "submitMessageReport",
   "listModerationReports",
   "getModerationReportDetail",
   "mutateModerationReview",
@@ -287,7 +288,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 110개를 유지한다", () => {
+test("Firebase deployment export 이름 111개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -297,7 +298,7 @@ test("Firebase deployment export 이름 110개를 유지한다", () => {
     "verifyLookbookExtractionFix",
     "dispatchChatMediaProcessing",
   ].sort();
-  assert.equal(expected.length, 110);
+  assert.equal(expected.length, 111);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -576,6 +577,7 @@ test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () =>
       collectionGroup?: string;
       fieldPath?: string;
       ttl?: boolean;
+      indexes?: Array<{order?: string; queryScope?: string}>;
     }>;
   };
   for (const collectionGroup of [
@@ -597,6 +599,27 @@ test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () =>
     override.collectionGroup === "roomClosureNotices" &&
     override.fieldPath === "expiresAt" && override.ttl === true
   ));
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "chatMessageDeletionDeliveryJobs" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+  for (const dueField of ["nextAttemptAt", "leaseExpiresAt"]) {
+    assert.ok(config.indexes?.some((index) =>
+      index.collectionGroup === "chatMessageDeletionDeliveryJobs" &&
+      index.queryScope === "COLLECTION" &&
+      index.fields?.[0]?.fieldPath === "status" &&
+      index.fields?.[1]?.fieldPath === dueField
+    ), `chatMessageDeletionDeliveryJobs ${dueField} recovery index가 필요합니다.`);
+  }
+  const replyPreviewOverride = config.fieldOverrides?.find((override) =>
+    override.collectionGroup === "Messages" &&
+    override.fieldPath === "replyPreview.messageID"
+  );
+  for (const queryScope of ["COLLECTION", "COLLECTION_GROUP"]) {
+    assert.ok(replyPreviewOverride?.indexes?.some((index) =>
+      index.order === "ASCENDING" && index.queryScope === queryScope
+    ), `Messages.replyPreview.messageID ${queryScope} ASC index가 필요합니다.`);
+  }
 });
 
 test("chat media v2 watchdog query와 terminal TTL 인덱스를 유지한다", () => {

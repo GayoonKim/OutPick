@@ -36,6 +36,7 @@ final class ChatRoomRealtimeUseCase: ChatRoomRealtimeUseCaseProtocol {
 final class ChatRoomRealtimeSubscription {
     typealias OpenSession = () async throws -> ChatRoomRealtimeSession
     typealias MessageHandler = (ChatMessage) async -> Void
+    typealias DeletionHandler = (ChatDeletionSocketEvent) async -> Void
     typealias FailureHandler = (Error) -> Void
     typealias FinishHandler = (ChatRoomRealtimeSubscription) -> Void
 
@@ -43,6 +44,7 @@ final class ChatRoomRealtimeSubscription {
 
     private let openSession: OpenSession
     private let onMessage: MessageHandler
+    private let onDeletion: DeletionHandler
     private let onFailure: FailureHandler
     private let onFinish: FinishHandler
 
@@ -54,12 +56,14 @@ final class ChatRoomRealtimeSubscription {
         roomID: String,
         openSession: @escaping OpenSession,
         onMessage: @escaping MessageHandler,
+        onDeletion: @escaping DeletionHandler = { _ in },
         onFailure: @escaping FailureHandler = { _ in },
         onFinish: @escaping FinishHandler = { _ in }
     ) {
         self.roomID = roomID
         self.openSession = openSession
         self.onMessage = onMessage
+        self.onDeletion = onDeletion
         self.onFailure = onFailure
         self.onFinish = onFinish
     }
@@ -107,9 +111,22 @@ final class ChatRoomRealtimeSubscription {
 
             session = openedSession
 
-            for await message in openedSession.messages {
-                if Task.isCancelled || isStopped { break }
-                await onMessage(message)
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    for await message in openedSession.messages {
+                        if Task.isCancelled { break }
+                        await self.onMessage(message)
+                    }
+                }
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    for await event in openedSession.deletionEvents {
+                        if Task.isCancelled { break }
+                        await self.onDeletion(event)
+                    }
+                }
+                await group.waitForAll()
             }
 
             await openedSession.close()

@@ -26,10 +26,20 @@ protocol ChatVideoDiskCaching {
     func exists(forKey key: String) async -> URL?
     @discardableResult
     func cache(from remote: URL, key: String) async throws -> URL
+    func remove(forKey key: String) async
+}
+
+extension ChatVideoDiskCaching {
+    func remove(forKey key: String) async {}
 }
 
 protocol ChatStorageURLResolving {
     func url(for path: String) async throws -> URL
+    func removeCachedURL(for path: String) async
+}
+
+extension ChatStorageURLResolving {
+    func removeCachedURL(for path: String) async {}
 }
 
 protocol ChatRemoteFileDownloading {

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 
 /// 메시지 관리 관련 비즈니스 로직을 위한 프로토콜
 protocol ChatMessageManaging {
@@ -44,17 +43,19 @@ protocol ChatMessageManaging {
     /// 고정 target을 포함하는 bounded authoritative tail 로드
     func loadLatestMessageWindow(room: ChatRoom, targetSeq: Int64) async throws -> ChatLatestMessageWindow
     
-    /// 삭제 상태 동기화
-    func syncDeletedStates(localMessages: [ChatMessage], room: ChatRoom) async throws -> [String]
-    
     /// 메시지 삭제 처리
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws
     
     /// 실시간 메시지 수신 처리
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws
-    
-    /// 삭제된 메시지 리스너 설정
-    func setupDeletionListener(roomID: String, onDeleted: @escaping (String) -> Void) -> AnyCancellable
+
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage]
     
     /// 메시지 저장
+}
+
+extension ChatMessageManaging {
+    func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
+        messages
+    }
 }

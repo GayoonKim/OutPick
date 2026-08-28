@@ -30,6 +30,10 @@ actor OPVideoDiskCache {
         let u = localURL(forKey: key)
         return FileManager.default.fileExists(atPath: u.path) ? u : nil
     }
+
+    func remove(forKey key: String) {
+        try? FileManager.default.removeItem(at: localURL(forKey: key))
+    }
     
     /// Download and store a remote file to cache; returns the final local URL.
     @discardableResult

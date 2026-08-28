@@ -251,18 +251,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return view
     }()
     
-    private lazy var chatCustomMenu: ChatCustomPopUpMenu = {
-        let view = ChatCustomPopUpMenu()
-        view.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
-        view.layer.borderColor = OutPickTheme.ColorToken.borderSubtle.cgColor
-        view.layer.borderWidth = 1
-        view.layer.cornerRadius = 20
-        view.translatesAutoresizingMaskIntoConstraints = false
-        
-        return view
-    }()
-    private var highlightedCell: ChatMessageCell?
-    
     private lazy var notiView: ChatNotiView = {
         let view = ChatNotiView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -334,11 +322,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return gesture
     }()
     
-    private lazy var messageLongPressGesture = UILongPressGestureRecognizer(
-        target: self,
-        action: #selector(handleLongPress(_:))
-    )
-    
     private var searchUIBottomConstraint: NSLayoutConstraint?
     
     private var scrollTargetIndex: IndexPath?
@@ -369,7 +352,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         view.addGestureRecognizer(backgroundTapGesture)
-        chatMessageCollectionView.addGestureRecognizer(messageLongPressGesture)
         
         setupCustomNavigationBar()
         setupJoinRoomButtonIfNeeded()
@@ -1029,33 +1011,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         stopRoomMessageStream()
         startRoomMessageStream(for: roomID)
-
-        let cancellable = chatRoomViewModel.setupDeletionListener { [weak self] deletedMessageID in
-            guard let self = self else { return }
-            Task { @MainActor in
-                var toReloadIDs = Set<String>()
-
-                if self.messageWindowStore.updateMessage(id: deletedMessageID, mutate: { message in
-                    message.isDeleted = true
-                }) != nil {
-                    toReloadIDs.insert(deletedMessageID)
-                } else {
-                    print("⚠️ deleted message not in window: \(deletedMessageID)")
-                }
-
-                let updatedReplies = self.messageWindowStore.updateMessages(where: {
-                    $0.replyPreview?.messageID == deletedMessageID
-                }) { reply in
-                    reply.replyPreview?.isDeleted = true
-                }
-                toReloadIDs.formUnion(updatedReplies.map(\.ID))
-
-                if !toReloadIDs.isEmpty {
-                    self.reconfigureMessageItems(messageIDs: toReloadIDs)
-                }
-            }
-        }
-        cancellable.store(in: &cancellables)
     }
 
     @MainActor
@@ -1073,6 +1028,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self else { return }
                 await self.handleIncomingMessage(receivedMessage)
             },
+            onDeletion: { [weak self] event in
+                guard let self else { return }
+                await self.handleDeletionSocketEvent(event)
+            },
             onFailure: { error in
                 #if DEBUG
                 print("[ChatViewController] realtime stream failed roomID=\(roomID): \(error)")
@@ -1087,6 +1046,45 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         realtimeSubscription = subscription
         subscription.start()
+    }
+
+    @MainActor
+    private func handleDeletionSocketEvent(_ event: ChatDeletionSocketEvent) async {
+        do {
+            let deletedIDs = try await chatRoomViewModel.handleDeletionSocketEvent(event)
+            try await applyDeletionReconciliation(deletedIDs)
+        } catch {
+            print("❌ 실시간 삭제 동기화 실패:", error)
+        }
+    }
+
+    @MainActor
+    func reconcileDeletionAfterReport() async {
+        do {
+            let deletedIDs = try await chatRoomViewModel.reconcileDeletedMessages()
+            try await applyDeletionReconciliation(deletedIDs)
+        } catch {
+            print("❌ 신고 결과 삭제 동기화 실패:", error)
+        }
+    }
+
+    @MainActor
+    private func applyDeletionReconciliation(_ deletedIDs: Set<String>) async throws {
+        guard !deletedIDs.isEmpty else { return }
+        for message in messageWindowStore.visibleMessages where deletedIDs.contains(message.ID) {
+            pendingMediaUploadStore.completeImageUpload(for: message.ID)
+            pendingMediaUploadStore.completeVideoUpload(for: message.ID)
+            cancelVideoPrefetchIfNeeded(for: message.ID)
+            for attachment in message.attachments {
+                cancelThumbnailPrefetchIfNeeded(for: attachment.thumbResourcePath)
+                cancelThumbnailPrefetchIfNeeded(for: attachment.originalResourcePath)
+            }
+        }
+        let sanitized = try await chatRoomViewModel.sanitizeForAdmission(
+            messageWindowStore.visibleMessages
+        )
+        addMessages(sanitized, updateType: .reload)
+        router?.dismissPresentedMedia(from: self, deletedMessageIDs: deletedIDs)
     }
 
     @MainActor
@@ -1113,10 +1111,19 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func handleIncomingMessage(_ message: ChatMessage) async {
         guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
-        guard chatRoomViewModel.shouldAdmitMessage(message) else {
-            chatRoomViewModel.consumeHiddenLiveMessage(message)
+        let admittedMessage: ChatMessage
+        do {
+            admittedMessage = try await chatRoomViewModel.sanitizeForAdmission(message)
+        } catch {
+            print("❌ 삭제 admission 확인 실패:", error)
             return
         }
+        guard chatRoomViewModel.shouldAdmitMessage(admittedMessage) else {
+            chatRoomViewModel.consumeHiddenLiveMessage(admittedMessage)
+            return
+        }
+
+        let message = admittedMessage
 
         if pendingMediaUploadStore.uploadState(for: message.ID) != nil {
             pendingMediaUploadStore.completeImageUpload(for: message.ID)
@@ -2070,64 +2077,72 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
     
-    //MARK: 메시지 삭제/답장/복사 관련
+    // MARK: 메시지 context menu
     @MainActor
-    private func showCustomMenu(at indexPath: IndexPath/*, aboveCell: Bool*/) {
-        guard isParticipantPreviewMode == false else { return }
-        guard let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell,
-              let item = dataSource.itemIdentifier(for: indexPath),
-              case let .message(message) = item else { return }
+    private func makeMessageContextMenu(
+        message: ChatMessage,
+        policy: ChatMessageActionPolicy
+    ) -> UIMenu? {
+        var primaryActions: [UIAction] = []
+        var moderationActions: [UIAction] = []
 
-        let latestMessage = messageWindowStore.message(for: message.ID) ?? message
-        guard latestMessage.isDeleted == false else { return }
-        
-        // 1.셀 강조하기
-        cell.setHightlightedOverlay(true)
-        highlightedCell = cell
-        
-        // 셀의 bounds 기준으로 컬렉션뷰 내 프레임 계산
-        let cellFrameInCollection = cell.convert(cell.bounds, to: chatMessageCollectionView/*.collectionView*/)
-        let cellCenterY = cellFrameInCollection.midY
-        
-        // 컬렉션 뷰 기준 중앙 사용 (화면 절반)
-        let screenMiddleY = chatMessageCollectionView.bounds.midY
-        let showAbove: Bool = cellCenterY > screenMiddleY
-        let policy = chatRoomViewModel.messageActionPolicy(for: latestMessage)
-        chatCustomMenu.configure(menuConfiguration(for: policy))
-        
-        // 2.메뉴 위치를 셀 기준으로
-        view.addSubview(chatCustomMenu)
-        NSLayoutConstraint.activate([
-            showAbove ? chatCustomMenu.bottomAnchor.constraint(equalTo: cell.referenceView.topAnchor, constant: -8) : chatCustomMenu.topAnchor.constraint(equalTo: cell.referenceView.bottomAnchor, constant: 8),
-            
-            chatRoomViewModel.isCurrentUser(latestMessage.senderUID) ? chatCustomMenu.trailingAnchor.constraint(equalTo: cell.referenceView.trailingAnchor, constant: 0) : chatCustomMenu.leadingAnchor.constraint(equalTo: cell.referenceView.leadingAnchor, constant: 0)
-        ])
-        
-        // 3. 버튼 액션 설정
-        setChatMenuActions(for: latestMessage, policy: policy)
-    }
-    
-    private func menuConfiguration(for policy: ChatMessageActionPolicy) -> ChatCustomPopUpMenu.Configuration {
-        ChatCustomPopUpMenu.Configuration(
-            canReply: policy.canReply,
-            canCopy: policy.canCopy,
-            canDelete: policy.canDelete,
-            canReport: policy.canReport,
-            canBlock: policy.canBlock,
-            canAnnounce: policy.canAnnounce,
-            canRemoveMember: policy.canRemoveMember
-        )
-    }
-
-    private func setChatMenuActions(for message: ChatMessage, policy: ChatMessageActionPolicy) {
-        chatCustomMenu.onActionSelected = { [weak self] action in
-            guard let self = self else { return }
-            guard policy.allows(action) else {
-                self.dismissCustomMenu()
-                return
+        func appendAction(
+            _ action: ChatMessageAction,
+            title: String,
+            systemImageName: String,
+            attributes: UIMenuElement.Attributes = []
+        ) {
+            guard policy.allows(action) else { return }
+            let menuAction = UIAction(
+                title: title,
+                image: UIImage(systemName: systemImageName),
+                attributes: attributes
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let latestMessage = self.messageWindowStore.message(for: message.ID) ?? message
+                    let latestPolicy = self.chatRoomViewModel.messageActionPolicy(for: latestMessage)
+                    guard latestPolicy.allows(action) else { return }
+                    self.handleMessageMenuAction(action, message: latestMessage)
+                }
             }
-            self.handleMessageMenuAction(action, message: message)
+
+            switch action {
+            case .reply, .copy, .announce:
+                primaryActions.append(menuAction)
+            case .report, .delete, .block, .removeMember:
+                moderationActions.append(menuAction)
+            }
         }
+
+        appendAction(.reply, title: "답장", systemImageName: "arrowshape.turn.up.right.fill")
+        appendAction(.copy, title: "복사", systemImageName: "document.on.clipboard")
+        appendAction(.announce, title: "공지", systemImageName: "megaphone.fill")
+        appendAction(
+            .report,
+            title: "신고",
+            systemImageName: "exclamationmark.bubble",
+            attributes: .destructive
+        )
+        appendAction(.delete, title: "삭제", systemImageName: "trash", attributes: .destructive)
+        appendAction(
+            .block,
+            title: "차단",
+            systemImageName: "person.crop.circle.badge.xmark",
+            attributes: .destructive
+        )
+        appendAction(
+            .removeMember,
+            title: "내보내기",
+            systemImageName: "person.crop.circle.badge.minus",
+            attributes: .destructive
+        )
+
+        let groups = [primaryActions, moderationActions]
+            .filter { !$0.isEmpty }
+            .map { UIMenu(title: "", options: .displayInline, children: $0) }
+        guard !groups.isEmpty else { return nil }
+        return UIMenu(title: "", children: groups)
     }
     
     @MainActor
@@ -2136,10 +2151,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         switch action {
         case .reply:
             handleReply(message: message)
-            dismissCustomMenu()
         case .copy:
             handleCopy(message: message)
-            dismissCustomMenu()
         case .delete:
             if message.isFailed {
                 ConfirmView.present(
@@ -2152,20 +2165,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             } else {
                 ConfirmView.present(
                     in: view,
-                    message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
+                    message: "삭제 시 모든 사용자의 채팅창에서 메시지가 삭제되며\n‘삭제된 메시지입니다’로 표기됩니다.",
                     onConfirm: { [weak self] in
                         self?.performMessageServerAction(.delete, message: message)
                     }
                 )
             }
-            dismissCustomMenu()
         case .report:
             handleReport(message: message)
-            dismissCustomMenu()
         case .block:
             guard !chatRoomViewModel.isBlockedUser(message.senderUID) else {
                 showSuccess("먼저 차단을 해제해 주세요")
-                dismissCustomMenu()
                 return
             }
             ConfirmView.present(
@@ -2175,7 +2185,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     self?.performBlockUser(message: message)
                 }
             )
-            dismissCustomMenu()
         case .announce:
             print(#function, "공지:", message.msg ?? "")
             ConfirmView.presentAnnouncement(in: view, onConfirm: { [weak self] in
@@ -2187,10 +2196,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     failureMessage: "공지 등록에 실패했습니다."
                 )
             })
-            dismissCustomMenu()
         case .removeMember:
             presentRemovalReasons(for: message)
-            dismissCustomMenu()
         }
     }
 
@@ -2230,9 +2237,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func handleReport(message: ChatMessage) {
-        print(#function, "신고:", message.msg ?? "")
-        // 필요 시 UI 피드백
-        showSuccess("메시지가 신고되었습니다.")
+        router?.showMessageReport(from: self, messageID: message.ID)
     }
 
     @MainActor
@@ -2278,6 +2283,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task { @MainActor in
             do {
                 try await self.chatRoomViewModel.performMessageServerAction(action, for: message)
+                if case .delete = action {
+                    let sanitized = try await self.chatRoomViewModel.sanitizeForAdmission(
+                        self.messageWindowStore.visibleMessages
+                    )
+                    self.addMessages(sanitized, updateType: .reload)
+                }
                 if let successMessage {
                     showSuccess(successMessage)
                 }
@@ -2299,16 +2310,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task { [weak self] in
             guard let self else { return }
             await self.outgoingOutboxUseCase.deleteLocalFailedMessage(message)
-        }
-    }
-    
-    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        let location = gesture.location(in: chatMessageCollectionView)
-        if let indexPath = chatMessageCollectionView.indexPathForItem(at: location) {
-            guard let room = self.room,
-                  chatRoomViewModel.isCurrentUserParticipant(in: room) else { return }
-            showCustomMenu(at: indexPath)
         }
     }
     
@@ -2337,13 +2338,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
         )
-    }
-    
-    private func dismissCustomMenu() {
-        if let cell = highlightedCell { cell.setHightlightedOverlay(false) }
-        highlightedCell = nil
-        chatCustomMenu.onActionSelected = nil
-        chatCustomMenu.removeFromSuperview()
     }
     
     @MainActor
@@ -3390,9 +3384,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
-        if chatCustomMenu.superview != nil {
-            dismissCustomMenu()
-        }
     }
     
     //MARK: 키보드 관련
@@ -3554,7 +3545,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         if attachment.type == .video {
             let path = attachment.originalResourcePath
             guard !path.isEmpty, let router else { return }
-            router.showVideoPlayer(from: self, path: path)
+            router.showVideoPlayer(from: self, messageID: messageID, path: path)
         } else {
             presentImageViewer(messageID: messageID, tappedIndex: attachmentIndex)
         }
@@ -3650,6 +3641,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
         router?.showImageViewer(
             from: self,
+            messageID: messageID,
+            canReport: chatRoomViewModel.messageActionPolicy(for: latestMessage).canReport,
             pages: pages,
             startIndex: start,
             cachedImageProvider: { [weak self] path in
@@ -3972,6 +3965,37 @@ extension ChatViewController: UIScrollViewDelegate {
 }
 
 extension ChatViewController: UICollectionViewDelegate {
+    func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfigurationForItemAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard collectionView === chatMessageCollectionView,
+              isParticipantPreviewMode == false,
+              let room,
+              chatRoomViewModel.isCurrentUserParticipant(in: room),
+              let item = dataSource.itemIdentifier(for: indexPath),
+              case let .message(message) = item else {
+            return nil
+        }
+
+        let latestMessage = messageWindowStore.message(for: message.ID) ?? message
+        let policy = chatRoomViewModel.messageActionPolicy(for: latestMessage)
+        guard makeMessageContextMenu(message: latestMessage, policy: policy) != nil else {
+            return nil
+        }
+
+        return UIContextMenuConfiguration(
+            identifier: latestMessage.ID as NSString,
+            previewProvider: nil
+        ) { [weak self] _ in
+            guard let self else { return nil }
+            let refreshedMessage = self.messageWindowStore.message(for: latestMessage.ID) ?? latestMessage
+            let refreshedPolicy = self.chatRoomViewModel.messageActionPolicy(for: refreshedMessage)
+            return self.makeMessageContextMenu(message: refreshedMessage, policy: refreshedPolicy)
+        }
+    }
+
     func collectionView(_ collectionView: UICollectionView,
                         willDisplay cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {

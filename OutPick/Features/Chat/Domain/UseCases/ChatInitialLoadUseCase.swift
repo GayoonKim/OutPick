@@ -90,6 +90,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
     private let policyResolver: ChatInitialLoadPolicyResolving
     private let currentUserUIDProvider: @Sendable () -> String
     private let serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling?
+    private let deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol?
 
     init(
         messageManager: ChatMessageManaging,
@@ -97,6 +98,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         chatRoomRepository: FirebaseChatRoomRepositoryProtocol,
         networkStatusProvider: NetworkStatusProviding,
         policyResolver: ChatInitialLoadPolicyResolving = DefaultChatInitialLoadPolicyResolver(),
+        deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil,
         serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling? = nil,
         currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
@@ -106,6 +108,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         self.networkStatusProvider = networkStatusProvider
         self.policyResolver = policyResolver
         self.serverConfirmedMessageReconciler = serverConfirmedMessageReconciler
+        self.deletionSyncUseCase = deletionSyncUseCase
         self.currentUserUIDProvider = currentUserUIDProvider
     }
 
@@ -135,11 +138,19 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         continuation.yield(.render(.hideCenteredMessage))
                         continuation.yield(.phaseChanged(.serverSyncing))
                         let latestSeq = max(Int64(room.seq), try await resolvedLatestSeq(roomID: roomID))
-                        let preview = try await messageManager.fetchServerInitialWindow(
+                        var preview = try await messageManager.fetchServerInitialWindow(
                             room: room,
                             mode: .latestTail(latestSeq: latestSeq),
                             policy: policy
                         )
+                        if let deletionSyncUseCase {
+                            _ = try await deletionSyncUseCase.reconcile(
+                                roomID: roomID,
+                                accountID: currentUserUIDProvider(),
+                                allowEmptyLocalBootstrap: true
+                            )
+                            preview = try await sanitizedWindow(preview, roomID: roomID)
+                        }
                         if Task.isCancelled { return }
 
                         continuation.yield(.render(.replaceWindow(preview)))
@@ -169,18 +180,14 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                     )
                     if Task.isCancelled { return }
 
-                    if !localWindow.messages.isEmpty {
-                        continuation.yield(.render(.hideCenteredMessage))
-                        continuation.yield(.render(.replaceWindow(localWindow)))
-                        continuation.yield(.phaseChanged(.localVisible(isStale: true)))
-                        continuation.yield(.warmMedia(messages: localWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
-                    }
-
                     guard network.isOnline else {
                         if localWindow.messages.isEmpty {
                             continuation.yield(.render(.showCenteredMessage("주고받은 메시지가 아직 없어요.\n네트워크 연결을 확인해 주세요.")))
                             continuation.yield(.phaseChanged(.offlineNoLocal))
                         } else {
+                            continuation.yield(.render(.hideCenteredMessage))
+                            continuation.yield(.render(.replaceWindow(localWindow)))
+                            continuation.yield(.warmMedia(messages: localWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
                             continuation.yield(.phaseChanged(.ready))
                         }
                         continuation.yield(.participantSessionReady(ChatInitialSessionState(window: localWindow), bindRealtime: false))
@@ -191,36 +198,31 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                     continuation.yield(.render(.hideCenteredMessage))
                     continuation.yield(.phaseChanged(.serverSyncing))
 
-                    let serverWindow = try await messageManager.fetchServerInitialWindow(
+                    var serverWindow = try await messageManager.fetchServerInitialWindow(
                         room: room,
                         mode: mode,
                         policy: policy
                     )
                     if Task.isCancelled { return }
 
-                    continuation.yield(.render(.replaceWindow(serverWindow)))
-                    if !serverWindow.messages.isEmpty {
-                        continuation.yield(.warmMedia(messages: serverWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
+                    if let deletionSyncUseCase {
+                        _ = try await deletionSyncUseCase.reconcile(
+                            roomID: roomID,
+                            accountID: currentUserUIDProvider(),
+                            allowEmptyLocalBootstrap: localWindow.messages.isEmpty
+                        )
+                        serverWindow = try await sanitizedWindow(serverWindow, roomID: roomID)
                     }
 
                     try await messageManager.persistFetchedServerMessages(serverWindow.messages)
                     try await serverConfirmedMessageReconciler?.reconcileServerConfirmedMessages(
                         serverWindow.messages.filter { !$0.isFailed }
                     )
-                    let deletedIDs = try await messageManager.syncDeletedStates(localMessages: serverWindow.messages, room: room)
                     if Task.isCancelled { return }
 
-                    if !deletedIDs.isEmpty {
-                        let deletedMessages = serverWindow.messages
-                            .filter { deletedIDs.contains($0.ID) }
-                            .map { msg in
-                                var copy = msg
-                                copy.isDeleted = true
-                                return copy
-                            }
-                        if !deletedMessages.isEmpty {
-                            continuation.yield(.render(.reloadDeleted(deletedMessages)))
-                        }
+                    continuation.yield(.render(.replaceWindow(serverWindow)))
+                    if !serverWindow.messages.isEmpty {
+                        continuation.yield(.warmMedia(messages: serverWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
                     }
 
                     continuation.yield(.phaseChanged(.ready))
@@ -237,6 +239,25 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                 task.cancel()
             }
         }
+    }
+
+    private func sanitizedWindow(
+        _ window: ChatInitialWindow,
+        roomID: String
+    ) async throws -> ChatInitialWindow {
+        guard let deletionSyncUseCase else { return window }
+        let messages = try await deletionSyncUseCase.sanitize(
+            window.messages,
+            accountID: currentUserUIDProvider(),
+            roomID: roomID
+        )
+        return ChatInitialWindow(
+            messages: messages,
+            readBoundarySeq: window.readBoundarySeq,
+            latestSeq: window.latestSeq,
+            hasMoreOlder: window.hasMoreOlder,
+            hasMoreNewer: window.hasMoreNewer
+        )
     }
 
     private func resolvedLastReadSeq(roomID: String) async throws -> Int64 {

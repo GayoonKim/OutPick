@@ -151,7 +151,6 @@
     ],
     "messageVisibilityState": [
       "visible",
-      "hiddenPendingReview",
       "deleted"
     ],
     "messageEvidenceState": [
@@ -178,10 +177,17 @@
       "succeeded",
       "failed"
     ],
-    "messageModerationDecision": [
+    "messageReviewOutcome": [
       "dismissed",
-      "contentDeleted",
-      "warningOnly",
+      "violation"
+    ],
+    "messageContentAction": [
+      "keep",
+      "delete"
+    ],
+    "messageAccountAction": [
+      "none",
+      "warning",
       "temporaryRestriction",
       "permanentSuspension"
     ],
@@ -192,10 +198,6 @@
     "messageIncidentAcceptanceState": [
       "draining",
       "reviewable"
-    ],
-    "messageDeletionPresentation": [
-      "deleted",
-      "moderationRemoved"
     ],
     "reportTargetType": [
       "message",
@@ -551,7 +553,7 @@
       "moderationExtensionFields": {
         "isDeleted": "boolean",
         "deletedAt": "timestamp|null",
-        "deletionPresentation": "deleted|moderationRemoved|null; exposes no report reason, reporter, or administrator identity",
+        "deletionPresentation": "legacy read compatibility only; Phase 7.5 tombstones omit this field and every isDeleted message renders as the same general deletion tombstone",
         "message": "removed when isDeleted is true",
         "attachments": "empty or removed when isDeleted is true"
       },
@@ -565,7 +567,7 @@
         "mediaUploadPath": "server-only source MediaUploads document path",
         "readyAttachmentIDs": "bounded stable attachment ID array used by Storage read authorization",
         "evidenceSourceDescriptors": "each attachment stores its ready display attachmentID, bucket, path, generation, bytes and contentType; clean-break contract with no legacy fallback",
-        "moderationVisibilityState": "visible|hiddenPendingReview|deleted"
+        "moderationVisibilityState": "visible|deleted; 신고 누적은 이 필드를 변경하지 않음"
       }
     },
     "chatMessageCleanupJobs/{jobID}": {
@@ -667,7 +669,8 @@
         "messageID": "string|null",
         "reportSubmissionID": "string|null",
         "severity": "bounded administrator-confirmed severity",
-        "contentDecision": "restore|delete",
+        "reviewOutcome": "violation",
+        "contentAction": "keep|delete",
         "accountAction": "none|warning|temporaryRestriction|permanentSuspension",
         "confirmedAt": "timestamp",
         "rollingWindowExpiresAt": "timestamp exactly 90 days after confirmedAt"
@@ -695,7 +698,7 @@
         "attemptGeneration": "non-negative integer incremented only after terminal failure cleanup and a new clientRequestID",
         "status": "processing|accepted|failed",
         "queueClass": "holding|reviewRequired|urgent|null until accepted",
-        "visibilityState": "visible|hiddenPendingReview|deleted|null until accepted",
+        "visibilityState": "visible|deleted|null until accepted",
         "lastErrorCode": "bounded string|null",
         "requestedAt": "timestamp; canonical received/window/SLO time after acceptance",
         "acceptedAt": "timestamp|null",
@@ -704,7 +707,7 @@
         "updatedAt": "timestamp",
         "expiresAt": "timestamp|null; terminal preparation is scrubbed and expires exactly 30 days after createdAt"
       },
-      "purpose": "bounded semantic preparation and terminal-result projection for response loss and app termination; processing is not a canonical accepted report and does not affect queue, counts, patterns, or visibility",
+      "purpose": "bounded semantic preparation and terminal-result projection for response loss and app termination; processing is not a canonical accepted report and does not affect queue, counts, or patterns",
       "terminalScrub": "accepted or failed terminal state removes reason, detail, and duplicate room/message/source identifiers and retains only the minimal convergence identity, status, attempt generation, result, timestamps, and expiresAt"
     },
     "moderationMessageReportRequests/{requestID}": {
@@ -721,7 +724,7 @@
         "attemptGeneration": "non-negative integer",
         "status": "processing|accepted|alreadyReported|failed|messageAlreadyDeleted",
         "queueClass": "holding|reviewRequired|urgent|null",
-        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "visibilityState": "visible|deleted",
         "seq": "positive integer|null",
         "receivedAt": "timestamp|null",
         "originalReceivedAt": "timestamp|null",
@@ -753,12 +756,13 @@
         "totalDistinctReporterCount24h": "non-negative integer at last accepted report evaluation",
         "reviewDueAt": "timestamp, firstReportedAt + 72 hours for a general revision",
         "slaDueAt": "timestamp",
-        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "visibilityState": "visible|deleted",
         "evidenceState": "available|cleanupPending|deleting|deleted",
         "firstReportedAt": "timestamp",
         "lastReportedAt": "timestamp",
         "updatedAt": "timestamp"
       },
+      "terminalFields": "reviewOutcome dismissed|violation, contentAction keep|delete, accountAction none|warning|temporaryRestriction|permanentSuspension, resolvedAt and resolutionActionID",
       "identity": "incidentID is a versioned canonical-tuple hash of roomID + messageID; reviewRevision starts at 0 and separates reopened review cycles",
       "acceptance": "created or counted only after the complete text/media evidence bundle is available"
     },
@@ -775,7 +779,8 @@
         "resolutionActionID": "string|null",
         "evidenceBundleID": "string",
         "updatedAt": "timestamp"
-      }
+      },
+      "terminalFields": "reviewOutcome dismissed|violation, contentAction keep|delete, accountAction none|warning|temporaryRestriction|permanentSuspension"
     },
     "moderationMessageIncidents/{incidentID}/revisions/{reviewRevisionID}/reporters/{reporterID}": {
       "clientRead": false,
@@ -1211,22 +1216,22 @@
     "dailyByteLimit": "not set initially; decide from observed usage and abuse metrics before increasing capacity"
   },
   "mediaReportVisibilityPolicy": {
-    "reporterImmediateHide": "none; reporting, explicit personal message hide, user block, and server global hide are separate actions",
-    "globalHideState": "hiddenPendingReview on the same message ID and sequence",
+    "reporterImmediateHide": "none; reporting, explicit personal message hide, and user block are separate actions",
+    "globalHideState": "none before an administrator explicitly chooses contentAction delete",
     "urgentReasons": [
       "sexual",
       "privacy",
       "illegalDangerous"
     ],
-    "urgentThreshold": "2 distinct canonical moderation principals within 24 hours in the same review revision",
-    "allReasonThreshold": "3 distinct canonical moderation principals across all reasons within 24 hours in the same review revision",
-    "manualGlobalHide": "active platform administrator",
+    "urgentThreshold": "queue metric only: 2 distinct canonical moderation principals within 24 hours in the same review revision",
+    "allReasonThreshold": "queue metric only: 3 distinct canonical moderation principals across all reasons within 24 hours in the same review revision",
+    "manualGlobalHide": "not supported; an active platform administrator may explicitly delete content",
     "automaticSanction": false,
-    "dismissalRestore": "same message ID and sequence; no new push, banner, latestSeq, read-frontier rollback, or synthetic unread",
-    "confirmedViolation": "convert the existing sequence to a deleted tombstone",
+    "dismissalRestore": "dismissed + keep + none keeps the same message ID and sequence visible; a message already independently deleted is never revived",
+    "confirmedViolation": "reviewOutcome violation records a confirmed violation; only contentAction delete converts the existing sequence to a deleted tombstone",
     "reportDeleteRace": "first Firestore transaction commit wins",
     "deleteFirst": "return messageAlreadyDeleted, create only the revision-independent transport receipt, consume one slot only for a previously unseen clientRequestID, create no report/evidence document, and let iOS converge the local row to a deleted tombstone",
-    "reportFirst": "reserve the common evidence bundle and return processing before a later delete can commit; the message tombstones immediately, while ready-media cleanup waits for evidence copy completion or terminal failure; only available evidence finalizes accepted report/count/queue/visibility effects"
+    "reportFirst": "reserve the common evidence bundle and return processing before a later delete can commit; a separate delete tombstones the message immediately, while ready-media cleanup waits for evidence copy completion or terminal failure; only available evidence finalizes accepted report/count/queue effects"
   },
   "reportQueuePolicy": {
     "generalSingleReport": "stored in holding; searchable and visible from user/message detail but not placed in the primary action queue",
@@ -1236,7 +1241,7 @@
     "urgentPromotion": "the first sexual, privacy, or illegalDangerous report enters the urgent queue immediately",
     "manualPromotion": "active platform administrator",
     "administratorSource": "query moderationMessageIncidents, moderationUserReports, and moderationRoomReports directly; do not create a separate moderation review queue projection",
-    "relationshipToGlobalHide": "review queue promotion is lower than global hide and never hides content by itself"
+    "relationshipToVisibility": "queue promotion and report counts never hide or delete content"
   },
   "confirmedViolationPolicy": {
     "source": "active platform administrator decision only; report counts never increment warnings",
@@ -1353,14 +1358,14 @@
         "deduplicated": "boolean",
         "alreadyReported": "boolean",
         "queueClass": "holding|reviewRequired|urgent|null",
-        "visibilityState": "visible|hiddenPendingReview|deleted",
+        "visibilityState": "visible|deleted",
         "receivedAt": "timestamp|null",
         "originalReceivedAt": "timestamp|null",
         "seq": "positive integer|null"
       },
-      "effects": "processing creates only server-only preparation/guard/bundle/job state; available evidence atomically finalizes one canonical message incident, one reporter marker for the current review revision, sender reported-message and message-reporter markers, and accepted count/queue/visibility effects",
+      "effects": "processing creates only server-only preparation/guard/bundle/job state; available evidence atomically finalizes one canonical message incident, one reporter marker for the current review revision, sender reported-message and message-reporter markers, and accepted count/queue effects without changing message visibility",
       "idempotency": "the same reporter + room + message + clientRequestID returns the durable processing/accepted/failed result; a new clientRequestID reuses an existing preparation and deterministic bundle while processing, returns alreadyReported after accepted, or starts a new preparation after terminal failed cleanup",
-      "acceptance": "text snapshot or every normalized display attachment must be available before status accepted; processing and failed never affect report counts, queue promotion, author pattern, or global visibility",
+      "acceptance": "text snapshot or every normalized display attachment must be available before status accepted; processing and failed never affect report counts, queue promotion, or author pattern",
       "unknownClientOutcome": "response loss or app termination creates no guessed success/failure UI; backend processing continues and a later user-initiated report resolves to processing, alreadyReported, or a new preparation",
       "deletedMessage": "if deletion committed first, return messageAlreadyDeleted with the authoritative seq and create no report/evidence/count write; a previously unseen clientRequestID still creates and rate-limits its transport receipt",
       "rateLimit": "accepted user/room requests plus previously unseen message-report clientRequestID receipts share 10 operations per reporter principal per UTC minute; the exact same clientRequestID replay is free, while a new UUID consumes one transport slot even when it reuses a preparation, returns alreadyReported, or returns messageAlreadyDeleted; processing/failed never affect moderation counts"
@@ -1563,7 +1568,9 @@
       "request": {
         "incidentID": "string",
         "reviewRevision": "non-negative integer",
-        "decision": "dismissed|contentDeleted|warningOnly|temporaryRestriction|permanentSuspension",
+        "reviewOutcome": "dismissed|violation",
+        "contentAction": "keep|delete",
+        "accountAction": "none|warning|temporaryRestriction|permanentSuspension",
         "restrictedUntil": "timestamp|null; required only for temporaryRestriction",
         "expectedCaseVersion": "positive integer",
         "expectedAccountStateVersion": "positive integer|null; required for temporaryRestriction or permanentSuspension",
@@ -1574,13 +1581,15 @@
         "reviewState": "resolved|dismissed",
         "reviewRevision": "non-negative integer",
         "caseVersion": "positive integer",
-        "messageVisibilityState": "restored|deleted",
+        "messageVisibilityState": "visible|deleted",
         "accountModerationStatus": "active|restricted|suspended|null",
+        "restrictedUntil": "timestamp|null",
         "retentionClass": "deleteAfterDecision|sanctionAppeal30Days|appealOpen|legalHold"
       },
       "authority": "derive room, message, bundle, target UID, and moderation principal from the incident; never trust client-supplied target identity",
-      "atomicEffects": "dismissed restores the same message ID and seq without unread or push. All confirmed-violation decisions create a moderationRemoved tombstone. The transaction updates incident and revision, confirmed violation, optional account action, evidence retention or cleanup job, and mutation audit consistently; acceptanceState must be reviewable and stale case or account versions fail",
-      "retention": "dismissed, contentDeleted, and warningOnly enqueue immediate evidence cleanup. temporaryRestriction and permanentSuspension retain evidence for 30 days; timely appeal or legal hold pauses cleanup under the existing retention contract"
+      "validation": "dismissed allows only keep + none; violation requires delete or a non-none accountAction",
+      "atomicEffects": "contentAction delete creates the same general deletion tombstone used by every server-authoritative deletion path; contentAction keep preserves the original message. The transaction updates incident and revision, confirmed violation, optional independent account action, evidence retention or cleanup job, and mutation audit consistently; acceptanceState must be reviewable and stale case or account versions fail",
+      "retention": "dismissed and violation without an account restriction or suspension enqueue immediate evidence cleanup. temporaryRestriction and permanentSuspension retain evidence for 30 days; timely appeal or legal hold pauses cleanup under the existing retention contract"
     },
     "mutateModerationReview": {
       "transport": "Firebase callable",
@@ -1857,7 +1866,7 @@
     "quarantineObject": "delete immediately after ready, canceled, final failed, or expired terminal cleanup; the one-day lifecycle is only a backstop for objects left by crashes, IAM/network errors, or cleanup bugs; soft delete is disabled",
     "readyTechnicalValidationMetadata": "retained only for an approved bounded period; Production release is blocked until that period is set",
     "developmentFixtures": "delete after QA",
-    "reportedMediaEvidence": "open or inReview until decision; dismissal, content-delete-only, or warning-only enqueues immediate asynchronous deletion; account sanction evidence is retained for a 30-day appeal window and, if appealed in time, until appeal resolution",
+    "reportedMediaEvidence": "open or inReview until resolution; dismissed or violation without an account restriction or suspension enqueues immediate asynchronous deletion; account sanction evidence is retained for a 30-day appeal window and, if appealed in time, until appeal resolution",
     "reportedMediaEvidenceAccess": "not exposed to clients; an active platform administrator with App Check and five-minute recent authentication may retrieve one exact-generation object from the incident current revision only through the audited signed-URL API; reviewRevision isolates reopened cycles and does not grant historical detail or byte access",
     "reportedMediaEvidenceAccessAudit": "no Firestore access-audit collection or TTL. Route EVIDENCE_VIEW_URL_ISSUED and evidence-bucket Cloud Storage DATA_READ logs, correlated by opaque issuanceID, to a locked Log Analytics bucket in asia-northeast3 for 1095 days; no signed URL, signature, full query, bucket path, content, email, or profile",
     "messageReportPreparation": "processing retains the bounded semantic request. Accepted or failed terminal preparations scrub reason, detail, and duplicate room/message/source identifiers, retain only minimal convergence state, and expire exactly 30 days after createdAt",

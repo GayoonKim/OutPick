@@ -55,7 +55,9 @@ struct RealtimeSocketListenerBinderTests {
             RealtimeSocketListenerBinder.imagesReceivedEvent,
             RealtimeSocketListenerBinder.videoReceivedEvent,
             RealtimeSocketListenerBinder.roomClosedEvent,
-            RealtimeSocketListenerBinder.roomMembershipRemovedEvent
+            RealtimeSocketListenerBinder.roomMembershipRemovedEvent,
+            RealtimeSocketListenerBinder.messageDeletedEvent,
+            RealtimeSocketListenerBinder.messageDeletionHeadAdvancedEvent
         ])
     }
 
@@ -67,7 +69,7 @@ struct RealtimeSocketListenerBinderTests {
         #expect(binder.bind(to: listener, callbacks: callbacks))
         #expect(!binder.bind(to: listener, callbacks: callbacks))
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 6)
+        #expect(listener.namedEvents.count == 8)
     }
 
     @Test func repeatedConnectCallbackDoesNotChangeRegistrationCount() {
@@ -81,7 +83,7 @@ struct RealtimeSocketListenerBinderTests {
 
         #expect(callbacks.connectedPayloads.count == 2)
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 6)
+        #expect(listener.namedEvents.count == 8)
     }
 
     @Test func newBinderRegistersAnIndependentSocketSurface() {
@@ -92,9 +94,9 @@ struct RealtimeSocketListenerBinderTests {
         RealtimeSocketListenerBinder().bind(to: secondListener, callbacks: .spy())
 
         #expect(firstListener.clientEvents.count == 3)
-        #expect(firstListener.namedEvents.count == 6)
+        #expect(firstListener.namedEvents.count == 8)
         #expect(secondListener.clientEvents.count == 3)
-        #expect(secondListener.namedEvents.count == 6)
+        #expect(secondListener.namedEvents.count == 8)
     }
 
     @Test func namedEventsForwardPayloadsToTheirActorBridgeCallbacks() {
@@ -108,6 +110,8 @@ struct RealtimeSocketListenerBinderTests {
         listener.emit(namedEvent: RealtimeSocketListenerBinder.videoReceivedEvent, data: ["video"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.roomClosedEvent, data: ["closed"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.roomMembershipRemovedEvent, data: ["removed"])
+        listener.emit(namedEvent: RealtimeSocketListenerBinder.messageDeletedEvent, data: ["deleted"])
+        listener.emit(namedEvent: RealtimeSocketListenerBinder.messageDeletionHeadAdvancedEvent, data: ["head"])
 
         #expect(callbacks.serverReadyPayloads.count == 1)
         #expect(callbacks.chatPayloads.count == 1)
@@ -115,6 +119,8 @@ struct RealtimeSocketListenerBinderTests {
         #expect(callbacks.videoPayloads.count == 1)
         #expect(callbacks.roomClosedPayloads.count == 1)
         #expect(callbacks.roomMembershipRemovedPayloads.count == 1)
+        #expect(callbacks.messageDeletedPayloads.count == 1)
+        #expect(callbacks.messageDeletionHeadAdvancedPayloads.count == 1)
     }
 
     @Test func messageIngressQueuePreservesMixedEventEnqueueOrder() async {
@@ -298,6 +304,8 @@ private final class ListenerCallbackSpy {
     private(set) var videoPayloads: [[Any]] = []
     private(set) var roomClosedPayloads: [[Any]] = []
     private(set) var roomMembershipRemovedPayloads: [[Any]] = []
+    private(set) var messageDeletedPayloads: [[Any]] = []
+    private(set) var messageDeletionHeadAdvancedPayloads: [[Any]] = []
 
     lazy var callbacks = RealtimeSocketListenerCallbacks(
         connected: { [weak self] in self?.connectedPayloads.append($0) },
@@ -308,7 +316,9 @@ private final class ListenerCallbackSpy {
         imagesReceived: { [weak self] in self?.imagePayloads.append($0) },
         videoReceived: { [weak self] in self?.videoPayloads.append($0) },
         roomClosed: { [weak self] in self?.roomClosedPayloads.append($0) },
-        roomMembershipRemoved: { [weak self] in self?.roomMembershipRemovedPayloads.append($0) }
+        roomMembershipRemoved: { [weak self] in self?.roomMembershipRemovedPayloads.append($0) },
+        messageDeleted: { [weak self] in self?.messageDeletedPayloads.append($0) },
+        messageDeletionHeadAdvanced: { [weak self] in self?.messageDeletionHeadAdvancedPayloads.append($0) }
     )
 }
 
@@ -323,7 +333,9 @@ private extension RealtimeSocketListenerCallbacks {
             imagesReceived: { _ in },
             videoReceived: { _ in },
             roomClosed: { _ in },
-            roomMembershipRemoved: { _ in }
+            roomMembershipRemoved: { _ in },
+            messageDeleted: { _ in },
+            messageDeletionHeadAdvanced: { _ in }
         )
     }
 }

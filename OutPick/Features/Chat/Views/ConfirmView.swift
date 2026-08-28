@@ -123,7 +123,7 @@ final class ConfirmView: UIView {
     /// 삭제 전용 프리셋
     @discardableResult
     static func presentDelete(in parent: UIView,
-                              message: String = "삭제 시 모든 사용자의 화면에서 메시지가 삭제되며\n‘삭제된 메시지입니다.’로 표기됩니다.",
+                              message: String = "삭제 시 모든 사용자의 화면에서 메시지가 삭제되며\n‘삭제된 메시지입니다’로 표기됩니다.",
                               onConfirm: @escaping () -> Void) -> ConfirmView {
         return present(in: parent,
                        message: message,

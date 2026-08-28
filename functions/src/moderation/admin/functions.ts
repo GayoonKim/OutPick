@@ -107,7 +107,7 @@ export async function handleResolveMessageModeration(
 ) {
   const uid = await activeAdminUID(auth);
   const input = parseResolveMessageModerationInput(data);
-  if (input.decision === "temporaryRestriction" || input.decision === "permanentSuspension") {
+  if (input.accountAction === "temporaryRestriction" || input.accountAction === "permanentSuspension") {
     requireRecentAdminAuth(auth?.token.auth_time, now);
   }
   await consumeAdminRateLimit(uid, "mutation", now);

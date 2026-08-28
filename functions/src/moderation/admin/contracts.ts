@@ -12,7 +12,11 @@ import {
   ReportTargetType,
 } from "../reports/contracts.js";
 import {ModerationAuditAction} from "../audit/contracts.js";
-import {MessageEvidenceDecision} from "../messageEvidence/contracts.js";
+import {
+  MessageAccountAction,
+  MessageContentAction,
+  MessageReviewOutcome,
+} from "../messageEvidence/contracts.js";
 
 export type AdminReportTargetType = ReportTargetType | "message";
 export type MessageModerationQueueView =
@@ -38,7 +42,9 @@ export type GetModerationReportDetailInput = {
 export type ResolveMessageModerationInput = {
   incidentID: string;
   reviewRevision: number;
-  decision: MessageEvidenceDecision;
+  reviewOutcome: MessageReviewOutcome;
+  contentAction: MessageContentAction;
+  accountAction: MessageAccountAction;
   restrictedUntil: Date | null;
   expectedCaseVersion: number;
   expectedAccountStateVersion: number | null;
@@ -203,29 +209,44 @@ export function parseMutateModerationReviewInput(data: unknown): MutateModeratio
 
 export function parseResolveMessageModerationInput(data: unknown): ResolveMessageModerationInput {
   const record = recordData(data);
-  const decision = requiredEnum(record, "decision", [
-    "dismissed", "contentDeleted", "warningOnly",
-    "temporaryRestriction", "permanentSuspension",
+  const reviewOutcome = requiredEnum(record, "reviewOutcome", [
+    "dismissed", "violation",
+  ] as const);
+  const contentAction = requiredEnum(record, "contentAction", [
+    "keep", "delete",
+  ] as const);
+  const accountAction = requiredEnum(record, "accountAction", [
+    "none", "warning", "temporaryRestriction", "permanentSuspension",
   ] as const);
   const restrictedUntil = optionalDate(record, "restrictedUntil");
   const expectedAccountStateVersion = record.expectedAccountStateVersion === undefined ||
     record.expectedAccountStateVersion === null ? null :
     positiveInteger(record, "expectedAccountStateVersion", Number.MAX_SAFE_INTEGER);
-  if (decision === "temporaryRestriction" && restrictedUntil === null) {
+  if (reviewOutcome === "dismissed" &&
+      (contentAction !== "keep" || accountAction !== "none")) {
+    throw new HttpsError("invalid-argument", "기각은 콘텐츠 유지와 계정 조치 없음만 허용합니다.");
+  }
+  if (reviewOutcome === "violation" &&
+      contentAction === "keep" && accountAction === "none") {
+    throw new HttpsError("invalid-argument", "위반 확정에는 콘텐츠 삭제 또는 계정 조치가 필요합니다.");
+  }
+  if (accountAction === "temporaryRestriction" && restrictedUntil === null) {
     throw new HttpsError("invalid-argument", "일시 제한 만료 시각이 필요합니다.");
   }
-  if (decision !== "temporaryRestriction" && restrictedUntil !== null) {
+  if (accountAction !== "temporaryRestriction" && restrictedUntil !== null) {
     throw new HttpsError("invalid-argument", "이 결정에는 제한 만료 시각을 사용할 수 없습니다.");
   }
-  const sanctionsAccount = decision === "temporaryRestriction" ||
-    decision === "permanentSuspension";
+  const sanctionsAccount = accountAction === "temporaryRestriction" ||
+    accountAction === "permanentSuspension";
   if (sanctionsAccount !== (expectedAccountStateVersion !== null)) {
     throw new HttpsError("invalid-argument", "계정 제재 결정에는 expectedAccountStateVersion이 필요합니다.");
   }
   return {
     incidentID: requiredDocumentID(requiredString(record, "incidentID", 128), "incidentID"),
     reviewRevision: nonNegativeInteger(record, "reviewRevision"),
-    decision,
+    reviewOutcome,
+    contentAction,
+    accountAction,
     restrictedUntil,
     expectedCaseVersion: positiveInteger(record, "expectedCaseVersion", Number.MAX_SAFE_INTEGER),
     expectedAccountStateVersion,

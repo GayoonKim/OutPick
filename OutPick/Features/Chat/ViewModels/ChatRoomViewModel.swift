@@ -54,6 +54,7 @@ final class ChatRoomViewModel {
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
     private let memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol?
+    private let deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol?
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -142,7 +143,8 @@ final class ChatRoomViewModel {
         roomReadStateStore: ChatRoomReadStateStore? = nil,
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
-        memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol? = nil
+        memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol? = nil,
+        deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
@@ -157,6 +159,7 @@ final class ChatRoomViewModel {
         self.userBlockVisibilityStore = userBlockVisibilityStore
         self.blockUserUseCase = blockUserUseCase
         self.memberModerationUseCase = memberModerationUseCase
+        self.deletionSyncUseCase = deletionSyncUseCase
         seedRoomReadLatest(from: room)
     }
 
@@ -250,10 +253,23 @@ final class ChatRoomViewModel {
         roomID: String,
         baselineSeq: Int64
     ) async throws -> ChatRoomRealtimeSession {
-        try await realtimeUseCase.openMessageStream(
+        let session = try await realtimeUseCase.openMessageStream(
             roomID: roomID,
             baselineSeq: baselineSeq
         )
+        do {
+            if let deletionSyncUseCase {
+                _ = try await deletionSyncUseCase.reconcile(
+                    roomID: roomID,
+                    accountID: currentUserUID,
+                    allowEmptyLocalBootstrap: false
+                )
+            }
+            return session
+        } catch {
+            await session.close()
+            throw error
+        }
     }
 
     func observeRoomClosed(onClosed: @escaping (RealtimeRoomClosureEvent) -> Void) -> ChatRoomRuntimeSubscription? {
@@ -562,8 +578,29 @@ final class ChatRoomViewModel {
         try await messageUseCase.handleIncomingMessage(message, room: room)
     }
 
-    func setupDeletionListener(onDeleted: @escaping (String) -> Void) -> AnyCancellable {
-        messageUseCase.setupDeletionListener(roomID: roomID, onDeleted: onDeleted)
+    func sanitizeForAdmission(_ message: ChatMessage) async throws -> ChatMessage {
+        try await messageUseCase.sanitizeForAdmission([message], roomID: roomID).first ?? message
+    }
+
+    func sanitizeForAdmission(_ messages: [ChatMessage]) async throws -> [ChatMessage] {
+        try await messageUseCase.sanitizeForAdmission(messages, roomID: roomID)
+    }
+
+    func handleDeletionSocketEvent(_ event: ChatDeletionSocketEvent) async throws -> Set<String> {
+        guard let deletionSyncUseCase else { return [] }
+        return try await deletionSyncUseCase.handleSocketEvent(
+            event,
+            accountID: currentUserUID
+        )
+    }
+
+    func reconcileDeletedMessages() async throws -> Set<String> {
+        guard let deletionSyncUseCase else { return [] }
+        return try await deletionSyncUseCase.reconcile(
+            roomID: roomID,
+            accountID: currentUserUID,
+            allowEmptyLocalBootstrap: false
+        )
     }
 
     func messageActionPolicy(for message: ChatMessage) -> ChatMessageActionPolicy {

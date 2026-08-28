@@ -5,6 +5,7 @@ import {onSchedule} from "firebase-functions/v2/scheduler";
 import {db, firebaseAuth} from "../core/firebase.js";
 import {FUNCTIONS_REGION} from "../core/runtime.js";
 import {
+  hasIncompleteAccountDeletionMessageCleanup,
   hasRemainingUIDReferences,
   removeEngagementPage,
   removePrivateState,
@@ -318,7 +319,11 @@ async function processClaim(claim: ClaimedRequest): Promise<void> {
         await advance(claim, "messages");
         break;
       case "messages":
-        if (!(await scrubMessagePage(claim.uid))) {
+        if (!(await scrubMessagePage(
+          claim.uid,
+          claim.requestID,
+          claim.accountGenerationID,
+        ))) {
           await yieldForRetry(claim, null);
           return;
         }
@@ -345,6 +350,10 @@ async function processClaim(claim: ClaimedRequest): Promise<void> {
       case "verify":
         if (await hasRemainingUIDReferences(claim.uid)) {
           throw new Error("uid_references_remaining");
+        }
+        if (await hasIncompleteAccountDeletionMessageCleanup(claim.requestID)) {
+          await yieldForRetry(claim, "message_cleanup_pending");
+          return;
         }
         await advance(claim, "providerAndAuth");
         break;

@@ -33,6 +33,8 @@ import {resolveMessageModerationService} from "../functions/lib/moderation/admin
 import {issueMessageEvidenceViewURLService} from "../functions/lib/moderation/admin/evidenceAccess.js";
 
 const reporterUID = "moderation-reporter";
+const reporterBUID = "moderation-reporter-b";
+const reporterCUID = "moderation-reporter-c";
 const targetUID = "moderation-target";
 const reporterPrincipalID = "principal-reporter";
 const targetPrincipalID = "principal-target";
@@ -45,6 +47,8 @@ function requestID(sequence) {
 async function clearFixtures() {
   await Promise.all([
     db.recursiveDelete(db.collection("moderationAccounts").doc(reporterUID)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(reporterBUID)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(reporterCUID)),
     db.recursiveDelete(db.collection("moderationAccounts").doc(targetUID)),
     db.recursiveDelete(db.collection("moderationUserReports")),
     db.recursiveDelete(db.collection("moderationReportRateLimitBuckets")),
@@ -58,10 +62,13 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("moderationEvidenceCleanupJobs")),
     db.recursiveDelete(db.collection("moderationConfirmedViolations")),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
+    db.recursiveDelete(db.collection("chatMessageDeletionDeliveryJobs")),
     db.recursiveDelete(db.collection("moderationPrincipals").doc(targetPrincipalID)),
     db.recursiveDelete(db.collection("platformAdmins").doc(targetUID)),
     db.recursiveDelete(db.collection("Rooms").doc("moderation-room")),
     db.recursiveDelete(db.collection("users").doc(reporterUID)),
+    db.recursiveDelete(db.collection("users").doc(reporterBUID)),
+    db.recursiveDelete(db.collection("users").doc(reporterCUID)),
     db.recursiveDelete(db.collection("users").doc(targetUID)),
   ]);
 }
@@ -362,6 +369,40 @@ describe("moderation report transactions", () => {
     assert.equal(reopenedIncident?.queueClass, "holding");
     assert.deepEqual(reopenedIncident?.reasonCounts, {spam: 1});
     assert.equal(reopenedIncident?.totalDistinctReporterCount24h, 1);
+  });
+
+  test("신고 임계치를 넘어도 원문은 유지하고 관리자 queue만 승격한다", async () => {
+    await seedTextMessage();
+    await Promise.all([
+      db.collection("users").doc(reporterBUID).set({accountStatus: "active"}),
+      db.collection("users").doc(reporterCUID).set({accountStatus: "active"}),
+      db.collection("moderationAccounts").doc(reporterBUID).set({
+        accountStatus: "active", moderationPrincipalID: "principal-reporter-b",
+        moderationStatus: "active", stateVersion: 1,
+      }),
+      db.collection("moderationAccounts").doc(reporterCUID).set({
+        accountStatus: "active", moderationPrincipalID: "principal-reporter-c",
+        moderationStatus: "active", stateVersion: 1,
+      }),
+      db.collection("Rooms").doc("moderation-room").collection("members").doc(reporterBUID).set({joinedAt: Timestamp.fromDate(now)}),
+      db.collection("Rooms").doc("moderation-room").collection("members").doc(reporterCUID).set({joinedAt: Timestamp.fromDate(now)}),
+    ]);
+    const reporters = [reporterUID, reporterBUID, reporterCUID];
+    const receipts = [];
+    for (let index = 0; index < reporters.length; index += 1) {
+      receipts.push(await submitMessageReportService(reporters[index], {
+        roomID: "moderation-room", messageID: "text-1", reason: "spam", detail: null,
+        clientRequestID: requestID(310 + index),
+      }, new Date(now.getTime() + index * 1_000)));
+    }
+    assert.deepEqual(receipts.map((receipt) => receipt.visibilityState), ["visible", "visible", "visible"]);
+    const message = await db.collection("Rooms").doc("moderation-room").collection("Messages").doc("text-1").get();
+    assert.equal(message.data()?.isDeleted, false);
+    assert.equal(message.data()?.moderationVisibilityState, "visible");
+    const incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
+    assert.equal(incident.data().totalDistinctReporterCount24h, 3);
+    assert.equal(incident.data().queueClass, "reviewRequired");
+    assert.equal(incident.data().visibilityState, "visible");
   });
 
   test("메시지 신고의 새 UUID receipt는 1분 10회로 제한하고 같은 UUID replay는 무료다", async () => {
@@ -1011,7 +1052,7 @@ describe("moderation report transactions", () => {
     );
   });
 
-  test("메시지 기각은 같은 seq를 복원하고 Evidence를 즉시 cleanup 대기로 전환한다", async () => {
+  test("메시지 기각은 콘텐츠를 유지하고 Evidence를 즉시 cleanup 대기로 전환한다", async () => {
     await seedTextMessage();
     await submitMessageReportService(reporterUID, {
       roomID: "moderation-room", messageID: "text-1", reason: "spam", detail: "반복",
@@ -1021,7 +1062,9 @@ describe("moderation report transactions", () => {
     const result = await resolveMessageModerationService("admin-a", {
       incidentID: incident.id,
       reviewRevision: 0,
-      decision: "dismissed",
+      reviewOutcome: "dismissed",
+      contentAction: "keep",
+      accountAction: "none",
       restrictedUntil: null,
       expectedCaseVersion: incident.data().caseVersion,
       expectedAccountStateVersion: null,
@@ -1055,17 +1098,18 @@ describe("moderation report transactions", () => {
     }, now, db);
     const incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
     const result = await resolveMessageModerationService("admin-a", {
-      incidentID: incident.id, reviewRevision: 0, decision: "dismissed", restrictedUntil: null,
+      incidentID: incident.id, reviewRevision: 0,
+      reviewOutcome: "dismissed", contentAction: "keep", accountAction: "none", restrictedUntil: null,
       expectedCaseVersion: incident.data().caseVersion, expectedAccountStateVersion: null,
       reasonCode: "not-violation", clientRequestID: requestID(807),
     }, now, db);
     assert.equal(result.messageVisibilityState, "deleted");
     const message = await db.collection("Rooms").doc("moderation-room").collection("Messages").doc("text-1").get();
     assert.equal(message.data()?.isDeleted, true);
-    assert.equal(message.data()?.moderationVisibilityState, "deleted");
+    assert.equal(message.data()?.moderationVisibilityState, undefined);
   });
 
-  test("확정 위반은 moderationRemoved tombstone·위반 projection·감사를 원자적으로 남긴다", async () => {
+  test("위반 확정의 콘텐츠 삭제와 계정 경고를 독립 적용하고 감사에 남긴다", async () => {
     await seedTextMessage();
     await submitMessageReportService(reporterUID, {
       roomID: "moderation-room", messageID: "text-1", reason: "harassment", detail: null,
@@ -1073,20 +1117,66 @@ describe("moderation report transactions", () => {
     }, now);
     const incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
     await resolveMessageModerationService("admin-a", {
-      incidentID: incident.id, reviewRevision: 0, decision: "warningOnly", restrictedUntil: null,
+      incidentID: incident.id, reviewRevision: 0,
+      reviewOutcome: "violation", contentAction: "delete", accountAction: "warning", restrictedUntil: null,
       expectedCaseVersion: incident.data().caseVersion, expectedAccountStateVersion: null,
       reasonCode: "confirmed-harassment", clientRequestID: requestID(812),
     }, now, db);
     const message = await db.collection("Rooms").doc("moderation-room").collection("Messages").doc("text-1").get();
     assert.equal(message.data()?.isDeleted, true);
-    assert.equal(message.data()?.deletionPresentation, "moderationRemoved");
+    assert.equal(message.data()?.deletionPresentation, undefined);
+    assert.equal(message.data()?.deletionRevision, 1);
     assert.equal(message.data()?.msg, undefined);
+    assert.equal((await db.collection("Rooms").doc("moderation-room").get()).data()?.messageDeletionRevision, 1);
+    assert.equal((await db.collection("chatMessageDeletionDeliveryJobs").get()).size, 1);
     const violations = await db.collection("moderationConfirmedViolations").doc(targetPrincipalID).get();
     assert.equal(violations.data()?.confirmedCount90Days, 1);
     assert.equal(violations.data()?.activeWarningCount, 1);
     assert.equal((await violations.ref.collection("incidents").get()).size, 1);
     const audit = (await db.collection("moderationAuditLogs").get()).docs[0];
     assert.equal(audit.data().action, "resolveMessageModeration");
+    assert.equal(audit.data().after.contentAction, "delete");
+    assert.equal(audit.data().after.accountAction, "warning");
+  });
+
+  test("위반 경고만 선택하면 원문은 유지하고 위반 projection만 갱신한다", async () => {
+    await seedTextMessage();
+    await submitMessageReportService(reporterUID, {
+      roomID: "moderation-room", messageID: "text-1", reason: "harassment", detail: null,
+      clientRequestID: requestID(815),
+    }, now);
+    const incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
+    const resolutionInput = {
+      incidentID: incident.id, reviewRevision: 0,
+      reviewOutcome: "violation", contentAction: "keep", accountAction: "warning", restrictedUntil: null,
+      expectedCaseVersion: incident.data().caseVersion, expectedAccountStateVersion: null,
+      reasonCode: "confirmed-harassment", clientRequestID: requestID(816),
+    };
+    const result = await resolveMessageModerationService("admin-a", resolutionInput, now, db);
+    const replay = await resolveMessageModerationService("admin-a", resolutionInput, now, db);
+    assert.deepEqual(replay, result);
+    await assert.rejects(
+      resolveMessageModerationService("admin-a", {
+        ...resolutionInput,
+        contentAction: "delete",
+      }, now, db),
+      (error) => error?.code === "already-exists",
+    );
+    await assert.rejects(
+      resolveMessageModerationService("admin-a", {
+        ...resolutionInput,
+        reasonCode: "different-reason",
+      }, now, db),
+      (error) => error?.code === "already-exists",
+    );
+    assert.equal(result.messageVisibilityState, "visible");
+    const message = await db.collection("Rooms").doc("moderation-room").collection("Messages").doc("text-1").get();
+    assert.equal(message.data()?.isDeleted, false);
+    assert.equal(message.data()?.msg, "신고 대상");
+    const violations = await db.collection("moderationConfirmedViolations").doc(targetPrincipalID).get();
+    assert.equal(violations.data()?.confirmedCount90Days, 1);
+    assert.equal(violations.data()?.activeWarningCount, 1);
+    assert.equal((await violations.ref.collection("incidents").get()).size, 1);
   });
 
   test("계정 제재 결정은 principal과 연결 계정을 갱신하고 Evidence를 30일 보존한다", async () => {
@@ -1100,13 +1190,15 @@ describe("moderation report transactions", () => {
     }, now);
     const incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
     await resolveMessageModerationService("admin-a", {
-      incidentID: incident.id, reviewRevision: 0, decision: "temporaryRestriction",
+      incidentID: incident.id, reviewRevision: 0,
+      reviewOutcome: "violation", contentAction: "keep", accountAction: "temporaryRestriction",
       restrictedUntil: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
       expectedCaseVersion: incident.data().caseVersion, expectedAccountStateVersion: 1,
       reasonCode: "confirmed-danger", clientRequestID: requestID(822),
     }, now, db);
     assert.equal((await db.collection("moderationPrincipals").doc(targetPrincipalID).get()).data()?.stateVersion, 2);
     assert.equal((await db.collection("moderationAccounts").doc(targetUID).get()).data()?.moderationStatus, "restricted");
+    assert.equal((await db.collection("Rooms").doc("moderation-room").collection("Messages").doc("text-1").get()).data()?.isDeleted, false);
     const bundle = (await db.collection("moderationMessageEvidence").get()).docs[0];
     assert.equal(bundle.data().state, "available");
     assert.equal(bundle.data().retentionClass, "sanctionAppeal30Days");
@@ -1175,7 +1267,8 @@ describe("moderation report transactions", () => {
     }, now);
     let incident = (await db.collection("moderationMessageIncidents").get()).docs[0];
     await resolveMessageModerationService("admin-a", {
-      incidentID: incident.id, reviewRevision: 0, decision: "dismissed", restrictedUntil: null,
+      incidentID: incident.id, reviewRevision: 0,
+      reviewOutcome: "dismissed", contentAction: "keep", accountAction: "none", restrictedUntil: null,
       expectedCaseVersion: incident.data().caseVersion, expectedAccountStateVersion: null,
       reasonCode: "dismiss", clientRequestID: requestID(842),
     }, now, db);
