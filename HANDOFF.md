@@ -2,7 +2,7 @@
 
 ## 1. 최종 목표
 
-- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~6 구현·자동 검증·Development 사용자 QA와 Production backend rollout까지 완료했으며, 2026-08-18 Phase 6을 공식 완료 처리했다. PR #14 merge commit `4d69f4c85646b5db1977020842a2efbdbfba7169`가 `main`에 반영됐다. Phase 6은 자동 텍스트 필터 없이 신고·차단·방 운영·관리자 사후 제재를 유지하고, Socket 메모리 limiter, 댓글·답글 Firestore quota·UUID 멱등성, senderEmail 제거와 원문 로그 최소화를 반영했다. 길이 counter는 제거하고 상한 초과 입력 차단만 유지한다. Production 데이터 migration은 필요하지 않았다.
+- 현재 핵심 task `chat-ugc-safety-room-moderation`은 Phase 0~7 구현·자동 검증·Development 공동 QA와 Production backend rollout을 완료했다. Phase 7.5 통합 PR #22 merge commit `951333cae0f37f6f395f7aade41e6d64e8650b6e`가 `main`에 반영됐고, 2026-08-28 Production Rules/index/TTL·Functions·Evidence 최소 IAM/감사·Socket 100% 전환과 사후 감사를 마쳤다. Production message/deletion/evidence 데이터가 0건이라 migration은 수행하지 않았다. TestFlight/App Store 출시는 별도 단계다.
 - 실제 기기 background FCM/APNs 검증은 Apple Developer Program 가입·APNs 설정 후 수행하는 출시 전 외부 gate이며 Phase 4 완료를 막지 않는다.
 - Sign in with Apple은 현재 iOS 로그인 진입점이 없어 사용자 결정으로 별도 후속 작업으로 분리했다. Production moderation rollout과 개인정보 보존 gate도 Phase 1 Development 완료와 분리한다.
 - 핵심 task `lookbook-extraction-issue-operations-production-rollout`은 Production 읽기 전용 감사, contract 3 Worker candidate QA·traffic 100% 전환, backend prerequisite/Functions, exact Firestore rules, canonical 앱 E2E, 앱 원문 오류 문구 교정, QA·legacy cleanup까지 완료해 2026-08-06 종료했다.
@@ -14,6 +14,16 @@
 - 코드·설정·백엔드·배포 계약 기준의 Development/Production 환경 분리는 PR #3 병합, Production Worker traffic 전환과 실제 import smoke까지 완료해 종료 처리했다.
 
 ## 2. 완료한 작업
+
+### Chat UGC Safety Phase 7 — Production backend rollout 완료
+
+- 2026-08-28 `main`이 PR #22 merge commit `951333cae0f37f6f395f7aade41e6d64e8650b6e`와 정확히 일치함을 확인하고 Production 읽기 전용 감사를 수행했다. message·삭제 tombstone·deletion delivery·Evidence 관련 데이터가 모두 0건이라 migration은 만들거나 실행하지 않았다.
+- Firestore Rules와 전체 index manifest를 배포해 rules source hash 일치, composite 61/61 `READY`, TTL field 22/22 `ACTIVE`를 확인했다. 신규 `chatMessageDeletionDeliveryJobs.expiresAt`, `moderationMessageReportPreparations.expiresAt`도 `ACTIVE`다. Evidence 전용 deny-all Storage Rules도 로컬 source hash와 일치한다.
+- 관리자 조회/처리·Evidence copy/cleanup/drain·신고·삭제·탈퇴 finalizer·media ready trigger의 exact Function 11개를 배포했고 모두 Node.js 24 `ACTIVE`다. Evidence worker/viewer는 분리된 최소 권한 service account를 사용하고, drain은 5분마다, 탈퇴 finalizer는 매시간 Asia/Seoul에서 `ENABLED`다. 배포 후 관련 ERROR는 0건이다.
+- 서울 Evidence bucket은 UBLA·PAP enforced·soft delete 0·versioning off이며 운영자에게 object read를 주지 않고 worker object manager·viewer object reader만 부여했다. 프로젝트 Firestore/Eventarc/Logging와 viewer self-sign 권한도 exact custom role 경계로 확인했다.
+- 서울 전용 Log Analytics bucket은 Storage DATA_READ와 앱 발급 audit만 수집하고 `_Default`는 앱 audit과 모든 GCS DATA_READ를 제외한다. 격리 임시 admin/Auth/App Check·68-byte PNG fixture로 실제 callable 200, 5분 exact-generation V4 GET 200, Range 206와 `private, no-store, max-age=0`을 확인했다. 같은 opaque issuanceID의 앱 audit 1건·Storage GET 2건이 전용 view에 연결되고 `_Default`는 0건이었다. 임시 Auth/Firestore/Storage/rate bucket 잔여 0을 확인한 뒤 감사 bucket을 `ACTIVE`·Analytics·1,095일·`locked=true`로 영구 잠갔다.
+- Socket image `p75-951333c-0828`, digest `sha256:56a538714aece8c4cf53d33acaea38e4d5fda0bc854976eed89877ae5cdd763e`, revision `outpick-socket-p75-del-0828`을 0% candidate로 검증한 뒤 100% 전환했다. canonical readiness 200과 실제 Firebase 인증 handshake, maxScale 1·concurrency 80·timeout 3,600초·runtime identity·quarantine bucket을 확인했고 새 revision ERROR는 0건이다. rollback revision은 0%의 `outpick-socket-p73-prod-0820`이다.
+- 최종 사후 감사는 composite 61/61 READY, TTL 22/22 ACTIVE, Function 11/11 ACTIVE, scheduler 2/2 ENABLED, 관련 Function/Socket ERROR 0, Phase 7 message/deletion/evidence/job 잔여 0으로 종료했다. 앱 binary·TestFlight·App Store 출시는 수행하지 않았다.
 
 ### Chat UGC Safety Phase 7.6 — 열린 미디어·durable cache cleanup QA 완료
 
