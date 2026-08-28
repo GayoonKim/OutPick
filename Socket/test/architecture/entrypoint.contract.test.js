@@ -44,4 +44,9 @@ test("production DI는 공통 message single-flight만 한 번 생성한다", as
   );
   assert.equal(source.includes("createMediaDeliveryState"), false);
   assert.equal(source.includes("mediaDeliveryState"), false);
+  assert.equal(
+    (source.match(/createDeletionDeliveryWatcher\(/g) || []).length,
+    1
+  );
+  assert.equal(source.includes("stopDeletionDeliveryWatcher?.()"), true);
 });

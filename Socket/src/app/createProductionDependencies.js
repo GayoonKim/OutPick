@@ -13,6 +13,7 @@ import { registerMediaHandlers } from "../handlers/mediaHandlers.js";
 import { registerMessageHandlers } from "../handlers/messageHandlers.js";
 import { registerRoomHandlers } from "../handlers/roomHandlers.js";
 import { createLookbookShareHandler } from "../lookbookShare/lookbookShareHandler.js";
+import { createDeletionDeliveryWatcher } from "../deletion/deletionDeliveryWatcher.js";
 import { createMediaUploadService } from "../media/mediaUploadService.js";
 import { createMediaDeliveryWatcher } from "../media/mediaDeliveryWatcher.js";
 import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySingleFlight.js";
@@ -159,6 +160,14 @@ export function createProductionDependencies({
     logger
   });
   const stopMediaDeliveryWatcher = startMediaDeliveryWatcher();
+  const { start: startDeletionDeliveryWatcher } = createDeletionDeliveryWatcher({
+    db,
+    admin,
+    io,
+    clock,
+    logger
+  });
+  const stopDeletionDeliveryWatcher = startDeletionDeliveryWatcher();
   const handleLookbookShare = createLookbookShareHandler({
     io,
     rooms,
@@ -247,6 +256,7 @@ export function createProductionDependencies({
       stopRoomClosureWatcher?.();
       stopRoomBanWatcher?.();
       stopMediaDeliveryWatcher?.();
+      stopDeletionDeliveryWatcher?.();
     }
   };
 }
