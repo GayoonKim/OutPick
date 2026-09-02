@@ -15,6 +15,12 @@ protocol ChatRoomLifecycleUseCaseProtocol {
     func joinRoom(roomID: String) async throws -> ChatRoom
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws
 
     func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64?
 
@@ -26,6 +32,15 @@ protocol ChatRoomLifecycleUseCaseProtocol {
 }
 
 extension ChatRoomLifecycleUseCaseProtocol {
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws {
+        try await updateLastReadSeq(roomID: roomID, userUID: userUID, lastReadSeq: lastReadSeq)
+    }
+
     func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64? {
         nil
     }
@@ -80,6 +95,20 @@ final class ChatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol {
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
         try await userProfileRepository.updateLastReadSeq(roomID: roomID, userUID: userUID, lastReadSeq: lastReadSeq)
+    }
+
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws {
+        try await userProfileRepository.updateReadFrontier(
+            roomID: roomID,
+            userUID: userUID,
+            lastReadSeq: lastReadSeq,
+            lastReadUnreadMessageSeq: lastReadUnreadMessageSeq
+        )
     }
 
     func fetchAuthoritativeLastReadSeq(roomID: String, userUID: String) async throws -> Int64? {

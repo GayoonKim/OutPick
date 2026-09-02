@@ -18,7 +18,7 @@ final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
                     sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?",
                     arguments: [message.roomID, message.ID]
                 )
-                if !message.isDeleted {
+                if !message.isDeleted, message.messageType != .roomRoleEvent {
                     try db.execute(
                         sql: "INSERT OR REPLACE INTO chatMessageFTS(id, msg, roomID) VALUES (?, ?, ?)",
                         arguments: [message.ID, message.msg ?? "", message.roomID]

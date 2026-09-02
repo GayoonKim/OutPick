@@ -23,7 +23,7 @@ enum ChatMediaIndexSQL {
                 """, arguments: [
                     message.roomID, message.ID, attachment.index,
                     cacheKey(attachment.hash), originalCacheKey(attachment.hash),
-                    nonEmpty(attachment.pathThumb), nonEmpty(attachment.pathOriginal),
+                    nonEmpty(attachment.thumbResourcePath), nonEmpty(attachment.originalResourcePath),
                     attachment.width, attachment.height, attachment.bytesOriginal,
                     attachment.duration, attachment.approxBitrateMbps, attachment.preset,
                     nonEmpty(attachment.hash), message.isFailed,
@@ -54,7 +54,7 @@ enum ChatMediaIndexSQL {
         StatementArguments([
             message.roomID, message.ID, attachment.index,
             cacheKey(attachment.hash), originalCacheKey(attachment.hash),
-            nonEmpty(attachment.pathThumb), nonEmpty(attachment.pathOriginal),
+            nonEmpty(attachment.thumbResourcePath), nonEmpty(attachment.originalResourcePath),
             attachment.width, attachment.height, attachment.bytesOriginal,
             nonEmpty(attachment.hash), message.isFailed,
             message.isFailed ? nonEmpty(attachment.pathThumb) : nil, sentAt

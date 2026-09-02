@@ -11,7 +11,8 @@ struct ChatRoomFirestoreDTO: Decodable {
     let roomName: String
     let roomDescription: String?
     let participantUIDs: [String]?
-    let creatorUID: String
+    let ownerUID: String?
+    let creatorUID: String?
     let createdAt: Date
     let thumbPath: String?
     let originalPath: String?
@@ -20,6 +21,7 @@ struct ChatRoomFirestoreDTO: Decodable {
     let lastMessageSenderUID: String?
     let memberCount: Int?
     let seq: Int64?
+    let unreadMessageSeq: Int64?
     let isClosed: Bool?
     let lifecycleStatus: String?
     let lifecycleVersion: Int?

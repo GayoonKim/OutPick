@@ -15,6 +15,13 @@ protocol UserProfileRepositoryProtocol {
 
     /// 사용자의 방 읽기 상태 업데이트
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws
+
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws
     
     /// 사용자의 방 읽기 상태 조회
     func fetchLastReadSeq(for roomID: String, userUID: String) async throws -> Int64
@@ -37,6 +44,15 @@ protocol UserProfileRepositoryProtocol {
 }
 
 extension UserProfileRepositoryProtocol {
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws {
+        try await updateLastReadSeq(roomID: roomID, userUID: userUID, lastReadSeq: lastReadSeq)
+    }
+
     func fetchAuthoritativeLastReadSeq(for roomID: String, userUID: String) async throws -> Int64 {
         try await fetchLastReadSeq(for: roomID, userUID: userUID)
     }

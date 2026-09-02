@@ -48,6 +48,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return label
     }()
     private let chatRoomViewModel: ChatRoomViewModel
+
+    var roomRoleSession: ChatRoomRoleSession? {
+        chatRoomViewModel.roomRoleSession
+    }
     
     private var avatarWarmupRoomID: String?
     
@@ -364,6 +368,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         bindSearchEvents()
         bindRoomClosedEvent()
         bindRoomMembershipRemovedEvent()
+        bindCurrentRoomRoleSession()
         bindAppLifecycleForLastRead()
         refreshRoomAccessIfNeeded()
         
@@ -1124,6 +1129,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
 
         let message = admittedMessage
+        if message.messageType == .roomRoleEvent {
+            settingPanelVC?.handleRoomRoleEvent()
+        }
 
         if pendingMediaUploadStore.uploadState(for: message.ID) != nil {
             pendingMediaUploadStore.completeImageUpload(for: message.ID)
@@ -1447,6 +1455,39 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private func stopRoomMembershipRemovedObservation() {
         roomMembershipRemovedSubscription?.stop()
         roomMembershipRemovedSubscription = nil
+    }
+
+    private func bindCurrentRoomRoleSession() {
+        guard let roomRoleSession else { return }
+        roomRoleSession.$state
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self,
+                      state.source == .server || state.source == .mutation,
+                      state.status != .member,
+                      self.chatRoomViewModel.isCurrentUserParticipant else { return }
+                self.handleRoomMembershipProjectionRemoved(roomID: state.roomID)
+            }
+            .store(in: &cancellables)
+    }
+
+    @MainActor
+    private func handleRoomMembershipProjectionRemoved(roomID: String) {
+        guard roomID == room?.id else { return }
+        chatRoomViewModel.handleCurrentUserMembershipRemoved()
+        chatRoomViewModel.handleRoomWillDisappear()
+        isUserInCurrentRoom = false
+        convertImagesTask?.cancel()
+        convertVideosTask?.cancel()
+        pendingMediaUploadStore.cancelAndRemove(roomID: roomID)
+        Task { [outgoingOutboxUseCase] in
+            await outgoingOutboxUseCase.cancelPendingMessages(roomID: roomID)
+        }
+        dismissSettingPanel()
+        roomAccessPresentation = .checking
+        decideJoinUI()
+        refreshRoomAccessIfNeeded(force: true)
     }
 
     @MainActor
@@ -2101,7 +2142,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     let latestMessage = self.messageWindowStore.message(for: message.ID) ?? message
-                    let latestPolicy = self.chatRoomViewModel.messageActionPolicy(for: latestMessage)
+                    let latestPolicy: ChatMessageActionPolicy
+                    if action == .delete || action == .removeMember {
+                        guard let resolved = try? await self.chatRoomViewModel
+                            .resolvedMessageActionPolicy(for: latestMessage) else { return }
+                        latestPolicy = resolved
+                    } else {
+                        latestPolicy = self.chatRoomViewModel.messageActionPolicy(for: latestMessage)
+                    }
                     guard latestPolicy.allows(action) else { return }
                     self.handleMessageMenuAction(action, message: latestMessage)
                 }
@@ -3167,11 +3215,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: chatMessageCollectionView) { [unowned self] collectionView, indexPath, item in
             switch item {
             case .message(let message):
+                let latestMessage = self.messageWindowStore.message(for: message.ID) ?? message
+                if latestMessage.messageType == .roomRoleEvent,
+                   let payload = latestMessage.roleEvent {
+                    let cell = collectionView.dequeueReusableCell(
+                        withReuseIdentifier: RoomRoleEventCollectionViewCell.reuseIdentifier,
+                        for: indexPath
+                    ) as! RoomRoleEventCollectionViewCell
+                    cell.configure(with: payload)
+                    return cell
+                }
+
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatMessageCell.reuseIdentifier, for: indexPath) as! ChatMessageCell
                 
                 // 메시지 최신 상태 반영
-                let latestMessage = self.messageWindowStore.message(for: message.ID) ?? message
-                
                 if latestMessage.isLookbookShareMessage {
                     cell.configureWithLookbookShare(with: latestMessage, thumbnailLoader: { [weak self] path in
                         guard let self else { return nil }
@@ -3980,8 +4037,8 @@ extension ChatViewController: UICollectionViewDelegate {
         }
 
         let latestMessage = messageWindowStore.message(for: message.ID) ?? message
-        let policy = chatRoomViewModel.messageActionPolicy(for: latestMessage)
-        guard makeMessageContextMenu(message: latestMessage, policy: policy) != nil else {
+        let initialPolicy = chatRoomViewModel.messageActionPolicy(for: latestMessage)
+        guard makeMessageContextMenu(message: latestMessage, policy: initialPolicy) != nil else {
             return nil
         }
 
@@ -3991,8 +4048,22 @@ extension ChatViewController: UICollectionViewDelegate {
         ) { [weak self] _ in
             guard let self else { return nil }
             let refreshedMessage = self.messageWindowStore.message(for: latestMessage.ID) ?? latestMessage
-            let refreshedPolicy = self.chatRoomViewModel.messageActionPolicy(for: refreshedMessage)
-            return self.makeMessageContextMenu(message: refreshedMessage, policy: refreshedPolicy)
+            let deferred = UIDeferredMenuElement.uncached { [weak self] completion in
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        completion([])
+                        return
+                    }
+                    let policy = (try? await self.chatRoomViewModel
+                        .resolvedMessageActionPolicy(for: refreshedMessage))
+                        ?? self.chatRoomViewModel.messageActionPolicy(for: refreshedMessage)
+                    completion(self.makeMessageContextMenu(
+                        message: refreshedMessage,
+                        policy: policy
+                    )?.children ?? [])
+                }
+            }
+            return UIMenu(title: "", children: [deferred])
         }
     }
 

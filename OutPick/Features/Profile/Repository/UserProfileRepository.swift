@@ -33,6 +33,20 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
     }
 
     func updateLastReadSeq(roomID: String, userUID: String, lastReadSeq: Int64) async throws {
+        try await updateReadFrontier(
+            roomID: roomID,
+            userUID: userUID,
+            lastReadSeq: lastReadSeq,
+            lastReadUnreadMessageSeq: lastReadSeq
+        )
+    }
+
+    func updateReadFrontier(
+        roomID: String,
+        userUID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64
+    ) async throws {
         let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
         let userDocumentID = normalizeUserID(userUID)
         guard !trimmedRoomID.isEmpty, !userDocumentID.isEmpty else { return }
@@ -47,13 +61,19 @@ final class UserProfileRepository: UserProfileRepositoryProtocol {
 
                     let requested = max(Int64(0), lastReadSeq)
                     let current = Self.toInt64(joinedRoomSnap.data()?["lastReadSeq"]) ?? 0
+                    let currentUnread = Self.toInt64(
+                        joinedRoomSnap.data()?["lastReadUnreadMessageSeq"]
+                    ) ?? current
                     let next = max(current, requested)
-                    let didWrite = next > current
+                    let requestedUnread = max(Int64(0), lastReadUnreadMessageSeq)
+                    let nextUnread = max(currentUnread, requestedUnread)
+                    let didWrite = next > current || nextUnread > currentUnread
 
                     if didWrite {
                         transaction.setData([
                             "roomID": trimmedRoomID,
                             "lastReadSeq": next,
+                            "lastReadUnreadMessageSeq": nextUnread,
                             "updatedAt": FieldValue.serverTimestamp()
                         ], forDocument: joinedRoomRef, merge: true)
                     }

@@ -31,6 +31,10 @@ class ChatMessageCollectionView: UICollectionView {
     
     private func registerCells() {
         self.register(ChatMessageCell.self, forCellWithReuseIdentifier: ChatMessageCell.reuseIdentifier)
+        self.register(
+            RoomRoleEventCollectionViewCell.self,
+            forCellWithReuseIdentifier: RoomRoleEventCollectionViewCell.reuseIdentifier
+        )
         self.register(DateSeperatorCell.self, forCellWithReuseIdentifier: DateSeperatorCell.reuseIdentifier)
         self.register(readMarkCollectionViewCell.self, forCellWithReuseIdentifier: readMarkCollectionViewCell.reuseIdentifier)
     }

@@ -11,12 +11,15 @@ import FirebaseFirestore
 // 채팅 메시지 정보
 struct ChatMessage: SocketData, Codable, Sendable {
     let ID: String
-    let seq: Int64                    // 방 내 단조 증가 시퀀스(1,2,3,...) - 정렬/미읽음 계산용
+    let seq: Int64                    // 모든 timeline item의 방 내 단조 증가 시퀀스
+    var unreadMessageSeq: Int64? = nil // 안읽음 대상 일반 메시지만 소비하는 별도 시퀀스
     let roomID: String
     let senderUID: String                // 메시지 전송 사용자 아이디
     var senderNickname: String          // 메시지 전송 사용자 닉네임
     var senderAvatarPath: String? = nil // Storage 상대경로(예: "avatars/<uid>/v3.jpg")
     var messageType: ChatMessageType? = nil
+    var serverGenerated: Bool = false
+    var roleEvent: RoomRoleEventPayload? = nil
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
     var attachments: [Attachment]
@@ -27,6 +30,11 @@ struct ChatMessage: SocketData, Codable, Sendable {
     var deletionRevision: Int64? = nil
     var deletedAt: Date? = nil
 
+    var roleEventSubjectIsRedacted: Bool? {
+        guard messageType == .roomRoleEvent, let roleEvent else { return nil }
+        return roleEvent.subjectUID == nil
+    }
+
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -36,11 +44,14 @@ struct ChatMessage: SocketData, Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case ID
         case seq
+        case unreadMessageSeq
         case roomID
         case senderUID
         case senderNickname
         case senderAvatarPath
         case messageType
+        case serverGenerated
+        case roleEvent
         case msg
         case sentAt
         case attachments
@@ -61,8 +72,17 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "senderNickname": senderNickname,
             "msg": msg ?? "",
         ]
+        if let unreadMessageSeq {
+            dict["unreadMessageSeq"] = unreadMessageSeq
+        }
         if let messageType {
             dict["messageType"] = messageType.rawValue
+        }
+        if serverGenerated {
+            dict["serverGenerated"] = true
+        }
+        if messageType == .roomRoleEvent, let roleEvent {
+            dict["roleEvent"] = roleEvent.dictionary
         }
         if let avatar = senderAvatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar
@@ -118,8 +138,17 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "searchNgrams2": searchIndex.searchNgrams2,
             "searchIndexVersion": searchIndex.version
         ]
+        if let unreadMessageSeq {
+            dict["unreadMessageSeq"] = unreadMessageSeq
+        }
         if let messageType {
             dict["messageType"] = messageType.rawValue
+        }
+        if serverGenerated {
+            dict["serverGenerated"] = true
+        }
+        if messageType == .roomRoleEvent, let roleEvent {
+            dict["roleEvent"] = roleEvent.dictionary
         }
         if let avatar = senderAvatarPath, !avatar.isEmpty {
             dict["senderAvatarPath"] = avatar
@@ -179,11 +208,18 @@ extension ChatMessage {
 
         ID = try container.decode(String.self, forKey: .ID)
         seq = try container.decodeIfPresent(Int64.self, forKey: .seq) ?? 0
+        unreadMessageSeq = decodedMessageType == .roomRoleEvent
+            ? nil
+            : try container.decodeIfPresent(Int64.self, forKey: .unreadMessageSeq) ?? seq
         roomID = try container.decode(String.self, forKey: .roomID)
         senderUID = try container.decodeIfPresent(String.self, forKey: .senderUID) ?? ""
         senderNickname = try container.decodeIfPresent(String.self, forKey: .senderNickname) ?? ""
         senderAvatarPath = try container.decodeIfPresent(String.self, forKey: .senderAvatarPath)
         messageType = decodedMessageType
+        serverGenerated = try container.decodeIfPresent(Bool.self, forKey: .serverGenerated) ?? false
+        roleEvent = decodedMessageType == .roomRoleEvent
+            ? try container.decodeIfPresent(RoomRoleEventPayload.self, forKey: .roleEvent)
+            : nil
         msg = try container.decodeIfPresent(String.self, forKey: .msg)
         sentAt = try container.decodeIfPresent(Date.self, forKey: .sentAt)
         attachments = try container.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
@@ -193,17 +229,29 @@ extension ChatMessage {
         isDeleted = try container.decodeIfPresent(Bool.self, forKey: .isDeleted) ?? false
         deletionRevision = try container.decodeIfPresent(Int64.self, forKey: .deletionRevision)
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+
+        if decodedMessageType == .roomRoleEvent,
+           (!serverGenerated || roleEvent == nil) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .roleEvent,
+                in: container,
+                debugDescription: "roomRoleEvent requires a server marker and structured payload"
+            )
+        }
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(ID, forKey: .ID)
         try container.encode(seq, forKey: .seq)
+        try container.encodeIfPresent(unreadMessageSeq, forKey: .unreadMessageSeq)
         try container.encode(roomID, forKey: .roomID)
         try container.encode(senderUID, forKey: .senderUID)
         try container.encode(senderNickname, forKey: .senderNickname)
         try container.encodeIfPresent(senderAvatarPath, forKey: .senderAvatarPath)
         try container.encodeIfPresent(messageType, forKey: .messageType)
+        try container.encode(serverGenerated, forKey: .serverGenerated)
+        try container.encodeIfPresent(roleEvent, forKey: .roleEvent)
         try container.encodeIfPresent(msg, forKey: .msg)
         try container.encodeIfPresent(sentAt, forKey: .sentAt)
         try container.encode(attachments, forKey: .attachments)
@@ -217,6 +265,10 @@ extension ChatMessage {
 }
 
 extension ChatMessage {
+    var effectiveUnreadMessageSeq: Int64? {
+        messageType == .roomRoleEvent ? nil : (unreadMessageSeq ?? seq)
+    }
+
     var sortedAttachments: [Attachment] {
         attachments.sorted { $0.index < $1.index }
     }
@@ -268,6 +320,10 @@ extension ChatMessage {
         }
     }
 
+    var isEligibleForRoomListPreview: Bool {
+        messageType != .roomRoleEvent
+    }
+
     static func from(_ dict: [String: Any]) -> ChatMessage? {
         // Required IDs
         guard let id = (dict["ID"] as? String) ?? (dict["id"] as? String) ?? (dict["messageID"] as? String), !id.isEmpty,
@@ -275,7 +331,17 @@ extension ChatMessage {
             return nil
         }
         let isDeleted = dict["isDeleted"] as? Bool ?? false
-        guard isDeleted || dict["senderUID"] is String else { return nil }
+        let messageType = ChatMessageType(legacyRawValue: dict["messageType"] as? String)
+        let serverGenerated = dict["serverGenerated"] as? Bool ?? false
+        let roleEvent = messageType == .roomRoleEvent
+            ? RoomRoleEventPayload.from(dict["roleEvent"])
+            : nil
+        let isValidRoleEvent = messageType == .roomRoleEvent && serverGenerated && roleEvent != nil
+        if messageType == .roomRoleEvent {
+            guard isValidRoleEvent else { return nil }
+        } else {
+            guard isDeleted || dict["senderUID"] is String else { return nil }
+        }
         let senderUID = dict["senderUID"] as? String ?? ""
 
         // Sequence: accept Int/Int64/NSNumber/Double, fallback 0; also accept legacy "sequence"
@@ -290,6 +356,10 @@ extension ChatMessage {
             if let d = dict["sequence"] as? Double { return Int64(d) }
             return 0
         }()
+        let unreadMessageSeq: Int64? = {
+            if messageType == .roomRoleEvent { return nil }
+            return parseInt64(dict["unreadMessageSeq"]) ?? seq
+        }()
 
         // Nickname: support both keys. Default to empty if missing.
         let senderNickname = (dict["senderNickName"] as? String)
@@ -302,7 +372,6 @@ extension ChatMessage {
 
         // Message text may be empty
         let msg = (dict["msg"] as? String) ?? (dict["message"] as? String)
-        let messageType = ChatMessageType(legacyRawValue: dict["messageType"] as? String)
         let sharedContent = messageType == .lookbookShare
             ? LookbookSharedContent.from(dict["sharedContent"])
             : nil
@@ -350,11 +419,14 @@ extension ChatMessage {
         return ChatMessage(
             ID: id,
             seq: seq,
+            unreadMessageSeq: unreadMessageSeq,
             roomID: roomID,
             senderUID: senderUID,
             senderNickname: senderNickname,
             senderAvatarPath: senderAvatarPath,
             messageType: messageType,
+            serverGenerated: serverGenerated,
+            roleEvent: roleEvent,
             msg: msg,
             sentAt: sentAt,
             attachments: attachments,

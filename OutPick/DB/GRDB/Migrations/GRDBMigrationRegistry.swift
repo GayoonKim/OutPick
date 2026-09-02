@@ -22,7 +22,9 @@ enum GRDBMigrationRegistry {
         "extendChatOutgoingOutboxForMediaV2",
         "storeChatMediaUploadSession",
         "createChatDeletionSync",
-        "addDeletionMarkerSenderPolicy"
+        "addDeletionMarkerSenderPolicy",
+        "addRoomRoleEventToChatMessage",
+        "addUnreadMessageSeqToChatMessage"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -221,6 +223,23 @@ enum GRDBMigrationRegistry {
                 $0.add(column: "anonymizesSender", .boolean).notNull().defaults(to: true)
             }
         }
+        migrator.registerMigration("addRoomRoleEventToChatMessage") { db in
+            try addColumnIfMissing("roleEvent", to: "chatMessage", in: db) {
+                $0.add(column: "roleEvent", .text)
+            }
+        }
+        migrator.registerMigration("addUnreadMessageSeqToChatMessage") { db in
+            try addColumnIfMissing("unreadMessageSeq", to: "chatMessage", in: db) {
+                $0.add(column: "unreadMessageSeq", .integer)
+            }
+            // 역할 이벤트 도입 전 일반 메시지는 timeline seq와 unread seq가 동일하다.
+            try db.execute(sql: """
+                UPDATE chatMessage
+                   SET unreadMessageSeq = seq
+                 WHERE unreadMessageSeq IS NULL
+                   AND (messageType IS NULL OR messageType != 'roomRoleEvent')
+            """)
+        }
 
         return migrator
     }
@@ -229,11 +248,13 @@ enum GRDBMigrationRegistry {
         try db.create(table: "chatMessage") { table in
             table.column("id", .text).primaryKey()
             table.column("seq", .integer).notNull().defaults(to: 0)
+            table.column("unreadMessageSeq", .integer)
             table.column("roomID", .text).notNull()
             table.column("senderUID", .text)
             table.column("senderNickname", .text)
             table.column("senderAvatarPath", .text)
             table.column("messageType", .text)
+            table.column("roleEvent", .text)
             table.column("msg", .text)
             table.column("sentAt", .datetime)
             table.column("attachments", .text)

@@ -27,11 +27,33 @@ class ParticipantListCell: UICollectionViewCell {
     
     private lazy var nickNameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 14, weight: .regular)
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
         label.textColor = OutPickTheme.ColorToken.textSecondary
-        label.translatesAutoresizingMaskIntoConstraints = false
-        
         return label
+    }()
+
+    private lazy var roleBadgeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .preferredFont(forTextStyle: .caption2)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = OutPickTheme.ColorToken.accent
+        label.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
+        label.layer.cornerRadius = 8
+        label.layer.masksToBounds = true
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private lazy var labelsStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [nickNameLabel, roleBadgeLabel])
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
 
     private lazy var moderationButton: UIButton = {
@@ -48,22 +70,47 @@ class ParticipantListCell: UICollectionViewCell {
         super.init(frame: frame)
         
         contentView.addSubview(userProfileImageView)
-        contentView.addSubview(nickNameLabel)
+        contentView.addSubview(labelsStack)
         contentView.addSubview(moderationButton)
         NSLayoutConstraint.activate([
             userProfileImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             userProfileImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            userProfileImageView.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: 9),
+            userProfileImageView.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -9),
             userProfileImageView.widthAnchor.constraint(equalToConstant: 42),
             userProfileImageView.heightAnchor.constraint(equalToConstant: 42),
-            
-            nickNameLabel.leadingAnchor.constraint(equalTo: userProfileImageView.trailingAnchor, constant: 10),
-            nickNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: moderationButton.leadingAnchor, constant: -10),
-            nickNameLabel.centerYAnchor.constraint(equalTo: userProfileImageView.centerYAnchor),
+
+            labelsStack.leadingAnchor.constraint(equalTo: userProfileImageView.trailingAnchor, constant: 10),
+            labelsStack.trailingAnchor.constraint(lessThanOrEqualTo: moderationButton.leadingAnchor, constant: -8),
+            labelsStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            labelsStack.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: 8),
+            labelsStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -8),
+            roleBadgeLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 20),
+            roleBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 28),
             moderationButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
             moderationButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             moderationButton.widthAnchor.constraint(equalToConstant: 44),
             moderationButton.heightAnchor.constraint(equalToConstant: 44)
         ])
+    }
+
+    override func preferredLayoutAttributesFitting(
+        _ layoutAttributes: UICollectionViewLayoutAttributes
+    ) -> UICollectionViewLayoutAttributes {
+        let attributes = super.preferredLayoutAttributesFitting(layoutAttributes)
+        let targetSize = CGSize(
+            width: layoutAttributes.size.width,
+            height: UIView.layoutFittingCompressedSize.height
+        )
+        attributes.size.height = max(
+            60,
+            ceil(contentView.systemLayoutSizeFitting(
+                targetSize,
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            ).height)
+        )
+        return attributes
     }
     
     required init?(coder: NSCoder) {
@@ -77,6 +124,28 @@ class ParticipantListCell: UICollectionViewCell {
         avatarLoadTask?.cancel()
         avatarLoadTask = nil
         userProfileImageView.image = UIImage(named: "Default_Profile")
+        roleBadgeLabel.isHidden = true
+        roleBadgeLabel.text = nil
+    }
+
+    func configureCell(
+        participant: ChatRoomParticipant,
+        currentUserID: String,
+        avatarImageManager: AvatarImageManaging
+    ) {
+        configureCell(userProfile: participant.user, avatarImageManager: avatarImageManager)
+        var badges: [String] = []
+        if participant.userID == currentUserID { badges.append("나") }
+        switch participant.role {
+        case .owner: badges.append("방장")
+        case .moderator: badges.append("관리자")
+        case .member: break
+        }
+        roleBadgeLabel.text = badges.joined(separator: " · ")
+        roleBadgeLabel.isHidden = badges.isEmpty
+        accessibilityLabel = [participant.user.nickname, badges.joined(separator: ", ")]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     func configureModeration(isVisible: Bool, onTap: (() -> Void)?) {
@@ -94,6 +163,8 @@ class ParticipantListCell: UICollectionViewCell {
         avatarLoadTask = nil
         userProfileImageView.image = UIImage(named: "Default_Profile")
         configureModeration(isVisible: false, onTap: nil)
+        roleBadgeLabel.isHidden = true
+        roleBadgeLabel.text = nil
     }
 
     func configureCell(userProfile: LocalChatUser, avatarImageManager: AvatarImageManaging) {

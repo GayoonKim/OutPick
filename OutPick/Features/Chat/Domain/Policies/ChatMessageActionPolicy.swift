@@ -53,9 +53,15 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
     static func make(
         for message: ChatMessage,
         currentUserID: String,
-        roomCreatorID: String?
+        roomCreatorID: String?,
+        actorRole: ChatRoomMemberRole? = nil,
+        targetRole: ChatRoomMemberRole? = nil,
+        isTargetRoleResolved: Bool = false,
+        isRoleManagementEnabled: Bool = true
     ) -> ChatMessageActionPolicy {
-        if message.isDeleted || (message.seq <= 0 && !message.isFailed) {
+        if message.messageType == .roomRoleEvent
+            || message.isDeleted
+            || (message.seq <= 0 && !message.isFailed) {
             return ChatMessageActionPolicy(
                 canReply: false,
                 canCopy: false,
@@ -68,10 +74,15 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         }
 
         let isOwner = currentUserID == message.senderUID
-        let isAdmin = roomCreatorID == currentUserID
-        let canDelete = isOwner || isAdmin
+        let isRoomOwner = isRoleManagementEnabled
+            && (actorRole == .owner || roomCreatorID == currentUserID)
+        let isModerator = isRoleManagementEnabled && actorRole == .moderator
+        let canModerateTarget = isRoomOwner || (
+            isModerator && isTargetRoleResolved && targetRole != .owner && targetRole != .moderator
+        )
+        let canDelete = isOwner || canModerateTarget
         let canReport = !isOwner && !message.senderUID.isEmpty && message.seq > 0
-        let canRemoveMember = isAdmin && !isOwner && !message.senderUID.isEmpty
+        let canRemoveMember = canModerateTarget && !isOwner && !message.senderUID.isEmpty
 
         if message.isLookbookShareMessage {
             return ChatMessageActionPolicy(
@@ -91,7 +102,7 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             canDelete: canDelete,
             canReport: canReport,
             canBlock: !isOwner,
-            canAnnounce: isAdmin,
+            canAnnounce: isRoomOwner,
             canRemoveMember: canRemoveMember
         )
     }

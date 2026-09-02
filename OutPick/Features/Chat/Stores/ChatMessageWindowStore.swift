@@ -385,7 +385,7 @@ struct ChatMessageWindowStore {
         guard !items.contains(where: isReadMarker) else { return items }
         guard let insertIndex = items.firstIndex(where: { item in
             guard case let .message(message) = item else { return false }
-            return message.seq > readBoundarySeq
+            return message.effectiveUnreadMessageSeq != nil && message.seq > readBoundarySeq
         }) else {
             return items
         }
@@ -404,10 +404,12 @@ struct ChatMessageWindowStore {
               !items.contains(where: isReadMarker),
               let readBoundarySeq,
               !isUserInCurrentRoom,
-              let firstMessage = newMessages.first else {
+              let firstUnreadMessage = newMessages.first(where: {
+                  $0.effectiveUnreadMessageSeq != nil
+              }) else {
             return false
         }
-        return firstMessage.seq > readBoundarySeq
+        return firstUnreadMessage.seq > readBoundarySeq
     }
 
     private func insertReadMarker(into newItems: inout [ChatMessageListItem]) {

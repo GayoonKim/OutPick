@@ -80,7 +80,7 @@ final class JoinedRoomsUseCase: JoinedRoomsUseCaseProtocol {
     }
 
     func canLeaveFromList(room: ChatRoom) -> Bool {
-        room.creatorUID != LoginManager.shared.canonicalUserID
+        room.ownerUID != LoginManager.shared.canonicalUserID
     }
 
     func leave(room: ChatRoom) async throws -> ChatRoomExitResult {

@@ -78,6 +78,7 @@ struct RealtimeSocketListenerCallbacks {
     let chatMessage: ([Any]) -> Void
     let imagesReceived: ([Any]) -> Void
     let videoReceived: ([Any]) -> Void
+    let roomRoleEvent: ([Any]) -> Void
     let roomClosed: ([Any]) -> Void
     let roomMembershipRemoved: ([Any]) -> Void
     let messageDeleted: ([Any]) -> Void
@@ -91,6 +92,7 @@ struct RealtimeSocketListenerCallbacks {
         chatMessage: @escaping ([Any]) -> Void,
         imagesReceived: @escaping ([Any]) -> Void,
         videoReceived: @escaping ([Any]) -> Void,
+        roomRoleEvent: @escaping ([Any]) -> Void = { _ in },
         roomClosed: @escaping ([Any]) -> Void,
         roomMembershipRemoved: @escaping ([Any]) -> Void,
         messageDeleted: @escaping ([Any]) -> Void = { _ in },
@@ -103,6 +105,7 @@ struct RealtimeSocketListenerCallbacks {
         self.chatMessage = chatMessage
         self.imagesReceived = imagesReceived
         self.videoReceived = videoReceived
+        self.roomRoleEvent = roomRoleEvent
         self.roomClosed = roomClosed
         self.roomMembershipRemoved = roomMembershipRemoved
         self.messageDeleted = messageDeleted
@@ -115,6 +118,7 @@ final class RealtimeSocketListenerBinder {
     static let chatMessageEvent = "chat message"
     static let imagesReceivedEvent = "receiveImages"
     static let videoReceivedEvent = "receiveVideo"
+    static let roomRoleEvent = "chat:roomRoleEvent"
     static let roomClosedEvent = "room:closed"
     static let roomMembershipRemovedEvent = "room:membership-removed"
     static let messageDeletedEvent = "chat:messageDeleted"
@@ -137,6 +141,7 @@ final class RealtimeSocketListenerBinder {
         listener.on(Self.chatMessageEvent, callback: callbacks.chatMessage)
         listener.on(Self.imagesReceivedEvent, callback: callbacks.imagesReceived)
         listener.on(Self.videoReceivedEvent, callback: callbacks.videoReceived)
+        listener.on(Self.roomRoleEvent, callback: callbacks.roomRoleEvent)
         listener.on(Self.roomClosedEvent, callback: callbacks.roomClosed)
         listener.on(Self.roomMembershipRemovedEvent, callback: callbacks.roomMembershipRemoved)
         listener.on(Self.messageDeletedEvent, callback: callbacks.messageDeleted)

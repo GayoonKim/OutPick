@@ -29,10 +29,13 @@ final class AppCoordinator {
     private let avatarImageManager: AvatarImageManaging
     private let appSessionRuntime: AppSessionRuntime
     private let chatPersistence: ChatPersistenceProvider
+    private let rolloutDecisionUseCase: LoadAppRolloutDecisionUseCase
+    private let appFeatureGateStore: AppFeatureGateStore
     private let userBlockVisibilityStore: UserBlockVisibilityStore
     private let userBlockSessionController: UserBlockSessionController
     private let userBlockRepository: any UserBlockRepositoryProtocol
     private var sessionResetTask: Task<Void, Never>?
+    private var hasCompletedInitialRolloutCheck = false
     
     private var profileCoordinator: ProfileCoordinator?
 
@@ -80,6 +83,8 @@ final class AppCoordinator {
         avatarImageManager: AvatarImageManaging,
         appSessionRuntime: AppSessionRuntime,
         chatPersistence: ChatPersistenceProvider,
+        rolloutDecisionUseCase: LoadAppRolloutDecisionUseCase,
+        appFeatureGateStore: AppFeatureGateStore,
         userBlockVisibilityStore: UserBlockVisibilityStore,
         userBlockSessionController: UserBlockSessionController,
         userBlockRepository: any UserBlockRepositoryProtocol
@@ -109,6 +114,8 @@ final class AppCoordinator {
         self.avatarImageManager = avatarImageManager
         self.appSessionRuntime = appSessionRuntime
         self.chatPersistence = chatPersistence
+        self.rolloutDecisionUseCase = rolloutDecisionUseCase
+        self.appFeatureGateStore = appFeatureGateStore
         self.userBlockVisibilityStore = userBlockVisibilityStore
         self.userBlockSessionController = userBlockSessionController
         self.userBlockRepository = userBlockRepository
@@ -133,6 +140,9 @@ final class AppCoordinator {
 
         Task { [weak self] in
             guard let self else { return }
+
+            guard await self.applyCurrentRolloutDecision() else { return }
+            self.hasCompletedInitialRolloutCheck = true
 
             if self.accountDeletionLocalDataScrubber.requiresRetry {
                 try? await self.accountDeletionLocalDataScrubber.scrub()
@@ -630,6 +640,7 @@ final class AppCoordinator {
             currentUserProvider: currentUserProvider,
             realtimeSocketService: realtimeSocketService,
             avatarImageManager: avatarImageManager,
+            featureGate: appFeatureGateStore,
             userBlockVisibilityStore: userBlockVisibilityStore,
             userBlockRepository: userBlockRepository,
             userBlockSessionSynchronizer: userBlockSessionController
@@ -666,8 +677,37 @@ final class AppCoordinator {
 
     @MainActor
     func handleSceneDidBecomeActive() async {
+        guard hasCompletedInitialRolloutCheck else { return }
+        guard await applyCurrentRolloutDecision() else { return }
         await appSessionRuntime.handleSceneDidBecomeActive()
         consumePendingNotificationRouteIfPossible()
+    }
+
+    private func applyCurrentRolloutDecision() async -> Bool {
+        switch await rolloutDecisionUseCase.execute() {
+        case .available(let isModeratorDelegationEnabled):
+            appFeatureGateStore.replace(
+                isChatRoomModeratorDelegationEnabled: isModeratorDelegationEnabled
+            )
+            return true
+        case .updateRequired(let appStoreURL):
+            appFeatureGateStore.replace(isChatRoomModeratorDelegationEnabled: false)
+            await appSessionRuntime.stopAuthenticatedSession()
+            showUpdateRequired(appStoreURL: appStoreURL)
+            return false
+        }
+    }
+
+    private func showUpdateRequired(appStoreURL: URL?) {
+        let controller = AppUpdateRequiredViewController(
+            appStoreURL: appStoreURL,
+            onRetry: { [weak self] in
+                guard let self,
+                      let scene = self.window.windowScene ?? self.currentWindowScene else { return }
+                self.start(windowScene: scene)
+            }
+        )
+        setRoot(controller, animated: true)
     }
 
     @MainActor

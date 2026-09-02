@@ -476,7 +476,8 @@ final class ChatCoordinator {
 
 extension ChatCoordinator: ChatRoomRouting {
     func showSettings(from source: ChatViewController) {
-        guard let room = source.room else { return }
+        guard let room = source.room,
+              let roleSession = source.roomRoleSession else { return }
 
         weak var settingVC: ChatRoomSettingViewController?
         let panelVC = ChatCompositionRoot.makeChatRoomSettingPanel(
@@ -494,6 +495,10 @@ extension ChatCoordinator: ChatRoomRouting {
             networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
             memberModerationUseCase: container.makeChatRoomMemberModerationUseCase(),
+            manageRoleUseCase: container.makeManageChatRoomRoleUseCase(),
+            roleSession: roleSession,
+            isModeratorDelegationEnabled:
+                container.featureGate.isChatRoomModeratorDelegationEnabled,
             userBlockVisibilityStore: container.userBlockVisibilityStore,
             onEvent: { [weak self, weak source] event in
                 switch event {
@@ -646,7 +651,7 @@ extension ChatCoordinator: ChatRoomRouting {
 
     func handleRoomClosure(from source: ChatViewController, event: RealtimeRoomClosureEvent) {
         if event.closureType == ChatRoomClosureType.closedByOwner.rawValue,
-           source.room?.creatorUID == container.currentUserProvider.canonicalUserID {
+           source.room?.ownerUID == container.currentUserProvider.canonicalUserID {
             container.roomRepository.removeLocalRoom(roomID: event.roomID)
             guard source.isCurrentRoom(roomID: event.roomID) else {
                 source.dismissSettingPanel()
@@ -668,7 +673,8 @@ extension ChatCoordinator: ChatRoomRouting {
         case ChatRoomClosureType.closedByModeration.rawValue:
             message = "운영 정책에 따라 이용이 종료됐어요."
         case ChatRoomClosureType.closedByOwner.rawValue:
-            message = "방장이 채팅방을 종료했어요."
+            message = event.noticeCode == "ownerDeleted" ?
+                "방장이 없어 방이 종료됐어요." : "방장이 채팅방을 종료했어요."
         default:
             message = nil
         }

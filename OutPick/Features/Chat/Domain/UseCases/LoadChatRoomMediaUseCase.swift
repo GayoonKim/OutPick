@@ -347,8 +347,8 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             hash: entry.hash,
             thumbKey: entry.thumbKey,
             originalKey: entry.originalKey,
-            thumbURL: entry.thumbURL,
-            originalURL: entry.originalURL,
+            thumbURL: entry.thumbResourcePath,
+            originalURL: entry.originalResourcePath,
             localThumb: nil,
             sentAt: entry.sentAt,
             isVideo: entry.type == .video

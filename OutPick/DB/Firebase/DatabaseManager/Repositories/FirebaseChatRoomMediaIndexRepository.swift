@@ -98,6 +98,12 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
         if let originalKey = entry.originalKey, !originalKey.isEmpty {
             data["originalKey"] = originalKey
         }
+        if let bucketThumb = entry.bucketThumb, !bucketThumb.isEmpty {
+            data["bucketThumb"] = bucketThumb
+        }
+        if let bucketOriginal = entry.bucketOriginal, !bucketOriginal.isEmpty {
+            data["bucketOriginal"] = bucketOriginal
+        }
         if let thumbURL = entry.thumbURL, !thumbURL.isEmpty {
             data["thumbURL"] = thumbURL
         }
@@ -144,6 +150,8 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             seq: seq,
             senderUID: senderUID,
             type: type,
+            bucketThumb: data["bucketThumb"] as? String,
+            bucketOriginal: data["bucketOriginal"] as? String,
             thumbKey: data["thumbKey"] as? String,
             originalKey: data["originalKey"] as? String,
             thumbURL: data["thumbURL"] as? String,

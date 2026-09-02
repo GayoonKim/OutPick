@@ -6,11 +6,13 @@ struct ChatMessageRecord: Codable, FetchableRecord, PersistableRecord {
 
     let id: String
     let seq: Int64
+    let unreadMessageSeq: Int64?
     let roomID: String
     let senderUID: String?
     let senderNickname: String?
     let senderAvatarPath: String?
     let messageType: String?
+    let roleEvent: String?
     let msg: String?
     let sentAt: Date?
     let attachments: String

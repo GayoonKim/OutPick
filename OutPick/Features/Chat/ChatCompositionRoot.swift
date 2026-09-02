@@ -52,6 +52,9 @@ enum ChatCompositionRoot {
         networkStatusProvider: NetworkStatusProviding,
         exitUseCase: ChatRoomExitUseCaseProtocol,
         memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol,
+        manageRoleUseCase: ManageChatRoomRoleUseCaseProtocol,
+        roleSession: ChatRoomRoleSession,
+        isModeratorDelegationEnabled: Bool,
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         onEvent: @escaping (ChatRoomSettingEvent) -> Void = { _ in }
     ) -> ChatRoomSettingViewController {
@@ -61,7 +64,8 @@ enum ChatCompositionRoot {
         let participantsUseCase = LoadChatRoomParticipantsUseCase(
             participantsRepository: participantsRepository,
             publicProfileRepository: publicProfileRepository,
-            chatRoomRepository: repositories.chatRoomRepository
+            chatRoomRepository: repositories.chatRoomRepository,
+            currentUserID: { currentUserProvider.canonicalUserID }
         )
         let mediaUseCase = LoadChatRoomMediaUseCase(
             localMediaRepository: localMediaRepository,
@@ -80,7 +84,11 @@ enum ChatCompositionRoot {
             loadMediaUseCase: mediaUseCase,
             exitUseCase: exitUseCase,
             memberModerationUseCase: memberModerationUseCase,
-            networkStatusProvider: networkStatusProvider
+            manageRoleUseCase: manageRoleUseCase,
+            roleSession: roleSession,
+            currentUserID: currentUserProvider.canonicalUserID,
+            networkStatusProvider: networkStatusProvider,
+            isModeratorDelegationEnabled: isModeratorDelegationEnabled
         )
         let settingVC = ChatRoomSettingViewController(
             viewModel: settingViewModel,

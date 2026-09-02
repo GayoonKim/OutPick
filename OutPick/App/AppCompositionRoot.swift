@@ -124,6 +124,10 @@ enum AppCompositionRoot {
             currentUserProvider: currentUserProvider
         )
         let chatPersistence = ChatPersistenceProvider(database: appDatabase)
+        let appFeatureGateStore = AppFeatureGateStore()
+        let rolloutDecisionUseCase = LoadAppRolloutDecisionUseCase(
+            repository: FirebaseRemoteConfigAppRolloutRepository()
+        )
 
         return AppCoordinator(
             window: window,
@@ -151,6 +155,8 @@ enum AppCompositionRoot {
             avatarImageManager: avatarImageManager,
             appSessionRuntime: appSessionRuntime,
             chatPersistence: chatPersistence,
+            rolloutDecisionUseCase: rolloutDecisionUseCase,
+            appFeatureGateStore: appFeatureGateStore,
             userBlockVisibilityStore: userBlockVisibilityStore,
             userBlockSessionController: userBlockSessionController,
             userBlockRepository: userBlockRepository
