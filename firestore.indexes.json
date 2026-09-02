@@ -1124,6 +1124,12 @@
       "indexes": []
     },
     {
+      "collectionGroup": "roomRoleMutationReceipts",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "moderationRoomCleanupJobs",
       "fieldPath": "expiresAt",
       "ttl": true,
@@ -1131,6 +1137,12 @@
     },
     {
       "collectionGroup": "roomOwnershipSuccessionJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "roomSuccessionAttempts",
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []
@@ -1155,6 +1167,18 @@
       "collectionGroup": "Messages",
       "fieldPath": "roleEvent.subjectUID",
       "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"

@@ -1,32 +1,15 @@
 /* eslint-disable require-jsdoc, max-len */
-import {createHash, randomUUID} from "node:crypto";
-import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
+import {createHash} from "node:crypto";
+import {FieldValue, Firestore, Timestamp, Transaction} from "firebase-admin/firestore";
 import {db} from "../../core/firebase.js";
 import {effectiveModerationState} from "../../moderation/state.js";
 import {appendRoomRoleEvent, storedModeratorCount} from "./roomRoleService.js";
 
 export type RoomMembershipSweepCause = "accountDeletion" | "permanentSuspension";
 
-type SuccessionJobClaim = {
-  jobID: string;
-  targetUID: string;
-  cause: RoomMembershipSweepCause;
-  attempt: number;
-  leaseOwner: string;
-  expectedStateVersion: number | null;
-  accountDeletionRequestID: string | null;
-  accountGenerationID: string | null;
-};
-
 type Successor = {uid: string; principalID: string; moderatorSinceMillis: number};
 
 const MEMBER_PAGE_SIZE = 25;
-const JOB_MAX_ATTEMPTS = 4;
-const JOB_LEASE_MILLIS = 10 * 60 * 1000;
-const COMPLETED_RETENTION_MILLIS = 30 * 24 * 60 * 60 * 1000;
-const RETRY_DELAYS_MILLIS: readonly number[] = [
-  0, 5_000, 15_000, 30_000,
-];
 
 function validID(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && !value.includes("/");
@@ -108,11 +91,12 @@ async function selectSuccessor(
   return null;
 }
 
-async function removeOrdinaryMembership(
+export async function removeOrdinaryMembership(
   firestore: Firestore,
   roomRef: FirebaseFirestore.DocumentReference,
   targetUID: string,
   now: Date,
+  guard?: (transaction: Transaction) => Promise<void>,
 ): Promise<void> {
   const refs = membershipRefs(firestore, roomRef, targetUID);
   const moderationStateRef = firestore.collection("roomModerationStates").doc(roomRef.id);
@@ -120,7 +104,10 @@ async function removeOrdinaryMembership(
     const [room, member, moderationState] = await Promise.all([
       transaction.get(roomRef), transaction.get(refs.member), transaction.get(moderationStateRef),
     ]);
+    if (guard) await guard(transaction);
     if (!member.exists) return;
+    // 실패·진행 중인 방장 승계는 일반 참여방 정리가 대신 삭제하지 않는다.
+    if (room.exists && canonicalOwnerUID(room.data()) === targetUID) return;
     const currentCount = Number(room.get("memberCount"));
     const nowTimestamp = Timestamp.fromDate(now);
     if (room.exists) {
@@ -146,6 +133,7 @@ async function applyOwnedRoomResolution(
   cause: RoomMembershipSweepCause,
   successor: Successor | null,
   now: Date,
+  prepareCompletion?: (transaction: Transaction) => Promise<() => void>,
 ): Promise<"settled" | "candidateChanged"> {
   const targetRefs = membershipRefs(firestore, roomRef, targetUID);
   const successorRefs = successor ? membershipRefs(firestore, roomRef, successor.uid) : null;
@@ -171,7 +159,12 @@ async function applyOwnedRoomResolution(
     const room = snapshots[0];
     const targetMember = snapshots[1];
     const targetJoined = snapshots[2];
-    if (!room.exists || !activeRoom(room.data()) || canonicalOwnerUID(room.data()) !== targetUID) return "settled";
+    // 최종 읽기 이후 현재 시각·세대·작업 상태를 다시 확인하고 완료를 같은 commit에 묶는다.
+    const complete = prepareCompletion ? await prepareCompletion(transaction) : () => undefined;
+    if (!room.exists || !activeRoom(room.data()) || canonicalOwnerUID(room.data()) !== targetUID) {
+      complete();
+      return "settled";
+    }
     if (!targetMember.exists || targetMember.get("role") !== "owner" ||
       !targetJoined.exists || targetJoined.get("role") !== "owner") {
       throw new Error("room_owner_projection_invalid");
@@ -227,20 +220,22 @@ async function applyOwnedRoomResolution(
     transaction.delete(targetRefs.member);
     transaction.delete(targetRefs.joined);
     transaction.delete(targetRefs.state);
+    complete();
     return "settled";
   });
 }
 
-async function resolveOwnedRoom(
+export async function resolveOwnedRoom(
   firestore: Firestore,
   roomRef: FirebaseFirestore.DocumentReference,
   targetUID: string,
   cause: RoomMembershipSweepCause,
   now: Date,
+  prepareCompletion?: (transaction: Transaction) => Promise<() => void>,
 ): Promise<void> {
   for (let retry = 0; retry < 5; retry += 1) {
     const successor = await selectSuccessor(firestore, roomRef, targetUID, now);
-    const result = await applyOwnedRoomResolution(firestore, roomRef, targetUID, cause, successor, now);
+    const result = await applyOwnedRoomResolution(firestore, roomRef, targetUID, cause, successor, now, prepareCompletion);
     if (result === "settled") return;
   }
   throw new Error("room_successor_changed");
@@ -289,177 +284,4 @@ export function roomOwnershipSuccessionJobID(
 
 export function accountDeletionSuccessionJobID(requestID: string): string {
   return createHash("sha256").update(`accountDeletion:${requestID}`).digest("hex");
-}
-
-export function successionRetryDelayMillis(attempt: number): number | null {
-  return RETRY_DELAYS_MILLIS[attempt] ?? null;
-}
-
-export function retryableSuccessionError(error: unknown): boolean {
-  const code = (error as {code?: unknown})?.code;
-  if ([4, 8, 10, 13, 14].includes(typeof code === "number" ? code : -1)) return true;
-  if (typeof code === "string" && [
-    "aborted", "deadline-exceeded", "resource-exhausted", "internal", "unavailable",
-  ].includes(code)) return true;
-  return error instanceof Error && error.message === "room_successor_changed";
-}
-
-async function claimJob(jobID: string, firestore: Firestore, now: Date): Promise<SuccessionJobClaim | null> {
-  const ref = firestore.collection("roomOwnershipSuccessionJobs").doc(jobID);
-  const leaseOwner = randomUUID();
-  return firestore.runTransaction(async (transaction) => {
-    const job = await transaction.get(ref);
-    if (!job.exists) return null;
-    const status = job.get("status");
-    const nextAttemptAt = job.get("nextAttemptAt");
-    const leaseExpiresAt = job.get("leaseExpiresAt");
-    const due = nextAttemptAt instanceof Timestamp && nextAttemptAt.toMillis() <= now.getTime();
-    const stale = leaseExpiresAt instanceof Timestamp && leaseExpiresAt.toMillis() <= now.getTime();
-    const claimable = status === "processing" ? stale :
-      (status === "pending" || status === "retryPending") && due;
-    if (!claimable) return null;
-    const previousAttempt = Number(job.get("attempt"));
-    const attempt = Number.isSafeInteger(previousAttempt) ? previousAttempt + 1 : 1;
-    if (attempt > JOB_MAX_ATTEMPTS) {
-      transaction.update(ref, {
-        status: "failed", nextAttemptAt: null, leaseOwner: null, leaseExpiresAt: null,
-        lastErrorCode: "max_attempts_exceeded", updatedAt: Timestamp.fromDate(now),
-      });
-      return null;
-    }
-    const targetUID = job.get("targetUID");
-    const cause = job.get("cause") as RoomMembershipSweepCause;
-    if (!validID(targetUID) || (cause !== "accountDeletion" && cause !== "permanentSuspension")) {
-      transaction.update(ref, {
-        status: "failed", nextAttemptAt: null, leaseOwner: null, leaseExpiresAt: null,
-        lastErrorCode: "invalid_job_contract", updatedAt: Timestamp.fromDate(now),
-      });
-      return null;
-    }
-    transaction.update(ref, {
-      status: "processing", attempt, leaseOwner,
-      leaseExpiresAt: Timestamp.fromMillis(now.getTime() + JOB_LEASE_MILLIS), updatedAt: Timestamp.fromDate(now),
-    });
-    return {
-      jobID, targetUID, cause, attempt, leaseOwner,
-      expectedStateVersion: Number.isSafeInteger(job.get("expectedStateVersion")) ? Number(job.get("expectedStateVersion")) : null,
-      accountDeletionRequestID: validID(job.get("accountDeletionRequestID")) ? job.get("accountDeletionRequestID") : null,
-      accountGenerationID: validID(job.get("accountGenerationID")) ? job.get("accountGenerationID") : null,
-    };
-  });
-}
-
-async function fenceIsCurrent(claim: SuccessionJobClaim, firestore: Firestore): Promise<boolean> {
-  if (claim.cause === "permanentSuspension") {
-    if (claim.expectedStateVersion === null) return false;
-    const account = await firestore.collection("moderationAccounts").doc(claim.targetUID).get();
-    return account.exists && account.get("accountStatus") === "active" &&
-      account.get("moderationStatus") === "suspended" && account.get("stateVersion") === claim.expectedStateVersion;
-  }
-  if (!claim.accountDeletionRequestID || !claim.accountGenerationID) return false;
-  const [request, user] = await firestore.getAll(
-    firestore.collection("accountDeletionRequests").doc(claim.accountDeletionRequestID),
-    firestore.collection("users").doc(claim.targetUID),
-  );
-  return request.exists && request.get("uid") === claim.targetUID &&
-    request.get("accountGenerationID") === claim.accountGenerationID &&
-    ["finalizing", "retryPending"].includes(request.get("status")) && request.get("stage") === "rooms" &&
-    user.exists && user.get("accountStatus") === "deletionPending" &&
-    user.get("accountGenerationID") === claim.accountGenerationID;
-}
-
-async function finishClaim(
-  claim: SuccessionJobClaim,
-  firestore: Firestore,
-  patch: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>,
-): Promise<void> {
-  const ref = firestore.collection("roomOwnershipSuccessionJobs").doc(claim.jobID);
-  await firestore.runTransaction(async (transaction) => {
-    const job = await transaction.get(ref);
-    if (!job.exists || job.get("status") !== "processing" || job.get("leaseOwner") !== claim.leaseOwner) {
-      throw new Error("room_succession_lease_lost");
-    }
-    transaction.update(ref, patch);
-  });
-}
-
-export async function processRoomOwnershipSuccessionJob(
-  jobID: string,
-  firestore: Firestore = db,
-  now = new Date(),
-): Promise<boolean> {
-  const claim = await claimJob(jobID, firestore, now);
-  if (!claim) return false;
-  try {
-    if (!(await fenceIsCurrent(claim, firestore))) {
-      await finishClaim(claim, firestore, {
-        status: "completed", result: "staleFence", completedAt: Timestamp.fromDate(now),
-        leaseOwner: null, leaseExpiresAt: null, nextAttemptAt: null, lastErrorCode: null,
-        updatedAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + COMPLETED_RETENTION_MILLIS),
-      });
-      return true;
-    }
-    const completed = await resolveRoomMembershipPage(claim.targetUID, claim.cause, now, firestore);
-    if (completed) {
-      await finishClaim(claim, firestore, {
-        status: "completed", result: "resolved", completedAt: Timestamp.fromDate(now),
-        leaseOwner: null, leaseExpiresAt: null, nextAttemptAt: null, lastErrorCode: null,
-        updatedAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + COMPLETED_RETENTION_MILLIS),
-      });
-      return true;
-    }
-    // 정상적인 pagination은 실패 재시도 횟수로 계산하지 않는다.
-    await finishClaim(claim, firestore, {
-      status: "retryPending", attempt: Math.max(0, claim.attempt - 1),
-      leaseOwner: null, leaseExpiresAt: null, nextAttemptAt: Timestamp.fromDate(now),
-      lastErrorCode: null, updatedAt: Timestamp.fromDate(now),
-    });
-    return false;
-  } catch (error) {
-    const delay = successionRetryDelayMillis(claim.attempt);
-    const terminal = delay === null || !retryableSuccessionError(error);
-    const code = error instanceof Error ? error.message.slice(0, 120) : "unknown";
-    await finishClaim(claim, firestore, {
-      status: terminal ? "failed" : "retryPending", leaseOwner: null, leaseExpiresAt: null,
-      nextAttemptAt: terminal ? null : Timestamp.fromMillis(now.getTime() + delay),
-      lastErrorCode: code, updatedAt: Timestamp.fromDate(now),
-    });
-    if (terminal) {
-      console.error("[roomSuccession] terminal failure", {
-        severity: "ERROR", alertType: "ROOM_OWNERSHIP_SUCCESSION_FAILED",
-        jobID, cause: claim.cause, attempt: claim.attempt, code,
-      });
-    }
-    return false;
-  }
-}
-
-export async function replayFailedRoomOwnershipSuccessionJob(
-  jobID: string,
-  firestore: Firestore = db,
-  now = new Date(),
-): Promise<boolean> {
-  const ref = firestore.collection("roomOwnershipSuccessionJobs").doc(jobID);
-  return firestore.runTransaction(async (transaction) => {
-    const job = await transaction.get(ref);
-    if (!job.exists || job.get("status") !== "failed") return false;
-    transaction.update(ref, {
-      status: "retryPending", attempt: 0, nextAttemptAt: Timestamp.fromDate(now),
-      leaseOwner: null, leaseExpiresAt: null, lastErrorCode: null, completedAt: null,
-      expiresAt: null, updatedAt: Timestamp.fromDate(now),
-    });
-    return true;
-  });
-}
-
-export async function dueRoomOwnershipSuccessionJobIDs(
-  firestore: Firestore = db,
-  now = new Date(),
-  limit = 25,
-): Promise<string[]> {
-  const snapshot = await firestore.collection("roomOwnershipSuccessionJobs")
-    .where("status", "in", ["pending", "retryPending", "processing"])
-    .where("nextAttemptAt", "<=", Timestamp.fromDate(now))
-    .orderBy("nextAttemptAt").limit(limit).get();
-  return snapshot.docs.map((document) => document.id);
 }

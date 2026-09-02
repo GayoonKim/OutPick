@@ -181,8 +181,12 @@ async function advance(
       const jobRef = db.collection("roomOwnershipSuccessionJobs")
         .doc(accountDeletionSuccessionJobID(claim.requestID));
       transaction.create(jobRef, {
-        schemaVersion: 2,
+        schemaVersion: 3,
         targetUID: claim.uid,
+        phase: "ownedCanonical",
+        cursor: null,
+        pendingRoomCount: 0,
+        failedRoomCount: 0,
         cause: "accountDeletion",
         accountDeletionRequestID: claim.requestID,
         accountGenerationID: claim.accountGenerationID,

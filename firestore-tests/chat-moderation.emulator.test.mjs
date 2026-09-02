@@ -22,9 +22,12 @@ import {
 } from "../functions/lib/chat/moderation/roomRoleService.js";
 import {
   accountDeletionSuccessionJobID,
-  processRoomOwnershipSuccessionJob,
   resolveRoomMembershipPage,
 } from "../functions/lib/chat/moderation/roomMembershipSweep.js";
+import {
+  processRoomOwnershipSuccessionJob,
+  processRoomSuccessionAttempt,
+} from "../functions/lib/chat/moderation/roomSuccessionJobs.js";
 import {
   processMessageCleanupJob,
   processRoomCleanupJob,
@@ -438,6 +441,9 @@ describe("chat moderation lifecycle transactions", () => {
     assert.equal(continued.data()?.attempt, 0);
     assert.equal(await resolveRoomPage(deletionRequestID), false);
 
+    await processRoomSuccessionAttempt(jobID, roomID, 1, db, () => now);
+    await processRoomOwnershipSuccessionJob(jobID, db, now);
+    await processRoomOwnershipSuccessionJob(jobID, db, now);
     assert.equal(await processRoomOwnershipSuccessionJob(jobID, db, now), true);
     const completed = await jobRef.get();
     assert.equal(completed.data()?.status, "completed");

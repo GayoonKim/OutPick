@@ -534,23 +534,30 @@ git diff --check -- firebase.json storage.rules
 - text/lookbook Socket transaction과 media ready Function은 일반 message마다 `Rooms.seq`와 `Rooms.unreadMessageSeq`, message의 두 sequence를 함께 갱신한다. `roomRoleEvent` transaction은 `seq`만 갱신한다.
 - `chatRoleEventDeliveryJobs` query용 `status + nextAttemptAt`, `status + leaseExpiresAt` composite와 최종 실패 `expiresAt` TTL override를 manifest에 추가했다.
 - `Socket/src/roles/roleEventDeliveryWatcher.js`는 60초 lease, 5초 poll, batch 50, 최대 10회 backoff를 적용한다. 성공 job은 즉시 삭제하며 timeline event는 outbox 상태와 무관하게 Messages에 남는다.
-- 이 Rules/index/Socket 변경은 로컬 검증만 완료했고 Development·Production에는 배포하지 않았다.
+- 이 Rules/index/Socket 변경은 Development와 Production에 배포했다. Production Socket은 `outpick-socket-mod-delegation-0902` revision traffic 100%이며 이전 revision은 롤백용으로 보존했다.
 
 ### Moderator delegation Phase 5 자동 승계·계정 정리
 
+- 부모 장애 격리(2026-09-02 사용자 승인): `roomSuccessionJobs.ts`는 부모 실패와 stale 계정 fence를 분리한다. 부모는 `failed/orchestrationFailure`로 phase·cursor·오류를 유지하고, 이미 생성한 방은 기존 50초/4회 예산으로 독립 실행한다. 실패 부모의 `nextAttemptAt`은 미완료 자식이 있는 동안 예약/watchdog용으로만 유지하며 마지막 자식 완료/만료 시 null이 된다. `drainFailedParentRooms`는 부모 탐색·일반 정리를 자동 재시도하지 않는다. 수동 방 replay도 부모 오류를 지우거나 계정 삭제 finalizer를 통과시키지 않는다.
+- 부모 장애 격리 배포 검증: Development 실제 Cloud Tasks에서 부모 failed 상태의 독립 승계·50초 만료·실패 방 generation 2 replay·부모 오류 보존을 확인했다. Production worker 3개 재배포 후 `onroomownershipsuccessionqueued-00004-cug`, `runroomownershipsuccessiontask-00002-rog`, `drainroomownershipsuccessionjobs-00004-wap` ACTIVE와 trigger DO_NOT_RETRY를 확인했고 배포 후 관련 ERROR는 0건이었다. Production에는 장애/계정 삭제를 주입하지 않았다.
 - `functions/src/chat/moderation/roomMembershipSweep.ts`는 계정 삭제 request/generation과 영구 정지 state version fence를 통합하고, 현재 moderator만 `moderatorSince`·UID 순으로 선택해 transaction에서 capability·membership·ban을 재검증한다. 후보가 없으면 기존 room lifecycle cleanup으로 종료한다.
-- 논리 실패 재시도는 최초 포함 4회, `즉시 → 5초 → 15초 → 30초` 총 50초다. `runRoomOwnershipSuccessionTask` Task Queue가 각 시점을 예약하며 5분 `drainRoomOwnershipSuccessionJobs`는 task 누락과 만료 lease watchdog이다. 정상 membership pagination은 attempt를 소비하지 않는다.
+- `roomSuccessionJobs.ts`의 schema v3 계정 작업은 `ownedCanonical → ownedLegacy → members → waitingRooms` pagination·집계만 담당한다. 실제 승계는 `roomOwnershipSuccessionJobs/{jobID}/roomSuccessionAttempts/{roomID}`별로 독립 처리하며, 생성 시 `startedAt`과 `deadlineAt = startedAt + 50초`를 고정한다. 일반 참여방 정리는 이 기한 밖에서 진행하되 실패/진행 중인 방장의 membership은 제거하지 않는다.
+- `roomSuccessionPolicy.ts`는 방별 최대 4회와 실패 뒤 대기 `5초/15초/20초`를 소유한다. 실행 지연이 없다면 0/5/20/40초에 시도하며, 남은 시간이 부족하면 4회를 채우지 않고 중단한다. 매번 실제 권한 변경 transaction에서 현재 clock·세대·계정 fence·방별 상태를 확인하고 역할 변경과 방별 완료·parent counter를 같은 commit에 기록한다. 이미 발행한 commit의 응답 유실은 저장된 결과로 판정하며 성공을 실패로 덮어쓰지 않는다.
+- `roomMembershipSweepFunctions.ts`의 Firestore trigger는 `retry: false`다. 기존 Task Queue는 `{jobID, roomID?, generation?, expireOnly?}`를 지원하고 방별 retry/만료 정리를 예약한다. 5분 watchdog은 만료된 방의 실패 확정만 수행하고 새 승계는 하지 않는다. DB 장애 중 실패 기록은 복구 후 가능하며 50초 시점의 응답/기록 완료까지 보장하는 계약은 아니다.
 - `functions/src/accountDeletion/{cleanup,drain}.ts`는 rooms stage 진입과 job 생성을 원자 결합하고 `completed/resolved` 결과를 finalizer gate로 사용한다. 계정 삭제 role event는 subject UID와 nickname snapshot을 익명화하고 같은 event ID의 privacy outbox를 만든다.
-- 실패 job은 TTL 삭제하지 않고 `ROOM_OWNERSHIP_SUCCESSION_FAILED` 구조화 오류 신호와 최소 실패 코드를 남긴다. `npm run replay:room-succession -- --project ... --job ... --expected-target-uid ...`는 기본 dry-run이며 Production apply는 exact confirmation을 요구한다.
-- `firestore.indexes.json`에는 `Rooms.ownerUID + isClosed`와 role event subject collection-group query가 추가됐다. Task Queue/Functions/index와 alert policy는 아직 배포하지 않았다.
+- 실패 방은 TTL 삭제하지 않고 `ROOM_OWNERSHIP_SUCCESSION_FAILED` 구조화 오류 신호와 최소 실패 코드를 남긴다. `npm run replay:room-succession -- --project ... --job ... --room ... --expected-target-uid ...`는 기본 dry-run이며 Production apply는 exact confirmation을 요구한다. 실패한 방 하나만 새 generation/50초를 부여하고 성공한 다른 방은 유지한다. 대상 UID와 계정 fence는 apply transaction에서도 재검증한다.
+- 방별 완료 상태의 30일 보존은 `roomSuccessionAttempts.expiresAt` TTL manifest가 담당한다. 부모 TTL은 하위 collection을 지우지 않으므로 자식 TTL이 별도로 필요하다. 신규 계약은 로컬 검증 후 Development 연결 검증·Production 배포 순서로 반영해야 하며 구 worker와 schema v3 신규 작업이 섞이지 않도록 진행 중 작업과 계정 삭제/제재 producer의 배포 순서를 점검한다.
+- `firestore.indexes.json`에는 `Rooms.ownerUID + isClosed`와 role event subject collection-group query가 추가됐다. 2026-09-02 Development 실제 Cloud Tasks 검증 뒤 Production 관련 Functions 20개·Rules·index/TTL을 반영했다. TTL 3개는 ACTIVE이며 오류 신호와 별개의 alert policy 설정은 재확인 필요다.
 
 ### Moderator delegation Phase 6 migration·rollout gate
 
+- 2026-09-02 Production 활성화: 앱 미출시·미운영이라는 사용자 확인에 따라 최소 버전 상향 없이 활성화했다. `assignRoomModerator`와 `transferRoomOwnershipAndLeave`의 Boolean parameter는 true, Remote Config version 1의 앱 flag도 true다. 최소 버전/App Store URL은 미설정으로 유지한다. 최신 Production 빌드의 iPhone 17 Pro Max에서 임명·회수와 역할 원복, 공개 이벤트 2건, unread·preview 유지, 읽음 마커 제외, outbox 0건을 확인했다. Production 계정 삭제·영구 정지 등 파괴적 시나리오는 실행하지 않았으며 해당 계약은 Development 실제 Cloud Tasks와 Emulator 검증으로 확인했다.
+- 24시간 성공 receipt는 `roomRoleMutationReceipts.expiresAt` TTL과 함께 배포해야 한다. `expiresAt` 기록만으로 자동 삭제되지 않으므로 `firestore-tests/room-role-indexes.contract.test.mjs`로 receipt·outbox manifest를 검사하고 대상 프로젝트의 TTL `ACTIVE`를 별도로 확인한다. Production 사전 감사에서 누락된 receipt TTL 선언을 보완했다.
 - `functions/scripts/migrate-room-moderator-cutover.mjs`와 `room-moderator-cutover-plan.mjs`가 기본 dry-run, blocker fail-closed, exact room/write/hash apply fence와 멱등 재감사를 소유한다.
 - `functions/src/chat/moderation/rollout.ts`의 `CHAT_ROOM_MODERATOR_DELEGATION_ENABLED` Boolean parameter는 기본 false다. `functions.ts`에서 신규 임명과 관리자 대상 소유권 이전만 막고 회수·사임·자동 승계·종료 같은 안전 수렴 경로는 막지 않는다.
-- iOS Firebase Remote Config key는 `minimum_supported_ios_version`, `chat_room_moderator_delegation_enabled`, `ios_app_store_url`이다. 2026-09-01 Development는 migration 수렴 뒤 서버 flag와 앱 flag를 활성화했고 Remote Config version 1에는 앱 flag만 true로 게시했다. 최소 버전·App Store URL은 미설정이며 Production key는 없다.
+- iOS Firebase Remote Config key는 `minimum_supported_ios_version`, `chat_room_moderator_delegation_enabled`, `ios_app_store_url`이다. Development는 2026-09-01, Production은 2026-09-02에 migration 수렴 뒤 서버 flag와 앱 flag를 활성화했다. 두 프로젝트의 Remote Config version 1에는 앱 flag만 true로 게시했으며 최소 버전·App Store URL은 미설정이다.
 - migration은 사용자별 `joinedRooms`를 한 번 inventory해 room별 projection을 구성하므로 별도 collection-group index를 요구하지 않는다. Development 4개 방에 15 writes를 적용한 뒤 write 0·blocker 0으로 재감사했다.
-- Development Rules ruleset은 `d4643a2b-fb8b-4a02-8757-7079e0e25365`; role delegation index는 READY, delivery TTL은 ACTIVE다. 관련 Functions 20개와 Socket revision `outpick-socket-development-mod-delegation-0901`을 반영했으며 Production은 미변경이다.
+- Development Rules ruleset은 `d4643a2b-fb8b-4a02-8757-7079e0e25365`; role delegation index는 READY, delivery TTL은 ACTIVE다. Production은 2개 방·7개 문서 backfill 뒤 재감사 write 0·blocker 0을 확인했고 Rules ruleset `3b28c742-918b-4b93-933b-5b580b8347fe`와 관련 Functions·Socket을 반영했다. 기존 방 데이터와 legacy creatorUID는 보존한다.
 
 ### Index·retention
 

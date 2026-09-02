@@ -11,15 +11,18 @@ function value(arguments_, name) {
 function parseArguments(arguments_) {
   const projectID = value(arguments_, "--project");
   const jobID = value(arguments_, "--job");
+  const roomID = value(arguments_, "--room");
   const expectedTargetUID = value(arguments_, "--expected-target-uid");
   if (!projectID) throw new Error("--project가 필요합니다.");
   if (!jobID || jobID.includes("/")) throw new Error("유효한 --job이 필요합니다.");
+  if (!roomID || roomID.includes("/")) throw new Error("재처리할 실패 방의 --room이 필요합니다.");
   if (!expectedTargetUID || expectedTargetUID.includes("/")) {
     throw new Error("--expected-target-uid가 필요합니다.");
   }
   return {
     projectID,
     jobID,
+    roomID,
     expectedTargetUID,
     apply: arguments_.includes("--apply"),
     confirmation: value(arguments_, "--confirm"),
@@ -37,7 +40,7 @@ process.env.GOOGLE_CLOUD_PROJECT = options.projectID;
 
 const [{db}, sweep, worker] = await Promise.all([
   import("../lib/core/firebase.js"),
-  import("../lib/chat/moderation/roomMembershipSweep.js"),
+  import("../lib/chat/moderation/roomSuccessionJobs.js"),
   import("../lib/chat/moderation/roomMembershipSweepFunctions.js"),
 ]);
 
@@ -45,15 +48,19 @@ try {
   const ref = db.collection("roomOwnershipSuccessionJobs").doc(options.jobID);
   const snapshot = await ref.get();
   if (!snapshot.exists) throw new Error("승계 job을 찾지 못했습니다.");
+  const room = await ref.collection("roomSuccessionAttempts").doc(options.roomID).get();
+  if (!room.exists) throw new Error("방별 승계 작업을 찾지 못했습니다.");
   const summary = {
     mode: options.apply ? "apply" : "dry-run",
     projectID: options.projectID,
     jobID: options.jobID,
     targetUID: snapshot.get("targetUID"),
     cause: snapshot.get("cause"),
-    status: snapshot.get("status"),
-    attempt: snapshot.get("attempt"),
-    lastErrorCode: snapshot.get("lastErrorCode") ?? null,
+    roomID: options.roomID,
+    status: room.get("status"),
+    generation: room.get("generation"),
+    attempt: room.get("attempt"),
+    lastErrorCode: room.get("lastErrorCode") ?? null,
   };
   console.log(JSON.stringify(summary, null, 2));
   if (summary.targetUID !== options.expectedTargetUID) {
@@ -63,7 +70,7 @@ try {
   if (!options.apply) {
     console.log("dry-run 완료: --apply가 없어 Firestore를 변경하지 않았습니다.");
   } else {
-    const replayed = await sweep.replayFailedRoomOwnershipSuccessionJob(options.jobID, db);
+    const replayed = await sweep.replayFailedRoomOwnershipSuccessionJob(options.jobID, options.roomID, options.expectedTargetUID, db);
     if (!replayed) throw new Error("승계 job replay 상태 전이가 실패했습니다.");
     await worker.processRoomOwnershipSuccessionAndSchedule(options.jobID);
     console.log(JSON.stringify({applied: true, jobID: options.jobID}));
