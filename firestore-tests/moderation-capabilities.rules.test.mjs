@@ -55,6 +55,12 @@ beforeEach(async () => {
 after(async () => testEnvironment.cleanup());
 
 describe("moderation capability rules", () => {
+  test("방별 자동 승계 상태는 당사자도 직접 읽거나 수정할 수 없다", async () => {
+    const firestore = testEnvironment.authenticatedContext("active").firestore();
+    const ref = doc(firestore, "roomOwnershipSuccessionJobs", "job", "roomSuccessionAttempts", "room");
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref, {status: "completed", deadlineAt: new Date()}));
+  });
   test("restricted는 읽을 수 있지만 UGC 생성은 거부한다", async () => {
     const firestore = testEnvironment.authenticatedContext("restricted").firestore();
     await assertSucceeds(getDoc(doc(firestore, "users", "restricted")));

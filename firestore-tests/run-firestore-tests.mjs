@@ -46,7 +46,7 @@ const result = spawnSync(
       "account-deletion.emulator.test.mjs moderation-principal.emulator.test.mjs " +
       "moderation-reports.emulator.test.mjs " +
       "comment-write-rate-limit.emulator.test.mjs " +
-      "chat-moderation.emulator.test.mjs " +
+      "chat-moderation.emulator.test.mjs room-succession-deadline.emulator.test.mjs " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +
       "--apply --project outpick-rules-test " +
       "&& node ../functions/scripts/seed-style-moods.mjs " +

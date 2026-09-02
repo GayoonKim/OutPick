@@ -19,6 +19,7 @@ type Endpoint = {
   callableTrigger?: Record<string, unknown>;
   httpsTrigger?: {invoker?: string[]};
   eventTrigger?: {
+    retry?: boolean;
     eventType?: string;
     eventFilterPathPatterns?: {document?: string};
   };
@@ -322,6 +323,7 @@ test("Firebase deployment export 이름 117개를 유지한다", () => {
 });
 
 test("방장 자동 승계 task는 전달 실패만 짧게 복구하고 논리 재시도는 전용 job이 소유한다", () => {
+  assert.equal(endpoint("onRoomOwnershipSuccessionQueued").eventTrigger?.retry, false);
   const value = endpoint("runRoomOwnershipSuccessionTask");
   assertCommonMetadata("runRoomOwnershipSuccessionTask", value);
   assert.equal(runtimeNumber(value.timeoutSeconds), 60);
