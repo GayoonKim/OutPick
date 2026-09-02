@@ -601,8 +601,12 @@ export async function mutateAccountModerationService(
           result.stateVersion,
         );
         transaction.create(firestore.collection("roomOwnershipSuccessionJobs").doc(jobID), {
-          schemaVersion: 2,
+          schemaVersion: 3,
           targetUID: account.id,
+          phase: "ownedCanonical",
+          cursor: null,
+          pendingRoomCount: 0,
+          failedRoomCount: 0,
           cause: "permanentSuspension",
           expectedStateVersion: result.stateVersion,
           accountDeletionRequestID: null,
