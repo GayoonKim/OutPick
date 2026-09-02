@@ -182,11 +182,25 @@ service cloud.firestore {
     }
 
     function validLastReadSeqUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastReadSeq", "updatedAt"])
-        && request.resource.data.lastReadSeq is int
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(["lastReadSeq", "lastReadUnreadMessageSeq", "updatedAt"])
         && (
-          !("lastReadSeq" in resource.data)
-          || request.resource.data.lastReadSeq >= resource.data.lastReadSeq
+          !changed.hasAny(["lastReadSeq"])
+          || (
+            request.resource.data.lastReadSeq is int
+            && request.resource.data.lastReadSeq >= 0
+            && (!("lastReadSeq" in resource.data)
+              || request.resource.data.lastReadSeq >= resource.data.lastReadSeq)
+          )
+        )
+        && (
+          !changed.hasAny(["lastReadUnreadMessageSeq"])
+          || (
+            request.resource.data.lastReadUnreadMessageSeq is int
+            && request.resource.data.lastReadUnreadMessageSeq >= 0
+            && (!("lastReadUnreadMessageSeq" in resource.data)
+              || request.resource.data.lastReadUnreadMessageSeq >= resource.data.lastReadUnreadMessageSeq)
+          )
         );
     }
 
@@ -200,6 +214,7 @@ service cloud.firestore {
           "role",
           "joinedAt",
           "lastReadSeq",
+          "lastReadUnreadMessageSeq",
           "isClosed",
           "updatedAt"
         ])
@@ -542,8 +557,10 @@ service cloud.firestore {
             isRoomCreator(roomID)
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
               "creatorUID",
+              "ownerUID",
               "participantUIDs",
               "seq",
+              "unreadMessageSeq",
               "lastMessage",
               "lastMessageAt",
               "lastMessageSeq",
@@ -578,9 +595,7 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if isRoomParticipant(roomID);
         allow create: if createsRoomMember(roomID, uid);
-        allow delete: if isAccountActive()
-          && request.auth.uid == uid
-          && !isRoomCreator(roomID);
+        allow delete: if false;
         allow update: if false;
       }
 
@@ -591,6 +606,18 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    match /roomModerationStates/{roomID} {
+      allow read, write: if false;
+    }
+
+    match /roomRoleMutationReceipts/{receiptID} {
+      allow read, write: if false;
+    }
+
+    match /chatRoleEventDeliveryJobs/{eventID} {
+      allow read, write: if false;
     }
 
     match /tags/{tagID} {

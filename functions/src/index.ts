@@ -15,17 +15,23 @@ export {
 } from "./moderation/admin/functions.js";
 export {
   acknowledgeRoomClosure,
+  assignRoomModerator,
   closeOwnedChatRoom,
   closeRoomByModeration,
   deleteChatMessage,
   getMyRoomAccess,
+  leaveChatRoom,
   listRoomBans,
   removeRoomMember,
+  resignRoomModerator,
+  revokeRoomModerator,
+  transferRoomOwnershipAndLeave,
   unbanRoomMember,
 } from "./chat/moderation/functions.js";
 export {
   drainRoomOwnershipSuccessionJobs,
   onRoomOwnershipSuccessionQueued,
+  runRoomOwnershipSuccessionTask,
 } from "./chat/moderation/roomMembershipSweepFunctions.js";
 export {
   cancelAccountDeletion,

@@ -7,12 +7,17 @@ import {requireRecentAdminAuth} from "../../moderation/admin/contracts.js";
 import {assertAccountCapability} from "../../shared/accountStatus.js";
 import {
   parseAcknowledgeRoomClosureInput,
+  parseAssignRoomModeratorInput,
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
   parseGetMyRoomAccessInput,
+  parseLeaveChatRoomInput,
   parseListRoomBansInput,
   parseRemoveRoomMemberInput,
+  parseResignRoomModeratorInput,
+  parseRevokeRoomModeratorInput,
+  parseTransferRoomOwnershipAndLeaveInput,
   parseUnbanRoomMemberInput,
 } from "./contracts.js";
 import {
@@ -27,6 +32,14 @@ import {
   removeRoomMemberService,
   unbanRoomMemberService,
 } from "./roomBanService.js";
+import {
+  assignRoomModeratorService,
+  leaveChatRoomService,
+  resignRoomModeratorService,
+  revokeRoomModeratorService,
+  transferRoomOwnershipAndLeaveService,
+} from "./roomRoleService.js";
+import {assertModeratorDelegationCreationEnabled} from "./rollout.js";
 
 const options = {region: FUNCTIONS_REGION, enforceAppCheck: true};
 
@@ -118,5 +131,55 @@ export const getMyRoomAccess = onCall(options, async (request) => {
     return await getMyRoomAccessService(uid, parseGetMyRoomAccessInput(request.data));
   } catch (error) {
     return callableError(error, "getMyRoomAccess");
+  }
+});
+
+export const assignRoomModerator = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    assertModeratorDelegationCreationEnabled();
+    return await assignRoomModeratorService(uid, parseAssignRoomModeratorInput(request.data));
+  } catch (error) {
+    return callableError(error, "assignRoomModerator");
+  }
+});
+
+export const revokeRoomModerator = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await revokeRoomModeratorService(uid, parseRevokeRoomModeratorInput(request.data));
+  } catch (error) {
+    return callableError(error, "revokeRoomModerator");
+  }
+});
+
+export const resignRoomModerator = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await resignRoomModeratorService(uid, parseResignRoomModeratorInput(request.data));
+  } catch (error) {
+    return callableError(error, "resignRoomModerator");
+  }
+});
+
+export const leaveChatRoom = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    return await leaveChatRoomService(uid, parseLeaveChatRoomInput(request.data));
+  } catch (error) {
+    return callableError(error, "leaveChatRoom");
+  }
+});
+
+export const transferRoomOwnershipAndLeave = onCall(options, async (request) => {
+  try {
+    const uid = requiredAuthUID(request.auth?.uid);
+    assertModeratorDelegationCreationEnabled();
+    return await transferRoomOwnershipAndLeaveService(
+      uid,
+      parseTransferRoomOwnershipAndLeaveInput(request.data),
+    );
+  } catch (error) {
+    return callableError(error, "transferRoomOwnershipAndLeave");
   }
 });

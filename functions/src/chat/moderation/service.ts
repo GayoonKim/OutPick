@@ -2,7 +2,7 @@
 import {Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
-import {assertAccountCapability} from "../../shared/accountStatus.js";
+import {requireAccountCapabilityData} from "../../shared/accountStatus.js";
 import {
   assertAuditReplay,
   moderationAuditActionID,
@@ -19,13 +19,19 @@ import {
   CloseRoomByModerationInput,
   DeleteChatMessageInput,
 } from "./contracts.js";
+import {
+  requireRoomOwner,
+  resolveRoomRoleInTransaction,
+  roomRoleError,
+  storedRoomMemberRole,
+} from "./roomRoleService.js";
 
 export {
   messageCleanupJobID,
   messageStorageTargets,
 } from "../deletion/mutation.js";
 
-type DeleteActorKind = "author" | "roomOwner" | "platformAdmin";
+type DeleteActorKind = "author" | "roomOwner" | "roomModerator" | "platformAdmin";
 type ClosureType = "closedByOwner" | "closedByModeration";
 
 function activePlatformAdmin(data: FirebaseFirestore.DocumentData | undefined): boolean {
@@ -44,27 +50,6 @@ function roomIsActive(data: FirebaseFirestore.DocumentData): boolean {
 
 function messageTargetID(roomID: string, messageID: string): string {
   return `${roomID}:${messageID}`;
-}
-
-async function deleteActor(
-  actorUID: string,
-  room: FirebaseFirestore.DocumentData,
-  message: FirebaseFirestore.DocumentData,
-  admin: FirebaseFirestore.DocumentData | undefined,
-): Promise<DeleteActorKind> {
-  if (message.senderUID === actorUID) {
-    await assertAccountCapability(actorUID, "deleteOwnUGC");
-    return "author";
-  }
-  if (room.creatorUID === actorUID) {
-    await assertAccountCapability(actorUID, "moderateOwnedRoom");
-    return "roomOwner";
-  }
-  if (activePlatformAdmin(admin)) {
-    await assertAccountCapability(actorUID, "readAppContent");
-    return "platformAdmin";
-  }
-  throw new HttpsError("permission-denied", "메시지 삭제 권한이 없습니다.");
 }
 
 export async function deleteChatMessageService(
@@ -89,45 +74,19 @@ export async function deleteChatMessageService(
   const roomRef = firestore.collection("Rooms").doc(input.roomID);
   const messageRef = roomRef.collection("Messages").doc(input.messageID);
   const adminRef = firestore.collection("platformAdmins").doc(actorUID);
-  const [roomSnapshot, messageSnapshot, adminSnapshot] = await Promise.all([
-    roomRef.get(),
-    messageRef.get(),
-    adminRef.get(),
-  ]);
-  if (!roomSnapshot.exists || !roomSnapshot.data()) {
-    throw new HttpsError("not-found", "채팅방을 찾을 수 없습니다.");
-  }
-  if (!messageSnapshot.exists || !messageSnapshot.data()) {
-    throw new HttpsError("not-found", "메시지를 찾을 수 없습니다.");
-  }
-  const actorKind = await deleteActor(
-    actorUID,
-    roomSnapshot.data()!,
-    messageSnapshot.data()!,
-    adminSnapshot.data(),
-  );
-  if (actorKind !== "author" && !input.reasonCode) {
-    throw new HttpsError("invalid-argument", "관리 목적 삭제에는 reasonCode가 필요합니다.");
-  }
-  if (actorKind === "platformAdmin") {
-    const authTimeMillis = typeof authTime === "number" ? authTime * 1_000 : NaN;
-    if (!Number.isFinite(authTimeMillis) || now.getTime() - authTimeMillis > 5 * 60_000 ||
-      authTimeMillis > now.getTime() + 30_000) {
-      throw new HttpsError("unauthenticated", "관리자 작업을 위해 다시 로그인해 주세요.");
-    }
-  }
-
   const jobRef = firestore.collection("chatMessageCleanupJobs")
     .doc(messageCleanupJobID(input.roomID, input.messageID));
   const incidentID = messageIncidentID(input.roomID, input.messageID);
   const guardRef = firestore.collection("moderationMessageGuards").doc(incidentID);
   return firestore.runTransaction(async (transaction) => {
-    const [audit, currentRoom, currentMessage, currentJob, currentGuard] = await Promise.all([
+    const [audit, currentRoom, currentMessage, currentJob, currentGuard, admin, actorAccount] = await Promise.all([
       transaction.get(auditRef),
       transaction.get(roomRef),
       transaction.get(messageRef),
       transaction.get(jobRef),
       transaction.get(guardRef),
+      transaction.get(adminRef),
+      transaction.get(firestore.collection("moderationAccounts").doc(actorUID)),
     ]);
     if (audit.exists && audit.data()) {
       return assertAuditReplay(audit.data()!, {
@@ -149,10 +108,50 @@ export async function deleteChatMessageService(
       throw new HttpsError("not-found", "메시지를 찾을 수 없습니다.");
     }
     const message = currentMessage.data()!;
+    if (message.messageType === "roomRoleEvent" || message.serverGenerated === true) {
+      throw new HttpsError("failed-precondition", "서버 역할 이벤트는 삭제할 수 없습니다.");
+    }
     if (message.seq !== input.expectedSeq) {
       throw new HttpsError("aborted", "메시지 상태가 변경됐습니다.", {
         errorCode: "STALE_MESSAGE_SEQ",
       });
+    }
+    let actorKind: DeleteActorKind;
+    if (message.senderUID === actorUID) {
+      requireAccountCapabilityData(actorAccount.exists ? actorAccount.data() : undefined, "deleteOwnUGC", now);
+      actorKind = "author";
+    } else if (activePlatformAdmin(admin.data())) {
+      requireAccountCapabilityData(actorAccount.exists ? actorAccount.data() : undefined, "readAppContent", now);
+      const authTimeMillis = typeof authTime === "number" ? authTime * 1_000 : NaN;
+      if (!Number.isFinite(authTimeMillis) || now.getTime() - authTimeMillis > 5 * 60_000 ||
+        authTimeMillis > now.getTime() + 30_000) {
+        throw new HttpsError("unauthenticated", "관리자 작업을 위해 다시 로그인해 주세요.");
+      }
+      actorKind = "platformAdmin";
+    } else {
+      const resolved = await resolveRoomRoleInTransaction(
+        transaction, firestore, input.roomID, actorUID, now,
+      );
+      if (resolved.role !== "owner" && resolved.role !== "moderator") {
+        throw roomRoleError("NOT_ROOM_MODERATOR", "메시지 운영 삭제 권한이 없습니다.", "permission-denied");
+      }
+      const senderUID = message.senderUID;
+      const senderMember = typeof senderUID === "string" && senderUID && !senderUID.includes("/") ?
+        await transaction.get(roomRef.collection("members").doc(senderUID)) : null;
+      const senderRole = senderMember?.exists ? storedRoomMemberRole(senderMember.get("role")) : null;
+      if (senderMember?.exists && !senderRole) {
+        throw roomRoleError("ROOM_ROLE_STATE_INVALID", "메시지 작성자의 역할 상태가 올바르지 않습니다.");
+      }
+      if (senderRole === "owner" && resolved.role !== "owner") {
+        throw roomRoleError("TARGET_IS_OWNER", "관리자는 방장의 메시지를 삭제할 수 없습니다.");
+      }
+      if (senderRole === "moderator" && resolved.role !== "owner") {
+        throw roomRoleError("TARGET_IS_MODERATOR", "관리자끼리는 서로 제재할 수 없습니다.");
+      }
+      actorKind = resolved.role === "owner" ? "roomOwner" : "roomModerator";
+    }
+    if (actorKind !== "author" && !input.reasonCode) {
+      throw new HttpsError("invalid-argument", "관리 목적 삭제에는 reasonCode가 필요합니다.");
     }
     const nowTimestamp = Timestamp.fromDate(now);
     const mutation = applySingleMessageDeletionMutation(
@@ -217,11 +216,7 @@ async function closeRoomService(
     .doc(moderationAuditActionID(actorUID, input.clientRequestID));
   const jobRef = firestore.collection("moderationRoomCleanupJobs").doc(input.roomID);
   return firestore.runTransaction(async (transaction) => {
-    const [audit, room, existingJob] = await Promise.all([
-      transaction.get(auditRef),
-      transaction.get(roomRef),
-      transaction.get(jobRef),
-    ]);
+    const audit = await transaction.get(auditRef);
     if (audit.exists && audit.data()) {
       return assertAuditReplay(audit.data()!, {
         action,
@@ -230,6 +225,13 @@ async function closeRoomService(
         requestID: input.clientRequestID,
       });
     }
+    const resolvedOwner = closureType === "closedByOwner" ?
+      await resolveRoomRoleInTransaction(transaction, firestore, input.roomID, actorUID, now) : null;
+    if (resolvedOwner) requireRoomOwner(resolvedOwner);
+    const [room, existingJob] = await Promise.all([
+      resolvedOwner ? Promise.resolve(resolvedOwner.room) : transaction.get(roomRef),
+      transaction.get(jobRef),
+    ]);
     if (!room.exists || !room.data()) {
       throw new HttpsError("not-found", "채팅방을 찾을 수 없습니다.");
     }
@@ -357,11 +359,6 @@ export async function closeOwnedChatRoomService(
       targetID: input.roomID,
       requestID: input.clientRequestID,
     });
-  }
-  await assertAccountCapability(actorUID, "moderateOwnedRoom");
-  const room = await firestore.collection("Rooms").doc(input.roomID).get();
-  if (!room.exists || room.get("creatorUID") !== actorUID) {
-    throw new HttpsError("permission-denied", "방 생성자 권한이 필요합니다.");
   }
   return closeRoomService(
     actorUID,

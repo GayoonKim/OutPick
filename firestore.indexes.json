@@ -26,6 +26,14 @@
       ]
     },
     {
+      "collectionGroup": "Rooms",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUID", "order": "ASCENDING" },
+        { "fieldPath": "isClosed", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chatMessageCleanupJobs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -55,6 +63,22 @@
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chatRoleEventDeliveryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chatRoleEventDeliveryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "leaseExpiresAt", "order": "ASCENDING" }
       ]
     },
     {
@@ -1094,6 +1118,12 @@
       "indexes": []
     },
     {
+      "collectionGroup": "chatRoleEventDeliveryJobs",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "moderationRoomCleanupJobs",
       "fieldPath": "expiresAt",
       "ttl": true,
@@ -1114,6 +1144,16 @@
     {
       "collectionGroup": "Messages",
       "fieldPath": "senderUID",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Messages",
+      "fieldPath": "roleEvent.subjectUID",
       "indexes": [
         {
           "order": "ASCENDING",
