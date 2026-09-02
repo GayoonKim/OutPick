@@ -21,6 +21,7 @@
 		05F169622EE08CE3005C1868 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 05F169612EE08CE3005C1868 /* FirebaseFunctions */; };
 		0A1B2C3D4E5F678901234569 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F678901234568 /* FirebaseMessaging */; };
 		0A1B2C3D4E5F67890123456B /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */; };
+		0A1B2C3D4E5F67890123456D /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F67890123456C /* FirebaseRemoteConfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 				054C947A2E28F4F600FD364C /* GRDB in Frameworks */,
 				05F169622EE08CE3005C1868 /* FirebaseFunctions in Frameworks */,
 				0A1B2C3D4E5F67890123456B /* FirebaseAppCheck in Frameworks */,
+				0A1B2C3D4E5F67890123456D /* FirebaseRemoteConfig in Frameworks */,
 				054C94872E28F5E200FD364C /* FirebaseFirestoreCombine-Community in Frameworks */,
 				054C946B2E28F3C100FD364C /* KakaoSDK in Frameworks */,
 				054C94802E28F53600FD364C /* SocketIO in Frameworks */,
@@ -201,6 +203,7 @@
 				0A1B2C3D4E5F678901234568 /* FirebaseMessaging */,
 				05F169612EE08CE3005C1868 /* FirebaseFunctions */,
 				0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */,
+				0A1B2C3D4E5F67890123456C /* FirebaseRemoteConfig */,
 			);
 			productName = OutPick;
 			productReference = 05E4F8A12E214B05000079C2 /* OutPick.app */;
@@ -1094,6 +1097,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 054C946C2E28F45C00FD364C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAppCheck;
+		};
+		0A1B2C3D4E5F67890123456C /* FirebaseRemoteConfig */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 054C946C2E28F45C00FD364C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseRemoteConfig;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
