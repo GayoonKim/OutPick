@@ -43,7 +43,11 @@ beforeEach(async () => {
       lifecycleStatus: "active", lifecycleVersion: 1,
     });
     await setDoc(doc(firestore, "Rooms", "room", "members", "active"), {
-      joinedAt: new Date(),
+      userID: "active", role: "owner", joinedAt: new Date(),
+    });
+    await setDoc(doc(firestore, "users", "active", "joinedRooms", "room"), {
+      roomID: "room", role: "owner", lastReadSeq: 1,
+      lastReadUnreadMessageSeq: 1, updatedAt: new Date(),
     });
   });
 });
@@ -167,6 +171,30 @@ describe("moderation capability rules", () => {
       "chatMessageDeletionDeliveryJobs",
       "delivery-1",
     ), {status: "pending"}));
+    for (const path of [
+      ["roomModerationStates", "room"],
+      ["roomRoleMutationReceipts", "receipt-1"],
+      ["chatRoleEventDeliveryJobs", "event-1"],
+    ]) {
+      await assertFails(getDoc(doc(firestore, ...path)));
+      await assertFails(setDoc(doc(firestore, ...path), {status: "pending"}));
+    }
+  });
+
+  test("역할·owner·private state 직접 변경과 member 직접 삭제를 거부하고 읽기 frontier만 전진시킨다", async () => {
+    const firestore = testEnvironment.authenticatedContext("active").firestore();
+    await assertFails(updateDoc(doc(firestore, "Rooms", "room"), {ownerUID: "other"}));
+    await assertFails(updateDoc(doc(firestore, "Rooms", "room"), {unreadMessageSeq: 2}));
+    await assertFails(updateDoc(doc(firestore, "Rooms", "room", "members", "active"), {role: "moderator"}));
+    await assertFails(deleteDoc(doc(firestore, "Rooms", "room", "members", "active")));
+    const joined = doc(firestore, "users", "active", "joinedRooms", "room");
+    await assertFails(updateDoc(joined, {role: "moderator"}));
+    await assertSucceeds(updateDoc(joined, {
+      lastReadSeq: 2,
+      lastReadUnreadMessageSeq: 2,
+      updatedAt: new Date(),
+    }));
+    await assertFails(updateDoc(joined, {lastReadUnreadMessageSeq: 0, updatedAt: new Date()}));
   });
 
   test("메시지 tombstone과 방 lifecycle은 클라이언트가 직접 변경할 수 없다", async () => {

@@ -106,4 +106,40 @@ struct ChatRoomReadStateStoreTests {
         #expect(snapshot?.latestMessagePreview == "새 메시지")
         #expect(snapshot?.latestMessageAt == sentAt)
     }
+
+    @Test func incomingRoleEventAdvancesOnlyTimelineFrontier() throws {
+        let store = ChatRoomReadStateStore()
+        let normalMessage = ChatMessage(
+            ID: "message-1",
+            seq: 11,
+            unreadMessageSeq: 8,
+            roomID: "room-1",
+            senderUID: "other@example.com",
+            senderNickname: "Other",
+            msg: "새 메시지",
+            sentAt: Date(timeIntervalSince1970: 123),
+            attachments: [],
+            replyPreview: nil
+        )
+        _ = store.seedIncomingMessage(normalMessage)
+        let roleEvent = try #require(ChatMessage.from([
+            "ID": "event-1",
+            "roomID": "room-1",
+            "seq": 12,
+            "messageType": "roomRoleEvent",
+            "serverGenerated": true,
+            "roleEvent": [
+                "kind": "moderatorAssigned",
+                "subjectUID": "user-1",
+                "subjectNicknameSnapshot": "사용자"
+            ]
+        ]))
+
+        let snapshot = store.seedIncomingTimelineEvent(roleEvent)
+
+        #expect(snapshot?.latestSeq == 12)
+        #expect(snapshot?.latestUnreadMessageSeq == 8)
+        #expect(snapshot?.latestMessagePreview == "새 메시지")
+        #expect(snapshot?.lastMessageSenderUID == "other@example.com")
+    }
 }

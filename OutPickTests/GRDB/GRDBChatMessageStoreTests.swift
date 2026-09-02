@@ -53,4 +53,47 @@ struct GRDBChatMessageStoreTests {
         }
         #expect(imageCount == 0)
     }
+
+    @Test func roomRoleEventPersistsWithoutSearchOrMediaProjection() async throws {
+        let database = try TemporaryAppDatabase.make()
+        let store = GRDBChatMessageStore(database: database)
+        let message = ChatMessage(
+            ID: "role-event",
+            seq: 3,
+            roomID: "room-1",
+            senderUID: "",
+            senderNickname: "",
+            messageType: .roomRoleEvent,
+            serverGenerated: true,
+            roleEvent: RoomRoleEventPayload(
+                kind: .moderatorAssigned,
+                subjectUID: "member-1",
+                subjectNicknameSnapshot: "참여자"
+            ),
+            msg: nil,
+            sentAt: nil,
+            attachments: []
+        )
+
+        try await store.saveChatMessages([message])
+
+        let stored = try await store.fetchMessage(id: message.ID, inRoom: message.roomID)
+        let projectionCounts = try await database.dbPool.read { db in
+            let fts = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM chatMessageFTS WHERE id = ?",
+                arguments: [message.ID]
+            ) ?? -1
+            let media = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM imageIndex WHERE messageID = ?",
+                arguments: [message.ID]
+            ) ?? -1
+            return (fts, media)
+        }
+
+        #expect(stored?.roleEvent == message.roleEvent)
+        #expect(projectionCounts.0 == 0)
+        #expect(projectionCounts.1 == 0)
+    }
 }

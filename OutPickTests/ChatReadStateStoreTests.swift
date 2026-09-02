@@ -77,6 +77,21 @@ struct ChatReadStateStoreTests {
         #expect(store.pendingFlushSeq() == 8)
     }
 
+    @Test func roleEventAdvancesTimelineWithoutAdvancingUnreadFrontier() {
+        var store = ChatReadStateStore()
+        store.reset(
+            persistedLastReadSeq: 10,
+            persistedLastReadUnreadMessageSeq: 7
+        )
+
+        store.queue(11, unreadMessageSeq: 7)
+
+        #expect(store.frontierSeq == 11)
+        #expect(store.frontierUnreadMessageSeq == 7)
+        #expect(store.pendingFlushFrontier()?.timelineSeq == 11)
+        #expect(store.pendingFlushFrontier()?.unreadMessageSeq == 7)
+    }
+
     @Test func markFlushedUpdatesPersistedSeqAndClearsPendingWhenCovered() {
         var store = ChatReadStateStore()
 

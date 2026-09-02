@@ -4,12 +4,17 @@ import test from "node:test";
 import {HttpsError} from "firebase-functions/v2/https";
 import {
   parseAcknowledgeRoomClosureInput,
+  parseAssignRoomModeratorInput,
   parseCloseOwnedChatRoomInput,
   parseCloseRoomByModerationInput,
   parseDeleteChatMessageInput,
   parseGetMyRoomAccessInput,
+  parseLeaveChatRoomInput,
   parseListRoomBansInput,
   parseRemoveRoomMemberInput,
+  parseResignRoomModeratorInput,
+  parseRevokeRoomModeratorInput,
+  parseTransferRoomOwnershipAndLeaveInput,
   parseUnbanRoomMemberInput,
 } from "./contracts.js";
 
@@ -139,4 +144,25 @@ test("room ban 목록 계약은 1~50 page와 비식별 cursor만 허용한다", 
 test("본인 room access 계약은 room ID만 허용한다", () => {
   assert.deepEqual(parseGetMyRoomAccessInput({roomID: "room-1"}), {roomID: "room-1"});
   assert.throws(() => parseGetMyRoomAccessInput({roomID: "invalid/room"}), HttpsError);
+});
+
+test("room 역할 mutation 계약은 UUID와 대상 필드를 엄격히 검증한다", () => {
+  assert.deepEqual(parseAssignRoomModeratorInput({
+    roomID: "room-1", targetUID: "target-uid", clientRequestID: requestID.toUpperCase(),
+  }), {roomID: "room-1", targetUID: "target-uid", clientRequestID: requestID});
+  assert.deepEqual(parseRevokeRoomModeratorInput({
+    roomID: "room-1", targetUID: "target-uid", clientRequestID: requestID,
+  }), {roomID: "room-1", targetUID: "target-uid", clientRequestID: requestID});
+  assert.deepEqual(parseResignRoomModeratorInput({
+    roomID: "room-1", clientRequestID: requestID,
+  }), {roomID: "room-1", clientRequestID: requestID});
+  assert.deepEqual(parseLeaveChatRoomInput({
+    roomID: "room-1", clientRequestID: requestID,
+  }), {roomID: "room-1", clientRequestID: requestID});
+  assert.deepEqual(parseTransferRoomOwnershipAndLeaveInput({
+    roomID: "room-1", successorUID: "target-uid", clientRequestID: requestID,
+  }), {roomID: "room-1", successorUID: "target-uid", clientRequestID: requestID});
+  assert.throws(() => parseAssignRoomModeratorInput({
+    roomID: "room-1", targetUID: "invalid/uid", clientRequestID: requestID,
+  }), HttpsError);
 });

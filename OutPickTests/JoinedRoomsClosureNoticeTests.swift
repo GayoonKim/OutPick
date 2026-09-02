@@ -13,6 +13,18 @@ struct JoinedRoomsClosureNoticeTests {
         #expect(moderationNotice.message == "운영 정책에 따라 이용이 종료됐어요.")
     }
 
+    @Test func deletedOwnerNoticeExplainsWhyTheRoomClosed() {
+        let notice = ChatRoomClosureNotice(
+            roomID: "room-1",
+            roomName: "QA 채팅방",
+            closureType: .closedByOwner,
+            noticeCode: "ownerDeleted",
+            closedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        #expect(notice.message == "방장이 없어 방이 종료됐어요.")
+    }
+
     @Test func acknowledgedNoticeIsNotRestoredByLaterStaleFetch() async throws {
         let repository = ClosureNoticeRepositoryFake(notices: [notice(type: .closedByOwner)])
         let viewModel = JoinedRoomsViewModel(

@@ -41,7 +41,37 @@ struct ChatRoomFirestoreMapperTests {
         #expect(room.participants.isEmpty)
         #expect(room.memberCount == 0)
         #expect(room.seq == 0)
+        #expect(room.unreadMessageSeq == 0)
         #expect(room.isClosed == false)
+    }
+
+    @Test func ownerUIDWinsAndLegacyCreatorUIDRemainsReadable() throws {
+        let current = try decodeDTO("""
+        {
+          "roomName": "Current Room",
+          "ownerUID": "owner-new",
+          "creatorUID": "owner-legacy",
+          "createdAt": "2026-07-14T00:00:00Z",
+          "seq": 12,
+          "unreadMessageSeq": 9
+        }
+        """)
+        let legacy = try decodeDTO("""
+        {
+          "roomName": "Legacy Room",
+          "creatorUID": "owner-legacy",
+          "createdAt": "2026-07-14T00:00:00Z",
+          "seq": 7
+        }
+        """)
+
+        let currentRoom = try ChatRoomFirestoreMapper.map(dto: current, documentID: "current")
+        let legacyRoom = try ChatRoomFirestoreMapper.map(dto: legacy, documentID: "legacy")
+
+        #expect(currentRoom.ownerUID == "owner-new")
+        #expect(currentRoom.unreadMessageSeq == 9)
+        #expect(legacyRoom.ownerUID == "owner-legacy")
+        #expect(legacyRoom.unreadMessageSeq == 7)
     }
 
     @Test func emptyCoreIdentityFieldsFailMapping() throws {
@@ -58,21 +88,22 @@ struct ChatRoomFirestoreMapperTests {
         #expect(throws: ChatRoomFirestoreMappingError.emptyRoomName) {
             try ChatRoomFirestoreMapper.map(dto: emptyName, documentID: "room-1")
         }
-        #expect(throws: ChatRoomFirestoreMappingError.emptyCreatorUID) {
+        #expect(throws: ChatRoomFirestoreMappingError.emptyOwnerUID) {
             try ChatRoomFirestoreMapper.map(dto: emptyCreator, documentID: "room-1")
         }
     }
 
-    @Test func missingOrWrongTypedCoreFieldsFailDecoding() {
+    @Test func missingOrWrongTypedCoreFieldsFailSafely() throws {
         #expect(throws: (any Error).self) {
             try decodeDTO("""
             {"creatorUID":"owner-1","createdAt":"2026-07-14T00:00:00Z"}
             """)
         }
-        #expect(throws: (any Error).self) {
-            try decodeDTO("""
-            {"roomName":"Room","createdAt":"2026-07-14T00:00:00Z"}
-            """)
+        let missingOwner = try decodeDTO("""
+        {"roomName":"Room","createdAt":"2026-07-14T00:00:00Z"}
+        """)
+        #expect(throws: ChatRoomFirestoreMappingError.emptyOwnerUID) {
+            try ChatRoomFirestoreMapper.map(dto: missingOwner, documentID: "room-1")
         }
         #expect(throws: (any Error).self) {
             try decodeDTO("""
@@ -97,7 +128,7 @@ struct ChatRoomFirestoreMapperTests {
             roomName: "Minimal Room",
             roomDescription: "Description",
             participants: ["owner-1"],
-            creatorUID: "owner-1",
+            ownerUID: "owner-1",
             createdAt: Date(timeIntervalSince1970: 100),
             memberCount: 1
         )

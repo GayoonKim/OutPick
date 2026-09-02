@@ -3,13 +3,13 @@ import Testing
 @testable import OutPick
 
 struct AppDatabaseMigrationTests {
-    @Test func freshDatabaseAppliesTwentyOneMigrationsWithoutLegacyColumns() throws {
+    @Test func freshDatabaseAppliesTwentyThreeMigrationsWithoutLegacyColumns() throws {
         let database = try TemporaryAppDatabase.make()
 
         try database.dbPool.read { db in
             let identifiers = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid")
             #expect(identifiers == GRDBMigrationRegistry.identifiers)
-            #expect(identifiers.count == 21)
+            #expect(identifiers.count == 23)
             #expect(try db.tableExists("roomImage") == false)
             #expect(try db.tableExists("LocalChatUser"))
             #expect(try db.tableExists("RoomProfileDisplayCache"))
@@ -18,6 +18,8 @@ struct AppDatabaseMigrationTests {
             #expect(!chatMessageColumns.contains("senderEmail"))
             #expect(chatMessageColumns.contains("deletionRevision"))
             #expect(chatMessageColumns.contains("deletedAt"))
+            #expect(chatMessageColumns.contains("roleEvent"))
+            #expect(chatMessageColumns.contains("unreadMessageSeq"))
             #expect(try db.tableExists("chatMessageFTS"))
             #expect(try db.tableExists("imageIndex"))
             #expect(try db.tableExists("videoIndex"))

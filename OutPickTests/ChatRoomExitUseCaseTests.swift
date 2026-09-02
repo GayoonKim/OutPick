@@ -75,6 +75,28 @@ struct ChatRoomExitUseCaseTests {
         #expect(cleaner.cleanedRoomIDs.isEmpty)
     }
 
+    @Test func transferOwnershipCleansLocalDataOnlyAfterServerSuccess() async throws {
+        let repository = ChatRoomExitRepositoryFake()
+        let roleRepository = ChatRoomRoleMutationRepositoryFake()
+        let cleaner = ChatRoomLocalExitCleanerSpy()
+        let useCase = ChatRoomExitUseCase(
+            repository: repository,
+            localCleaner: cleaner,
+            roleMutationRepository: roleRepository
+        )
+
+        let result = try await useCase.transferOwnershipAndLeave(
+            room: makeRoom(id: "room-1"),
+            successorUID: "moderator"
+        )
+
+        #expect(roleRepository.transfers.count == 1)
+        #expect(roleRepository.transfers.first?.0 == "room-1")
+        #expect(roleRepository.transfers.first?.1 == "moderator")
+        #expect(result == ChatRoomExitResult(roomID: "room-1", mode: .left))
+        #expect(cleaner.cleanedRoomIDs == ["room-1"])
+    }
+
     private func makeRoom(id: String) -> ChatRoom {
         ChatRoom(
             id: id,
@@ -93,6 +115,53 @@ struct ChatRoomExitUseCaseTests {
             activeAnnouncementID: nil,
             activeAnnouncement: nil,
             announcementUpdatedAt: nil
+        )
+    }
+}
+
+private final class ChatRoomRoleMutationRepositoryFake: ChatRoomRoleMutationRepositoryProtocol {
+    private(set) var transfers: [(String, String)] = []
+
+    func fetchMyRoomRoleAccess(roomID: String) async throws -> ChatRoomRoleAccess {
+        ChatRoomRoleAccess(status: .member, role: .owner)
+    }
+
+    func assignModerator(roomID: String, targetUID: String) async throws -> ChatRoomRoleMutationReceipt {
+        receipt(roomID: roomID)
+    }
+
+    func revokeModerator(roomID: String, targetUID: String) async throws -> ChatRoomRoleMutationReceipt {
+        receipt(roomID: roomID)
+    }
+
+    func resignModerator(roomID: String) async throws -> ChatRoomRoleMutationReceipt {
+        receipt(roomID: roomID)
+    }
+
+    func leaveChatRoom(roomID: String) async throws -> ChatRoomRoleMutationReceipt {
+        receipt(roomID: roomID)
+    }
+
+    func transferOwnershipAndLeave(
+        roomID: String,
+        successorUID: String
+    ) async throws -> ChatRoomRoleMutationReceipt {
+        transfers.append((roomID, successorUID))
+        return receipt(roomID: roomID)
+    }
+
+    private func receipt(roomID: String) -> ChatRoomRoleMutationReceipt {
+        ChatRoomRoleMutationReceipt(
+            roomID: roomID,
+            subjectUID: nil,
+            role: nil,
+            moderatorCount: 0,
+            memberCount: nil,
+            eventID: nil,
+            seq: nil,
+            ownerUID: nil,
+            exitMode: .left,
+            isDeduplicated: false
         )
     }
 }
