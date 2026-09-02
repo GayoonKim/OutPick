@@ -2,6 +2,10 @@
 
 ## 공통
 
+- moderator delegation 최종 리뷰 회귀: `RoomRoleEventPayloadTests`의 Codable 분리 unread 순번 보존·legacy fallback·role event 제외, `ChatRoomRoleSessionTests`의 취소된 콜백 무시·구독 generation 격리·foreground 재확인 경계를 검증한다.
+- PR 준비 재검증(2026-09-02): Functions lint 오류 0·기존 경고 14, build·252/252, Socket check·106/106, migration fixture 7/7 통과. 최종 리뷰에서 Codable unread 복원 누락과 cancel 뒤 stale role callback 반영 가능성을 수정하고 해당 경계 테스트를 추가했다. 기존 Rules 47/47·transaction 59/59와 Development 사용자 수동 QA 기록은 아래 moderator delegation 검증 이력을 따른다.
+- 위 두 리뷰 수정 포함 최종 iOS 검증은 iPhone 17 Pro Max iOS 26.2의 `OutPick-Development` 7개 suite 52/52 통과(실패·skip 0)다. `RoomRoleEventPayloadTests`, `ChatRoomRoleSessionTests`, `ChatReadStateStoreTests`, `ChatRoomReadStateStoreTests`, `ChatUnreadCatchUpStateTests`, `ChatMessageMediaAttachmentMappingTests`, `GRDBChatMediaIndexStoreTests`를 실행했다.
+
 - 단위 테스트: `OutPickTests`
 - UI 테스트: `OutPickUITests`
 - 앱 빌드 기본 검증:
@@ -272,6 +276,26 @@ Firebase Functions tests/build entry:
   - 방별 successor joinedAt/UID tie-break, 부적격 후보 race 재선정, 동시 leave/remove/suspension에서 owner 중복 0
   - 적격자 없음의 account deletion `closedByOwner`, permanent suspension `closedByModeration` 수렴
   - 2026-08-13 최종 Functions lint/build·191/191, Socket check·76/76, Rules 41/41, transaction 26/26, iOS 관련 suite와 Production Simulator build 통과. transaction suite는 유효 lease의 `processing` succession job 재점유 금지와 최대 시도·만료 lease의 `failed` 종결을 검증한다. Production rollout과 두 계정 앱 QA, 대용량 pending upload 취소, 같은 provider 재로그인까지 완료했다.
+- Moderator delegation Phase 2 로컬 검증:
+  - `functions/src/chat/moderation/{contracts,index.contract}.test.ts`: 역할 mutation UUID/입력과 신규 callable 5개 export를 고정한다.
+  - `firestore-tests/chat-moderation.emulator.test.mjs`: 첫 임명의 server-only count 생성, 임명·replay·회수, 사임·퇴장·수동 이전, owner/moderator 제재 matrix, 퇴장 작성자 과거 메시지 삭제, event/outbox/receipt 원자성을 검증한다.
+  - `firestore-tests/moderation-capabilities.rules.test.mjs`: owner/role/private state/event 직접 mutation, member 직접 삭제와 read frontier rollback을 거부한다.
+  - `OutPickTests/CloudFunctions/CloudFunctionsChatModerationLifecycleRepositoryTests.swift`: role access와 임명·회수·사임·퇴장·이전 callable 매핑을 검증한다.
+  - 2026-09-01 Functions 246/246, Rules 47/47, transaction 56/56, iOS 집중 7/7과 Development Simulator build가 통과했다. 배포·Production 변경은 수행하지 않았다.
+- Moderator delegation Phase 3 로컬 검증:
+  - `Socket/test/messages/sequenceStore.test.js`, `Socket/test/roles/roleEventDeliveryWatcher.test.js`, architecture contract가 일반 message 이중 sequence, legacy replay, role event emit/즉시 삭제, retry/10회 실패 TTL, forged event 거부와 production start/stop 연결을 검증한다.
+  - `functions/src/chat/media/readyService.test.ts`와 Firestore transaction suite가 media 이중 sequence와 role mutation의 timeline-only sequence를 검증한다.
+  - iOS는 `RoomRoleEventPayloadTests`, `JoinedRoomProjectionTests`, `ChatMessageActionPolicyTests`, `RealtimeSocketListenerBinderTests`, `ChatReadStateStoreTests`, `ChatRoomReadStateStoreTests`, `ChatUnreadCatchUpStateTests`, GRDB migration/mapper/store와 ChatRoomViewModel 관련 suite에서 렌더 계약, dedupe, 검색·action 제외와 dual frontier를 검증한다.
+  - 2026-09-01 Socket 106/106, Functions 246/246·lint 오류 0, Rules 47/47, transaction 56/56, iOS 관련 12개 suite와 보강 read-state suite, Development build-for-testing이 통과했다. 실제 reconnect·background·pagination·Dynamic Type 수동 QA와 배포는 미수행이다.
+- Moderator delegation Phase 5 로컬 검증:
+  - `functions/src/chat/moderation/roomMembershipSweep.test.ts`와 `index.contract.test.ts`가 최초 포함 4회·총 50초 retry, 일시/영구 오류 분류, Task Queue 전달 retry와 export metadata를 고정한다.
+  - `firestore-tests/chat-moderation.emulator.test.mjs`가 일반 참여자 제외·earliest moderator 승계, 후보 없음 종료, account deletion resolved finalizer gate, stale permanent fence, pagination attempt 비소비, 역할 이벤트 익명화/outbox를 검증한다.
+  - iOS `ChatRoomSessionActorTests`, `RealtimeSocketListenerBinderTests`, `JoinedRoomsClosureNoticeTests`가 동일 event ID 익명화본 1회 수용과 `ownerDeleted` 안내를 검증한다.
+  - 2026-09-01 Functions 249/249·lint 오류 0·build 성공, Rules 47/47, transaction 59/59, iOS Development build-for-testing과 관련 3개 suite가 통과했다. Task Queue/Functions/index 배포와 실제 Cloud Tasks 시간 QA는 미수행이다.
+- Moderator delegation Phase 6 migration planner 검증:
+  - `functions/scripts/room-moderator-cutover-plan.test.mjs`가 joined projection 전체 inventory와 mismatch/orphan 차단, legacy 누락 backfill, role event 혼합 dual frontier, owner/role 충돌과 counter 역전 fail-closed, 결정적 plan hash, exact apply fence, 멱등 재실행을 검증한다.
+  - `functions/src/chat/moderation/rollout.test.ts`가 기본 비활성 서버 gate와 신규 권한 생성 callable 두 곳의 연결을 고정한다. `OutPickTests/AppRolloutGateTests.swift`는 의미적 버전, 업데이트 URL, 설정 오류 fail-open/기능 fail-closed를 검증하고 `ChatRoomParticipantRolePolicyTests`는 flag off의 신규 임명 숨김과 기존 안전 액션 보존을 검증한다.
+  - 2026-09-01 planner fixture 7/7, Functions 전체 252/252, lint 오류 0(기존 warning 14), Socket check·106/106, iOS Development build-for-testing과 두 집중 suite가 통과했다. Development migration은 15 writes apply 후 write 0·blocker 0으로 수렴했고 Rules/index/TTL·Functions·Socket·두 flag를 반영했다. 실제 앱 수동 QA와 Production 변경은 수행하지 않았다.
 - Phase 6 텍스트·rate-limit 자동 검증:
   - `functions/src/lookbook/comments/contracts.test.ts`는 UTF-16 1,000 경계, UUID, 결정적 comment ID, UTC minute/retryAt과 20회 quota를 검증한다.
   - `firestore-tests/comment-write-rate-limit.emulator.test.mjs`는 동시 replay가 comment/metric/quota를 한 번만 소비하는지, 댓글·답글 합산 20회와 멱등 충돌을 transaction으로 검증한다. Rules suite는 client의 rate bucket read/write 금지를 검증한다.
@@ -375,6 +399,14 @@ Chat gesture 자체는 UIKit touch delivery를 위한 별도 추상화를 만들
   - room-close 최종 회귀는 `RealtimeSocketListenerBinderTests`의 authoritative closure 선행/observer 후행 replay와 same-room create reset, room-not-found ACK mapping, `ChatRoomRuntimeUseCaseTests`, `ChatRoomRouteLifecycleStateTests`로 검증한다. 2026-07-17 대상 테스트가 통과했다.
   - 실제 QA는 셀룰러 iPhone 14 disconnect/reconnect의 `680001 → 680004`, `990001` leave 목록 제거, room close 자동 route 종료와 Cloud Run 종료 후 join 재시도 0회까지 통과했다.
 
+### Moderator delegation Phase 4 iOS 자동 검증
+
+- `ChatRoomRoleSessionTests`: 현재 방 listener 단일 생성, cache/server/mutation 활성화 경계, background 해제·foreground 재시작, legacy 역할 호환, joined projection 삭제를 검증한다.
+- `ChatRoomParticipantRolePolicyTests`: 나→방장→관리자→일반 참여자 정렬, pinned/page 중복 제거, owner/moderator action matrix, cache/offline 비활성, 안정 오류 문구를 검증한다.
+- `ChatMessageActionPolicyTests`: 역할 이벤트 action 제외, server-confirmed owner/moderator 운영 권한, 관리자 상호 제재 금지, 퇴장 작성자 메시지 운영 판정을 검증한다.
+- `ChatRoomExitUseCaseTests`: 일반 퇴장·방 종료·소유권 이전 성공 뒤 로컬 cleanup과 서버 실패 시 cleanup 보류를 검증한다.
+- 2026-09-01 iPhone 15 Pro iOS 17.2에서 위 suite와 `ChatRoomViewModelMessageActionTests`, `CloudFunctionsChatModerationLifecycleRepositoryTests`, `RoomRoleEventPayloadTests`가 통과했고 Development `build-for-testing`이 성공했다. 실제 Firebase·background·Dynamic Type 수동 QA는 미수행이다.
+
 - Socket candidate QA configuration tests: `OutPickTests/SocketDebugQAConfigurationTests.swift`
   - DEBUG 전용 message kind별 첫 성공 ACK 유실 설정을 검증한다.
   - launch environment key는 `OUTPICK_DEBUG_DROP_FIRST_MESSAGE_ACK_KIND`이며 Release에서는 코드가 컴파일되지 않는다.
@@ -454,6 +486,10 @@ xcodebuild -scheme OutPick-Development -destination 'platform=iOS Simulator,name
 - Phase 7.6 최종 자동 회귀는 Functions 245/245·build·lint 오류 0(기존 warning 24건), Rules·Storage 46/46, transaction 52/52, Socket check·103/103, iOS 관련 10개 suite 66/66, `OutPick-Development` Simulator build, 계약/index JSON parse와 `git diff --check`를 통과했다. iOS 첫 실행에서 과거 정책에 남은 방 생성자 신고 기대값 1건을 확정 정책인 타인 메시지 `신고 + 삭제` 허용으로 교정했고, 해당 suite 16/16 뒤 전체 66/66을 재검증했다. diff 리뷰에서는 중복 message ID admission 크래시 위험을 안전한 tombstone/revision 우선 병합으로 보정하고 회귀를 추가해 deletion sync·migration 10/10과 전체 관련 67/67을 재통과했다.
 
 최근 targeted test 예시:
+
+- Moderator delegation iOS 회귀: `ChatMessageWindowStoreTests`가 role event 단독 tail에는 읽음 마커가 없고 뒤의 첫 실제 unread message 바로 앞에만 마커가 생기는지 검증한다. 2026-09-01 `ChatMessageWindowStoreTests`와 `ChatRoomParticipantRolePolicyTests` 관련 21/21, Development build/run을 통과했고 iPhone 17 Pro Max 최대 접근성 글자 크기에서 참여자 이름·역할 배지 비중첩을 수동 확인했다.
+- 2026-09-02 Development 수동 QA에서 방장 UI 임명·회수·취소, 관리자 본인 사임과 방장 제재 미노출, 소유권 이전·기존 방장 퇴장, 전용 임시 방 후보 없음 종료, 열린 설정 실시간 임명·회수, 실제 홈 background 중 회수와 foreground/pagination 복구를 확인했다. 최종 role projection·unread counter·outbox와 관련 Functions·Socket ERROR 0건도 재감사했다.
+- 2026-09-02 최종 결함 수정은 `RoomRoleEventPayloadTests`의 목록 preview 역할 이벤트 제외·일반 메시지 순서, `ChatMessageMediaAttachmentMappingTests`의 bucket 기반 `gs://` resource path, `GRDBChatMediaIndexStoreTests`의 resolved path 영속을 집중 검증해 모두 통과했다. Development 초기화 후 새 방의 텍스트·GIF/JPEG·2초 MP4로 목록 preview, 설정 thumbnail/전체 미디어, 이미지·동영상 viewer와 방장 이전 후보 선택 UI를 iPhone 17 Pro Max iOS 26.2에서 수동 검증했다.
 
 ```bash
 xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -only-testing:OutPickTests/JoinedRoomsSessionStoreTests

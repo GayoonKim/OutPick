@@ -33,7 +33,7 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 - 메시지 발신자 avatar: `OutPick/Features/Chat/Services/ImageLoading/AvatarImageService.swift`
 - 이미지 메모리/디스크 캐시: `OutPick/Infra/Cache/ImageCache/ImageCachePipeline.swift`
 
-전체 채팅방 목록은 `Rooms.isClosed == false`, `Rooms.lifecycleStatus == active`, `Rooms.lastMessageAt DESC` 기준으로 활성 방만 가져오고, 각 방의 최근 메시지 3개를 함께 불러와 미리보기로 표시한다. 같은 활성 조건은 `FirebaseChatRoomRepository.activeRoomsQuery()`를 통해 전체 목록, 참여방 ID 일괄 조회, 검색, 방 이름 중복 조회에 공통 적용한다. 메시지 문서의 sender snapshot은 fallback으로 보존하되 `RoomListUseCase`가 `ChatProfileSyncManager`를 통해 sender UID별 최신 `UserPublicProfile`을 화면 표시값에 overlay한다. 프로필 변경 전·후 메시지는 같은 현재 닉네임·아바타를 사용하며 서버 메시지 문서는 다시 쓰지 않는다. 목록 진입과 pull-to-refresh에서 profile을 갱신하고, `RoomListsCollectionViewController`는 최대 30개 방 snapshot을 reload해 동일 room ID의 셀도 다시 구성한다. `ChatCoordinator`는 room/avatar image manager를 목록 화면에 주입한다. `RoomListsCollectionViewController`는 `UICollectionViewDataSourcePrefetching`으로 곧 보일 방의 커버 이미지와 상대방 메시지 `senderAvatarPath`를 미리 캐시에 적재한다. 셀 구성 시 `RoomListCollectionViewCell`은 주입받은 room/avatar image manager를 사용해 캐시를 먼저 확인하고, 없으면 Storage에서 로드한다. 내 메시지 미리보기는 avatar를 숨기고, 상대방 메시지 미리보기만 avatar를 표시한다. 이미지 캐시 정책은 `RoomImageService`/`AvatarImageService`가 `ImageCachePipeline`을 통해 메모리와 전용 디스크 캐시에 저장하는 흐름을 따른다. 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
+전체 채팅방 목록은 `Rooms.isClosed == false`, `Rooms.lifecycleStatus == active`, `Rooms.lastMessageAt DESC` 기준으로 활성 방만 가져오고, 각 방의 최근 일반 메시지 3개를 함께 불러와 미리보기로 표시한다. `roomRoleEvent`는 공개 timeline에는 남지만 목록 preview에서는 제외하며, repository가 최신순 문서를 최대 30개 범위에서 추가 탐색해 이전 일반 메시지를 복구한다. 첫 query에 문서가 있었지만 모두 역할 이벤트인 경우 timestamp fallback을 중복 실행하지 않는다. 같은 활성 조건은 `FirebaseChatRoomRepository.activeRoomsQuery()`를 통해 전체 목록, 참여방 ID 일괄 조회, 검색, 방 이름 중복 조회에 공통 적용한다. 메시지 문서의 sender snapshot은 fallback으로 보존하되 `RoomListUseCase`가 `ChatProfileSyncManager`를 통해 sender UID별 최신 `UserPublicProfile`을 화면 표시값에 overlay한다. 프로필 변경 전·후 메시지는 같은 현재 닉네임·아바타를 사용하며 서버 메시지 문서는 다시 쓰지 않는다. 목록 진입과 pull-to-refresh에서 profile을 갱신하고, `RoomListsCollectionViewController`는 최대 30개 방 snapshot을 reload해 동일 room ID의 셀도 다시 구성한다. `ChatCoordinator`는 room/avatar image manager를 목록 화면에 주입한다. `RoomListsCollectionViewController`는 `UICollectionViewDataSourcePrefetching`으로 곧 보일 방의 커버 이미지와 상대방 메시지 `senderAvatarPath`를 미리 캐시에 적재한다. 셀 구성 시 `RoomListCollectionViewCell`은 주입받은 room/avatar image manager를 사용해 캐시를 먼저 확인하고, 없으면 Storage에서 로드한다. 내 메시지 미리보기는 avatar를 숨기고, 상대방 메시지 미리보기만 avatar를 표시한다. 이미지 캐시 정책은 `RoomImageService`/`AvatarImageService`가 `ImageCachePipeline`을 통해 메모리와 전용 디스크 캐시에 저장하는 흐름을 따른다. 컬렉션 뷰 하단은 메인 탭 바와 겹치지 않도록 `view.safeAreaLayoutGuide.bottomAnchor`에 맞춘다.
 
 ## 비참여 채팅방 Preview
 
@@ -178,7 +178,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 | rules 차단 | `firestore.rules`의 `roomCreateHasNoDocumentIDFields`, `roomUpdateDoesNotChangeDocumentIDFields` |
 | mapper/UseCase/rules 회귀 | `OutPickTests/ChatRoomFirestoreMapperTests.swift`, `OutPickTests/CreateRoomUseCaseTests.swift`, `firestore-tests/room-document-id.rules.test.mjs` |
 
-채팅방 자기 identity는 `DocumentSnapshot.documentID`만 source로 사용한다. Mapper는 document ID, `roomName`, `creatorUID`, `createdAt`을 핵심 불변식으로 검증하고 부가 필드는 legacy 기본값을 허용한다. 새 방은 `Rooms/{roomID}`, `Rooms/{roomID}/members/{creatorUID}`, `users/{creatorUID}/joinedRooms/{roomID}`를 단일 transaction으로 생성하며 room payload에 `ID`, `id`, `participantUIDs`를 쓰지 않는다.
+채팅방 자기 identity는 `DocumentSnapshot.documentID`만 source로 사용한다. 앱 내부 owner canonical 이름은 `ownerUID`이며 Mapper는 `ownerUID ?? creatorUID` fallback과 document ID, `roomName`, `createdAt` 핵심 불변식을 검증한다. 최소 지원 버전 cutover 전 새 방 write는 기존 `creatorUID`만 유지한다. 새 방은 Room, owner member, joinedRooms projection을 단일 transaction으로 생성하며 room payload에 `ID`, `id`, `participantUIDs`를 쓰지 않는다.
 
 2026-07-14 운영 rules 배포와 기존 Rooms 4건의 uppercase `ID` cleanup을 완료했다. 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이며 방 4개와 핵심 불변식은 유지됐다.
 
@@ -220,7 +220,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 ## 프로필 표시와 참여자 캐시
 
 - 채팅의 사용자 식별 key는 Firebase Auth UID 기반 `canonicalUserID`다.
-- `Rooms.creatorUID`, `Messages.senderUID`, `Rooms/{roomID}/members/{uid}` 문서 ID, `users/{uid}/joinedRooms/{roomID}` owner 경로는 같은 canonical user ID를 저장한다.
+- `Rooms.ownerUID`/호환 `creatorUID`, `Messages.senderUID`, `Rooms/{roomID}/members/{uid}` 문서 ID, `users/{uid}/joinedRooms/{roomID}` owner 경로는 같은 canonical user ID를 저장한다.
 - `Rooms.participantUIDs`는 legacy cleanup 대상이며 새 membership source로 사용하지 않는다.
 - 참여자 프로필은 `users/{canonicalUserID}` 직접 조회로 가져오며, 이메일/provider field fallback query는 사용하지 않는다.
 - 현재 GRDB local display cache는 `LocalChatUser.userID`, `RoomProfileDisplayCache.userID` 기준으로 canonical user ID를 저장한다.
@@ -257,7 +257,7 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - 방장이 방을 나가면 방 닫기 semantics로 처리하고, Firestore `Rooms/{roomID}` 및 하위 collection과 Storage `rooms/{roomID}/` prefix를 cleanup한다.
 - close cleanup은 `participantUIDs` 배열에 의존하지 않고 `members`/joined room projection 기반으로 page 단위 처리한다.
 - close cleanup은 별도 job 문서를 만들지 않고 즉시 성공/실패 응답으로 처리한다. 실패 시 화면은 방 나가기 실패를 즉시 피드백하고 사용자가 재시도한다.
-- 방장 전용 action의 최종 권한은 `Rooms.creatorUID` 기준으로 판단한다.
+- Phase 1 앱 내부 방장 표시는 `ChatRoom.ownerUID` 기준으로 판단한다. 서버 권한은 Phase 2부터 Room owner와 owner member role의 일치를 transaction 안에서 검증한다.
 - 2026-07-03 Socket Cloud Run, Firestore rules, Functions 운영 배포를 완료했다.
 - `firestore:indexes` 운영 배포와 legacy participant index 삭제는 2026-07-03 완료했다.
 - 확인 완료: 설정 화면 참여자 목록은 실제 코드에서 GRDB 전체 member cache가 아니라 members pagination만 source로 사용한다.
@@ -380,6 +380,35 @@ Explicit read 진단은 `ChatRoomViewModel.persistExplicitLatestJumpForCurrentUs
 - iOS 방 관리: `ChatRoomSettingViewController`/`ChatRoomBannedUsersViewModel` → `ChatRoomMemberModerationUseCase` → `ChatModerationLifecycleRepository`.
 - Rules/index: `firestore.rules`의 ban read deny·membership create 거부, `firestore.indexes.json`의 bans/succession job query와 TTL.
 - authoritative identity: 콘텐츠·membership은 UID, 장기 제재·room ban만 `moderationPrincipalID`
+- moderator delegation 자동 승계는 `roomMembershipSweep.ts`의 request/generation 또는 state-version fence와 `roomMembershipSweepFunctions.ts`의 Task Queue를 사용한다. 논리 재시도는 최초 포함 4회·총 50초이며 일반 참여자는 후보가 아니다. account deletion finalizer는 resolved job 완료 전 차단되고, 과거 role event 개인정보는 같은 ID의 privacy outbox를 통해 iOS/GRDB에 수렴한다.
+
+### Moderator delegation Phase 2 서버 역할 진입점
+
+- Callable/계약: `functions/src/chat/moderation/{contracts,functions}.ts` → `functions/src/index.ts`의 `assignRoomModerator`, `revokeRoomModerator`, `resignRoomModerator`, `leaveChatRoom`, `transferRoomOwnershipAndLeave`.
+- 권한 transaction: `roomRoleService.ts`가 actor capability·membership·owner projection을 검증하고 member/joined role, moderator count, 공개 role event, Socket outbox, 24시간 receipt를 원자 갱신한다. 첫 임명은 누락된 server-only count 문서를 원자 생성한다.
+- 기존 제재 확장: `roomBanService.ts`의 remove/list/unban/access와 `service.ts`의 message delete가 현재 owner/moderator matrix를 사용한다. 임명 관리자는 owner·현재 moderator를 제재할 수 없고, 퇴장 작성자의 과거 메시지는 일반 퇴장 사용자 콘텐츠로 취급한다.
+- Rules: `firestore.rules`가 owner/role/event/private state 직접 쓰기와 member 직접 삭제를 막고 `lastReadSeq`·`lastReadUnreadMessageSeq`의 단조 증가만 허용한다.
+- iOS API adapter: `OutPick/Features/Chat/Repositories/ChatModerationLifecycleRepository.swift`의 `ChatRoomRoleMutationRepositoryProtocol`과 Cloud Functions 구현. Phase 4 화면은 아래 역할 세션을 통해서만 mutation을 노출한다.
+
+### Moderator delegation Phase 3 timeline·Socket·안읽음 진입점
+
+- 일반 text/lookbook message sequence는 `Socket/src/messages/sequenceStore.js`, media ready sequence는 `functions/src/chat/media/readyService.ts`가 `seq + unreadMessageSeq`를 같은 transaction에서 증가시킨다. legacy 일반 message는 `unreadMessageSeq ?? seq`로 읽는다.
+- 역할 전달은 `Socket/src/roles/roleEventDeliveryWatcher.js`가 `chatRoleEventDeliveryJobs`를 claim하고 `chat:roomRoleEvent`를 방 전체에 발행한다. success는 즉시 삭제하고 최종 실패만 24시간 TTL을 사용한다.
+- iOS ingress는 `RealtimeSocketListenerBinder` → `RealtimeSocketService`의 공통 message admission으로 합쳐 event ID를 Socket/pagination dedupe key로 쓴다.
+- timeline 표시는 `ChatViewController` → `RoomRoleEventCollectionViewCell`이며, `ChatMessageActionPolicy`·`BannerManager`·`FirebaseChatRoomRepository`·`GRDBChatMessageStore`가 role event를 action/banner/preview/search/media projection에서 제외한다. `ChatMessageWindowStore`의 `여기까지 읽었어요` 마커도 unread 대상 message만 기준으로 삼아 role event 단독으로는 생성하지 않는다.
+- 방장 퇴장 후보 선택은 `ChatRoomSettingViewController`의 큰 page sheet가 담당한다. editorial serif 제목, monospaced eyebrow·순번, 사각 avatar와 accent selection rail을 사용해 앱의 패션 매거진 디자인 언어를 따른다. 후보 셀에는 닉네임만 표시하고 CTA 위 별도 안내 문구는 두지 않는다. 적격 관리자 목록에서 하나를 선택하기 전에는 `넘기기`가 비활성이고, 선택 뒤 활성화한 다음 최종 확인창을 거쳐 `transferRoomOwnershipAndLeave`를 호출한다. 확인 문구는 `방장 권한을 넘긴 뒤 채팅방에서 나가요\n권한을 넘기면 되돌릴 수 없어요`로 마침표 없이 표시한다. 후보가 없으면 `방장 권한을 넘길 관리자가 없어요\n나가면 방이 종료돼요`를 안내한다.
+- 설정 사진/동영상은 `ChatRoomMediaIndexEntry`가 `bucketThumb/bucketOriginal + pathThumb/pathOriginal`을 `gs://bucket/path`로 해석하고 `LoadChatRoomMediaUseCase`가 이 resource path를 thumbnail/original loader에 전달한다. 출시 이력이 없는 신규 스키마이므로 로컬 backfill 대신 Development 채팅 데이터를 초기화하고 새 문서만 이 계약으로 생성한다.
+- 읽음 경계는 `ChatReadStateStore`·`ChatRoomReadStateStore`·`ChatUnreadCatchUpState`·`ChatRoomViewModel`이 timeline/unread frontier를 분리하고 `UserProfileRepository.updateReadFrontier`가 두 값을 단조 증가시킨다.
+
+### Moderator delegation Phase 4 iOS 역할 세션·화면 진입점
+
+- `ChatRoomRoleSession`은 구독 generation으로 cancel 이전의 늦은 snapshot/error를 차단한다. stop/background에서 권한 source를 cache로 낮추고 foreground 새 구독은 최신 server 확인 뒤에만 운영 권한을 활성화한다. `ChatMessage`의 Dictionary/Codable 두 디코더 모두 일반 message의 `unreadMessageSeq ?? seq`를 복원하고 role event는 unread 순번을 갖지 않는다.
+
+- 단일 역할 관찰: `FirestoreChatRoomRoleRepository` → `ObserveChatRoomRoleUseCase` → `ChatRoomRoleSession`. `ChatContainer`가 방마다 한 세션을 만들고 `ChatRoomViewModel`·`ChatRoomSettingViewModel`이 공유한다. cache는 표시 전용이며 server/mutation 상태에서만 관리가 가능하다.
+- 참여자 조회·정렬: `FirebaseChatRoomRepository.fetchPinnedRoomMembers/fetchRoomMembersPage` → `LoadChatRoomParticipantsUseCase` → `ChatRoomParticipantOrdering` → `ParticipantsSectionParticipantCell`/`ParticipantListCell`. 순서는 나→방장→관리자→일반 참여자이며 pinned/page 중복을 제거한다. 참여자 행과 section은 Dynamic Type self-sizing이고, 중첩 collection은 참여자 수 기반 초기 예상 높이 뒤 실제 content size로 교정한다.
+- 역할 mutation 화면: `ChatRoomSettingViewController` → `ChatRoomSettingViewModel` → `ManageChatRoomRoleUseCase` → `ChatRoomRoleMutationRepositoryProtocol`. 방장 이전·종료는 `ChatRoomExitUseCase`와 `ChatCoordinator.handleRoomExit`로 수렴한다.
+- 현재 역할 projection 삭제: `ChatViewController.bindCurrentRoomRoleSession`이 설정을 닫고 pending 전송을 취소한 뒤 `getMyRoomAccess`로 banned/joinable 상태를 재확인한다.
+- 메시지 운영: 임명 관리자가 context menu를 열 때 `FirestoreChatRoomRoleRepository.fetchMemberRole`로 작성자 문서 한 건만 서버 조회한다. member 또는 문서가 없는 퇴장 작성자만 운영 삭제·내보내기를 노출한다.
 
 ### 고정 사용자 동작
 

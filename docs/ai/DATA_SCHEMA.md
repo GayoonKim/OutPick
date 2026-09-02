@@ -41,13 +41,14 @@
 - 문서상 `userID == canonicalUserID == Firebase Auth uid`다.
 - 비공개 계정 경로는 `users/{uid}`, 앱 내 공개 프로필 경로는 `userPublicProfiles/{uid}`다.
 - 이메일/provider fallback query는 사용하지 않고 관리자 이메일 조회는 Firebase Auth를 사용한다.
-- `Rooms.creatorUID`, `Messages.senderUID`, member 문서 ID, joinedRooms owner 경로는 같은 UID를 저장한다.
+- Chat room owner identity의 앱 내부 canonical 이름은 `ownerUID`다. Phase 1 호환 reader는 `Rooms.ownerUID ?? Rooms.creatorUID` 순서로 읽으며, 최소 지원 버전 cutover 전 신규 room write는 기존 `creatorUID`만 유지한다.
+- `Rooms.ownerUID`/호환 `creatorUID`, `Messages.senderUID`, member 문서 ID, joinedRooms owner 경로는 같은 UID를 저장한다.
 - Chat room 자기 identity는 `Rooms/{roomID}` 경로의 document ID이며 `ChatRoom.id`로 주입한다. 새 room payload에는 자기 `ID`/`id`를 저장하지 않는다.
 - 2026-07-14 운영 Rooms의 legacy 자기 `ID` 4건을 cleanup했으며 사후 감사 기준 `Rooms.ID`/`Rooms.id` 보유 문서는 0건이다.
 - `Rooms.participantUIDs`, 사용자 문서의 legacy `joinedRooms` 배열, `roomStates`는 신규 source로 사용하지 않는다.
 - GRDB `LocalChatUser.userID`, `RoomProfileDisplayCache.userID`, `chatMessage.senderUID`도 같은 UID 의미다.
 - 개발 DB에서 재현된 legacy `chatMessage.senderID NOT NULL` schema만 migration으로 현재 schema로 재작성한다.
-- 현재 구현은 앱 미배포 clean break를 적용한 fresh 19개 migration이다. Phase 7.3은 `chatOutgoingOutbox`에 upload identity·processing 상태·terminal/expiry·재시도용 session identity를 추가한다. signed PUT URL·필수 header 같은 bearer credential은 로컬 DB에 저장하지 않는다. legacy no-op 3개와 `createRoomImage`/`roomImage` table/API는 제거했으며 Phase 3 이전 개발 DB는 앱 삭제·재설치로 초기화한다.
+- 현재 구현은 23개 GRDB migration이며 `addRoomRoleEventToChatMessage`가 `chatMessage.roleEvent` JSON column을, `addUnreadMessageSeqToChatMessage`가 일반 메시지 전용 unread sequence를 추가한다. Phase 7.3은 `chatOutgoingOutbox`에 upload identity·processing 상태·terminal/expiry·재시도용 session identity를 추가한다. signed PUT URL·필수 header 같은 bearer credential은 로컬 DB에 저장하지 않는다.
 - 메시지 저장 중 FTS 오류는 삼키지 않고 message/FTS/media transaction 전체를 rollback한다. 상세 결정은 `docs/ai/tasks/core-infrastructure-modularization/decisions/phase-3-grdb.md`를 따른다.
 
 ### 비공개 계정과 공개 프로필
@@ -115,7 +116,10 @@
 - `Rooms/{roomID}/bans/{moderationPrincipalID}`가 room ban source다. client read/write는 금지하고 creator 전용 서버 API로 내보내기·해제한다. ban은 활성 방 list/search/preview/message/media read를 막지 않고 membership 생성·재가입과 참여자 전용 Socket/message/media write만 거부한다.
 - ban entry는 자유 입력 없이 canonical 사유, ban 시점 최소 표시 snapshot과 증가하는 stateVersion을 저장한다. ban 목록은 재가입 새 UID의 최신 프로필을 역연결하지 않고 room-scoped opaque token만 반환한다.
 - 관리자 방 폐쇄는 `Rooms.lifecycleStatus = closedByModeration`을 먼저 기록해 join/read/write/Socket/push를 차단하고 물리 cleanup은 별도 재시도 상태로 수렴시킨다.
-- 수동 creator leave는 기존 방 삭제를 사용한다. 일시 제한·deletionPending은 승계하지 않고, creator 계정 삭제 최종 확정·영구 정지는 durable membership sweep과 방별 transaction으로 oldest eligible active member에게 승계한다.
+- moderator delegation 활성화 전 수동 owner leave는 기존 방 삭제를 사용한다. 활성화 후 자발적 퇴장은 owner가 적격 moderator를 직접 선택해 이전하거나 방을 종료한다. 일시 제한·deletionPending은 자동 승계하지 않는다.
+- `roomOwnershipSuccessionJobs/{jobID}` schema v2는 `cause`, target UID, account deletion request/generation 또는 moderation state version fence, `status/attempt/nextAttemptAt/lease`, 최소 실패 코드를 보존한다. 정상 pagination은 attempt를 소비하지 않고 일시 오류만 최초 포함 4회·총 50초 안에 재시도한다. 계정 삭제 finalizer는 `completed + result=resolved`를 확인해야 진행한다.
+- 과거 `roomRoleEvent`는 계정 삭제 시 `roleEvent.subjectUID`를 제거하고 nickname snapshot을 `알 수 없는 사용자`로 갱신한다. 같은 event ID의 privacy delivery job은 실시간 replica 갱신용이며 timeline seq를 새로 소비하지 않는다.
+- owner 계정 삭제 최종 확정·영구 정지는 durable job과 방별 transaction으로 가장 먼저 임명된 적격 moderator에게만 승계하며, 적격 moderator가 없으면 일반 member에게 넘기지 않고 방을 종료한다.
 - 영구 정지 사용자는 모든 room membership·joinedRooms에서 제거하며 해제 뒤 자동 복구하지 않는다. 승계 중 방은 active로 운영하지만 기존 owner capability는 즉시 차단한다. 적격자 없음은 삭제 시 `closedByOwner`, 영구 정지 시 `closedByModeration`으로 기존 종료 lifecycle에 수렴시킨다.
 
 ### Membership와 참여중 목록
@@ -123,7 +127,7 @@
 - authoritative membership: `Rooms/{roomID}/members/{uid}`. 나가면 member 문서를 hard delete한다.
 - 참여중 목록 projection: `users/{uid}/joinedRooms/{roomID}`.
 - 방 생성은 room 문서, owner member 문서, joinedRooms projection을 하나의 transaction으로 저장한다.
-- projection 필드: `roomID`, `role`, `joinedAt`, `lastReadSeq`, `isClosed`, `updatedAt`.
+- projection 필드: `roomID`, `role(owner | moderator | member)`, `joinedAt`, moderator 전용 `moderatorSince`, `lastReadSeq`, `lastReadUnreadMessageSeq`, `isClosed`, `updatedAt`.
 - 마지막 메시지는 `Rooms.lastMessage*`만 source로 사용하며 사용자별 projection으로 fan-out하지 않는다.
 - 전체 참여자 목록은 member collection을 stable document ID 순서로 pagination한다.
 - 로컬 캐시는 membership replica가 아니라 최근 sender 표시용 bounded cache다.
@@ -133,7 +137,9 @@
 
 - `ChatRoomReadStateStore`는 앱 실행 중 unread/preview 공유 상태이며 영속 source가 아니다.
 - 앱 재실행 시 Firestore `Rooms`와 joinedRooms projection에서 복원한다.
-- snapshot은 `latestSeq`, `lastReadSeq`, `lastMessageSenderUID`, `latestMessagePreview`, `latestMessageAt`를 가진다.
+- Room의 `seq`와 projection의 `lastReadSeq`는 전체 timeline frontier다. `unreadMessageSeq`와 `lastReadUnreadMessageSeq`는 unread 대상 메시지 전용 frontier다.
+- 일반 text/lookbook/media message는 생성 transaction에서 `seq`와 `unreadMessageSeq`를 함께 증가시킨다. 역할 이벤트는 `seq`만 소비하며, legacy 일반 message는 `unreadMessageSeq ?? seq`로 호환한다.
+- 읽음 저장은 `lastReadSeq`와 `lastReadUnreadMessageSeq`를 함께 단조 증가시킨다. 역할 이벤트를 읽으면 timeline frontier만 진행하고 unread frontier는 유지한다.
 
 ### 전역 차단과 로컬 redaction
 
@@ -189,6 +195,19 @@
 - 카드 최초 렌더링은 snapshot을 사용하고 탭 후 원본 상세를 최신 조회한다.
 - 기존 `messageType == nil` 메시지는 attachments 유무로 text/media 호환 decode한다.
 - 선택 이유: ADR-011, ADR-012, ADR-013.
+
+### 방 역할 timeline event
+
+- 역할 이벤트는 기존 `Rooms/{roomID}/Messages/{eventID}` timeline에 `messageType = roomRoleEvent`, `serverGenerated = true`, 구조화된 `roleEvent` payload로 저장한다.
+- `roleEvent`는 `kind`, nullable `subjectUID`, `subjectNicknameSnapshot`만 가진다. 계정 삭제 익명화 시 `subjectUID`를 제거하고 닉네임 snapshot을 `알 수 없는 사용자`로 바꾼다.
+- iOS `ChatMessage.from`과 GRDB mapper는 server marker와 payload가 모두 없는 `roomRoleEvent`를 fail-closed로 거부한다.
+- GRDB `chatMessage.roleEvent`는 payload JSON을 보존하고 23번 migration이 기존 일반 message의 `unreadMessageSeq`를 `seq`로 backfill한다. 역할 이벤트는 FTS·media projection에 넣지 않는다.
+- Socket `chat:roomRoleEvent`와 Messages pagination은 같은 event ID를 사용하고 iOS 공통 ingress가 first-wins로 dedupe한다. 역할 이벤트는 방 preview·unread·push·검색·reply/copy/report/delete/media action을 만들지 않는다.
+- 역할 mutation의 서버 전용 원장은 `roomModerationStates/{roomID}`의 `moderatorCount`, `roomRoleMutationReceipts/{receiptID}`의 24시간 성공 receipt, `chatRoleEventDeliveryJobs/{eventID}`의 Socket outbox다. 클라이언트는 세 collection을 직접 읽거나 쓰지 않는다.
+- 신규 방은 첫 관리자 임명 transaction이 누락된 moderation state를 `moderatorCount = 0`에서 원자 생성한다. 기존 moderator가 있어야 하는 회수·사임·이전 경로에서 state가 누락되면 자동 추정하지 않고 거부한다.
+- 메시지 운영 권한은 작성자의 현재 member role만 사용한다. 이미 퇴장해 member 문서가 없는 작성자의 과거 메시지는 일반 퇴장 사용자 콘텐츠로 취급하며, 과거 역할 복원 이력이나 메시지별 역할 snapshot은 저장하지 않는다.
+- iOS 역할 세션은 현재 사용자 자신의 `users/{uid}/joinedRooms/{roomID}` 문서 하나만 실시간 관찰한다. 참여자 전체 역할은 설정 진입·pagination·role event reconcile의 단발 조회로 가져오고, 메시지 운영 메뉴는 선택한 작성자의 `Rooms/{roomID}/members/{uid}` 한 건만 서버에서 지연 조회한다.
+- 역할 migration 전 member 문서에 `role`이 없으면 목록·메시지 판정에서 `member`로 호환하고 현재 사용자 세션은 기존 캐시 역할을 유지한다. 알 수 없는 role 문자열은 손상 projection으로 간주해 fail-closed한다.
 
 ## 스타일 무드 계약
 
