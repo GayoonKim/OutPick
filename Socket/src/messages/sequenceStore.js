@@ -11,17 +11,31 @@ export function createSequenceStore({ db, admin }) {
       if (existing.exists) {
         const ed = existing.data() || {};
         if (typeof ed.seq === "number") {
-          return { seq: ed.seq, created: false };
+          const unreadMessageSeq = Number.isInteger(ed.unreadMessageSeq)
+            ? ed.unreadMessageSeq
+            : ed.seq;
+          return { seq: ed.seq, unreadMessageSeq, created: false };
         }
       }
 
       const roomSnap = await tx.get(roomRef);
-      const cur = Number((roomSnap.exists && typeof roomSnap.data().seq === "number") ? roomSnap.data().seq : 0);
+      const roomData = roomSnap.exists ? (roomSnap.data() || {}) : {};
+      const cur = Number(typeof roomData.seq === "number" ? roomData.seq : 0);
       const next = cur + 1;
+      // 역할 이벤트 도입 전 Room은 두 counter가 같으므로 legacy fallback은 현재 seq다.
+      const currentUnreadMessageSeq = Number.isInteger(roomData.unreadMessageSeq)
+        ? roomData.unreadMessageSeq
+        : cur;
+      const nextUnreadMessageSeq = currentUnreadMessageSeq + 1;
 
-      tx.set(msgRef, { ...messageData, seq: next }, { merge: true });
+      tx.set(msgRef, {
+        ...messageData,
+        seq: next,
+        unreadMessageSeq: nextUnreadMessageSeq
+      }, { merge: true });
       tx.set(roomRef, {
         seq: next,
+        unreadMessageSeq: nextUnreadMessageSeq,
         lastMessage: lastMessageText,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
         lastMessageSeq: next
@@ -30,7 +44,7 @@ export function createSequenceStore({ db, admin }) {
         tx.delete(options.mediaUploadRef);
       }
 
-      return { seq: next, created: true };
+      return { seq: next, unreadMessageSeq: nextUnreadMessageSeq, created: true };
     });
   }
 

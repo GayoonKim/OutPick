@@ -17,12 +17,21 @@ import {
   RemoveRoomMemberInput,
   UnbanRoomMemberInput,
 } from "./contracts.js";
+import {
+  appendRoomRoleEvent,
+  resolveRoomRoleInTransaction,
+  roomRoleError,
+  RoomMemberRole,
+  storedModeratorCount,
+  storedRoomMemberRole,
+} from "./roomRoleService.js";
 
 const INACTIVE_BAN_RETENTION_MILLIS = 180 * 24 * 60 * 60 * 1000;
 
 type BanCursor = {bannedAtMillis: number; principalID: string};
 
 export type MyRoomAccessStatus = "member" | "joinable" | "banned" | "closed";
+export type MyRoomAccess = {status: MyRoomAccessStatus; role: RoomMemberRole | null};
 
 function roomIsActive(data: FirebaseFirestore.DocumentData): boolean {
   return data.isClosed !== true &&
@@ -52,32 +61,27 @@ function decodeCursor(value: string): BanCursor {
   }
 }
 
-async function assertRoomOwner(
+async function assertRoomOperator(
   actorUID: string,
   roomID: string,
   firestore: Firestore,
-): Promise<FirebaseFirestore.DocumentSnapshot> {
-  await assertAccountCapability(actorUID, "moderateOwnedRoom", firestore);
-  const room = await firestore.collection("Rooms").doc(roomID).get();
-  if (!room.exists || !room.data()) {
-    throw new HttpsError("not-found", "채팅방을 찾을 수 없습니다.");
-  }
-  if (!roomIsActive(room.data()!)) {
-    throw new HttpsError("failed-precondition", "폐쇄된 채팅방입니다.", {
-      errorCode: "ROOM_CLOSED",
-    });
-  }
-  if (room.get("creatorUID") !== actorUID) {
-    throw new HttpsError("permission-denied", "방장 권한이 필요합니다.");
-  }
-  return room;
+): Promise<RoomMemberRole> {
+  return firestore.runTransaction(async (transaction) => {
+    const resolved = await resolveRoomRoleInTransaction(
+      transaction, firestore, roomID, actorUID, new Date(),
+    );
+    if (resolved.role !== "owner" && resolved.role !== "moderator") {
+      throw roomRoleError("NOT_ROOM_MODERATOR", "방 운영 권한이 필요합니다.", "permission-denied");
+    }
+    return resolved.role;
+  });
 }
 
 export async function getMyRoomAccessService(
   actorUID: string,
   input: GetMyRoomAccessInput,
   firestore: Firestore = db,
-): Promise<{status: MyRoomAccessStatus}> {
+): Promise<MyRoomAccess> {
   await assertAccountCapability(actorUID, "readAppContent", firestore);
   const roomRef = firestore.collection("Rooms").doc(input.roomID);
   const accountRef = firestore.collection("moderationAccounts").doc(actorUID);
@@ -87,18 +91,26 @@ export async function getMyRoomAccessService(
     accountRef.get(),
     memberRef.get(),
   ]);
-  if (!room.exists || !room.data()) {
+  const roomData = room.data();
+  if (!room.exists || !roomData) {
     throw new HttpsError("not-found", "채팅방을 찾을 수 없습니다.");
   }
-  if (!roomIsActive(room.data()!)) return {status: "closed"};
-  if (member.exists) return {status: "member"};
+  if (!roomIsActive(roomData)) return {status: "closed", role: null};
+  if (member.exists) {
+    const role = storedRoomMemberRole(member.get("role"));
+    const ownerUID = room.get("ownerUID") === undefined ? room.get("creatorUID") : room.get("ownerUID");
+    if (!role || typeof ownerUID !== "string" || !ownerUID || (ownerUID === actorUID) !== (role === "owner")) {
+      throw roomRoleError("ROOM_ROLE_STATE_INVALID", "채팅방 역할 상태가 올바르지 않습니다.");
+    }
+    return {status: "member", role};
+  }
 
   const principalID = account.get("moderationPrincipalID");
   if (typeof principalID !== "string" || !principalID || principalID.includes("/")) {
     throw new HttpsError("failed-precondition", "제재 식별자를 찾을 수 없습니다.");
   }
   const ban = await roomRef.collection("bans").doc(principalID).get();
-  return {status: ban.exists && ban.get("isActive") === true ? "banned" : "joinable"};
+  return {status: ban.exists && ban.get("isActive") === true ? "banned" : "joinable", role: null};
 }
 
 export async function removeRoomMemberService(
@@ -114,15 +126,15 @@ export async function removeRoomMemberService(
   const auditRef = firestore.collection("moderationAuditLogs")
     .doc(moderationAuditActionID(actorUID, input.clientRequestID));
   const priorAudit = await auditRef.get();
-  if (priorAudit.exists && priorAudit.data()) {
-    return assertAuditReplay(priorAudit.data()!, {
+  const priorAuditData = priorAudit.data();
+  if (priorAudit.exists && priorAuditData) {
+    return assertAuditReplay(priorAuditData, {
       action: "removeRoomMember",
       targetType: "roomMember",
       targetID,
       requestID: input.clientRequestID,
     });
   }
-  await assertAccountCapability(actorUID, "moderateOwnedRoom", firestore);
   const roomRef = firestore.collection("Rooms").doc(input.roomID);
   const memberRef = roomRef.collection("members").doc(input.targetUID);
   const targetAccountRef = firestore.collection("moderationAccounts").doc(input.targetUID);
@@ -131,37 +143,45 @@ export async function removeRoomMemberService(
     .collection("joinedRooms").doc(input.roomID);
   const roomStateRef = firestore.collection("users").doc(input.targetUID)
     .collection("roomStates").doc(input.roomID);
+  const moderationStateRef = firestore.collection("roomModerationStates").doc(input.roomID);
 
   return firestore.runTransaction(async (transaction) => {
-    const [audit, room, member, targetAccount, profile] = await Promise.all([
-      transaction.get(auditRef),
-      transaction.get(roomRef),
-      transaction.get(memberRef),
-      transaction.get(targetAccountRef),
-      transaction.get(profileRef),
-    ]);
-    if (audit.exists && audit.data()) {
-      return assertAuditReplay(audit.data()!, {
+    const audit = await transaction.get(auditRef);
+    const auditData = audit.data();
+    if (audit.exists && auditData) {
+      return assertAuditReplay(auditData, {
         action: "removeRoomMember",
         targetType: "roomMember",
         targetID,
         requestID: input.clientRequestID,
       });
     }
-    if (!room.exists || !room.data()) {
-      throw new HttpsError("not-found", "채팅방을 찾을 수 없습니다.");
+    const resolved = await resolveRoomRoleInTransaction(
+      transaction, firestore, input.roomID, actorUID, now,
+    );
+    if (resolved.role !== "owner" && resolved.role !== "moderator") {
+      throw roomRoleError("NOT_ROOM_MODERATOR", "방 운영 권한이 필요합니다.", "permission-denied");
     }
-    const roomData = room.data()!;
-    if (!roomIsActive(roomData)) {
-      throw new HttpsError("failed-precondition", "폐쇄된 채팅방입니다.", {
-        errorCode: "ROOM_CLOSED",
-      });
+    const [member, joined, targetAccount, profile, moderationState] = await Promise.all([
+      transaction.get(memberRef),
+      transaction.get(joinedRef),
+      transaction.get(targetAccountRef),
+      transaction.get(profileRef),
+      transaction.get(moderationStateRef),
+    ]);
+    const targetRole = member.exists ? storedRoomMemberRole(member.get("role")) : null;
+    const targetJoinedRole = joined.exists ? storedRoomMemberRole(joined.get("role")) : null;
+    if (!targetRole || !targetJoinedRole) {
+      throw roomRoleError("TARGET_NOT_MEMBER", "참여 중인 사용자가 아닙니다.");
     }
-    if (roomData.creatorUID !== actorUID) {
-      throw new HttpsError("permission-denied", "방장 권한이 필요합니다.");
+    if (targetRole !== targetJoinedRole) {
+      throw roomRoleError("ROOM_ROLE_STATE_INVALID", "참여자 역할 상태가 올바르지 않습니다.");
     }
-    if (!member.exists || member.get("role") === "owner") {
-      throw new HttpsError("failed-precondition", "내보낼 수 있는 참여자가 아닙니다.");
+    if (targetRole === "owner" || input.targetUID === resolved.ownerUID) {
+      throw roomRoleError("TARGET_IS_OWNER", "방장은 내보낼 수 없습니다.");
+    }
+    if (targetRole === "moderator" && resolved.role !== "owner") {
+      throw roomRoleError("TARGET_IS_MODERATOR", "관리자끼리는 서로 내보낼 수 없습니다.");
     }
     const principalID = targetAccount.get("moderationPrincipalID");
     if (!targetAccount.exists || typeof principalID !== "string" || !principalID) {
@@ -175,11 +195,37 @@ export async function removeRoomMemberService(
     const previousVersion = currentBan.exists && Number.isSafeInteger(currentBan.get("stateVersion")) ?
       Number(currentBan.get("stateVersion")) : 0;
     const nextVersion = previousVersion + 1;
-    const memberCount = nonNegativeMemberCount(roomData.memberCount, true);
+    const memberCount = nonNegativeMemberCount(resolved.room.get("memberCount"), true);
     const nowTimestamp = Timestamp.fromDate(now);
     const displayName = profile.exists && typeof profile.get("nickname") === "string" ?
       String(profile.get("nickname")).slice(0, 80) : null;
-    const result = {removed: true, roomBanned: true, memberCount};
+    let nextModeratorCount: number | null = null;
+    let roleEvent: {eventID: string; seq: number} | null = null;
+    if (targetRole === "moderator") {
+      const currentModeratorCount = storedModeratorCount(moderationState);
+      if (currentModeratorCount <= 0) {
+        throw roomRoleError("ROOM_ROLE_STATE_INVALID", "채팅방 관리자 수 상태가 올바르지 않습니다.");
+      }
+      nextModeratorCount = currentModeratorCount - 1;
+      roleEvent = appendRoomRoleEvent(
+        transaction,
+        firestore,
+        roomRef,
+        resolved.room.get("seq"),
+        "moderatorRevoked",
+        input.targetUID,
+        displayName?.trim() || "알 수 없는 사용자",
+        nowTimestamp,
+      );
+    }
+    const result = {
+      removed: true,
+      roomBanned: true,
+      memberCount,
+      moderatorCount: nextModeratorCount,
+      eventID: roleEvent?.eventID ?? null,
+      seq: roleEvent?.seq ?? null,
+    };
 
     transaction.set(banRef, {
       schemaVersion: 1,
@@ -193,13 +239,24 @@ export async function removeRoomMemberService(
       unbannedAt: null,
       expiresAt: null,
     });
-    transaction.update(roomRef, {memberCount, updatedAt: nowTimestamp});
+    transaction.update(roomRef, {
+      memberCount,
+      ...(roleEvent ? {seq: roleEvent.seq} : {}),
+      updatedAt: nowTimestamp,
+    });
+    if (nextModeratorCount !== null) {
+      transaction.update(moderationStateRef, {
+        moderatorCount: nextModeratorCount,
+        updatedAt: nowTimestamp,
+      });
+    }
     transaction.delete(memberRef);
     transaction.delete(joinedRef);
     transaction.delete(roomStateRef);
     transaction.create(auditRef, {
       schemaVersion: 1,
       actorUID,
+      actorRole: resolved.role,
       action: "removeRoomMember",
       targetType: "roomMember",
       targetID,
@@ -225,15 +282,16 @@ export async function unbanRoomMemberService(
   const auditRef = firestore.collection("moderationAuditLogs")
     .doc(moderationAuditActionID(actorUID, input.clientRequestID));
   const priorAudit = await auditRef.get();
-  if (priorAudit.exists && priorAudit.data()) {
-    return assertAuditReplay(priorAudit.data()!, {
+  const priorAuditData = priorAudit.data();
+  if (priorAudit.exists && priorAuditData) {
+    return assertAuditReplay(priorAuditData, {
       action: "unbanRoomMember",
       targetType: "roomBan",
       targetID: input.roomID,
       requestID: input.clientRequestID,
     });
   }
-  await assertRoomOwner(actorUID, input.roomID, firestore);
+  await assertRoomOperator(actorUID, input.roomID, firestore);
   const roomRef = firestore.collection("Rooms").doc(input.roomID);
   const matches = await roomRef.collection("bans")
     .where("banEntryToken", "==", input.banEntryToken)
@@ -245,25 +303,23 @@ export async function unbanRoomMemberService(
   }
   const banRef = matches.docs[0].ref;
   return firestore.runTransaction(async (transaction) => {
-    const [audit, room, ban] = await Promise.all([
-      transaction.get(auditRef),
-      transaction.get(roomRef),
-      transaction.get(banRef),
-    ]);
-    if (audit.exists && audit.data()) {
-      return assertAuditReplay(audit.data()!, {
+    const audit = await transaction.get(auditRef);
+    const auditData = audit.data();
+    if (audit.exists && auditData) {
+      return assertAuditReplay(auditData, {
         action: "unbanRoomMember",
         targetType: "roomBan",
         targetID: input.roomID,
         requestID: input.clientRequestID,
       });
     }
-    if (!room.exists || !room.data() || !roomIsActive(room.data()!)) {
-      throw new HttpsError("failed-precondition", "활성 채팅방이 아닙니다.");
+    const resolved = await resolveRoomRoleInTransaction(
+      transaction, firestore, input.roomID, actorUID, now,
+    );
+    if (resolved.role !== "owner" && resolved.role !== "moderator") {
+      throw roomRoleError("NOT_ROOM_MODERATOR", "방 운영 권한이 필요합니다.", "permission-denied");
     }
-    if (room.get("creatorUID") !== actorUID) {
-      throw new HttpsError("permission-denied", "방장 권한이 필요합니다.");
-    }
+    const ban = await transaction.get(banRef);
     if (!ban.exists || ban.get("isActive") !== true ||
       ban.get("banEntryToken") !== input.banEntryToken) {
       throw new HttpsError("not-found", "재입장 제한 항목을 찾을 수 없습니다.");
@@ -282,12 +338,13 @@ export async function unbanRoomMemberService(
     transaction.create(auditRef, {
       schemaVersion: 1,
       actorUID,
+      actorRole: resolved.role,
       action: "unbanRoomMember",
       targetType: "roomBan",
       targetID: input.roomID,
       before: {roomBanned: true, stateVersion: ban.get("stateVersion")},
       after: result,
-      reasonCode: "ownerUnban",
+      reasonCode: "roomOperatorUnban",
       reportTargetType: null,
       reportTargetID: null,
       requestID: input.clientRequestID,
@@ -303,7 +360,7 @@ export async function listRoomBansService(
   input: ListRoomBansInput,
   firestore: Firestore = db,
 ): Promise<{items: Record<string, unknown>[]; nextCursor: string | null}> {
-  await assertRoomOwner(actorUID, input.roomID, firestore);
+  await assertRoomOperator(actorUID, input.roomID, firestore);
   let query: Query = firestore.collection("Rooms").doc(input.roomID).collection("bans")
     .where("isActive", "==", true)
     .orderBy("bannedAt", "desc")

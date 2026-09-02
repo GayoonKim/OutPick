@@ -521,6 +521,37 @@ git diff --check -- firebase.json storage.rules
 - Storage Rules는 quarantine owner의 exact reservation write만 허용하고 ready materialization은 서버만 수행한다.
 - platform admin API는 `platformAdmins/{uid}`, App Check, expected version과 고위험 action의 5분 이내 `auth_time`을 검증한다.
 
+### Moderator delegation Phase 2 로컬 구현
+
+- `functions/src/chat/moderation/roomRoleService.ts`가 공통 role resolver와 임명·회수·사임·퇴장·소유권 이전 transaction을 소유한다. 역할 projection, `roomModerationStates`, 공개 `roomRoleEvent`, `chatRoleEventDeliveryJobs`, 24시간 `roomRoleMutationReceipts`를 함께 commit한다.
+- 신규 방은 첫 임명 transaction에서 누락된 `roomModerationStates`를 생성한다. 기존 moderator를 전제하는 경로의 state 누락은 fail-closed한다.
+- `roomBanService.ts`와 `service.ts`는 owner/moderator 권한 matrix를 공유하며 관리자 간·방장 대상 제재를 거부한다. 과거 메시지 작성자가 이미 퇴장한 경우 현재 역할 없음으로 판정해 일반 퇴장 사용자 콘텐츠 삭제를 허용한다.
+- `firestore.rules`는 role·owner·server-only state/outbox/receipt/event 직접 mutation과 member 직접 삭제를 거부한다. 이 변경은 아직 배포하지 않았다.
+- 자동 검증: Functions 246/246, Rules 47/47, transaction 56/56, iOS callable mapping 7/7 및 Development Simulator build 통과. 새 composite index는 필요하지 않았다.
+
+### Moderator delegation Phase 3 로컬 구현
+
+- text/lookbook Socket transaction과 media ready Function은 일반 message마다 `Rooms.seq`와 `Rooms.unreadMessageSeq`, message의 두 sequence를 함께 갱신한다. `roomRoleEvent` transaction은 `seq`만 갱신한다.
+- `chatRoleEventDeliveryJobs` query용 `status + nextAttemptAt`, `status + leaseExpiresAt` composite와 최종 실패 `expiresAt` TTL override를 manifest에 추가했다.
+- `Socket/src/roles/roleEventDeliveryWatcher.js`는 60초 lease, 5초 poll, batch 50, 최대 10회 backoff를 적용한다. 성공 job은 즉시 삭제하며 timeline event는 outbox 상태와 무관하게 Messages에 남는다.
+- 이 Rules/index/Socket 변경은 로컬 검증만 완료했고 Development·Production에는 배포하지 않았다.
+
+### Moderator delegation Phase 5 자동 승계·계정 정리
+
+- `functions/src/chat/moderation/roomMembershipSweep.ts`는 계정 삭제 request/generation과 영구 정지 state version fence를 통합하고, 현재 moderator만 `moderatorSince`·UID 순으로 선택해 transaction에서 capability·membership·ban을 재검증한다. 후보가 없으면 기존 room lifecycle cleanup으로 종료한다.
+- 논리 실패 재시도는 최초 포함 4회, `즉시 → 5초 → 15초 → 30초` 총 50초다. `runRoomOwnershipSuccessionTask` Task Queue가 각 시점을 예약하며 5분 `drainRoomOwnershipSuccessionJobs`는 task 누락과 만료 lease watchdog이다. 정상 membership pagination은 attempt를 소비하지 않는다.
+- `functions/src/accountDeletion/{cleanup,drain}.ts`는 rooms stage 진입과 job 생성을 원자 결합하고 `completed/resolved` 결과를 finalizer gate로 사용한다. 계정 삭제 role event는 subject UID와 nickname snapshot을 익명화하고 같은 event ID의 privacy outbox를 만든다.
+- 실패 job은 TTL 삭제하지 않고 `ROOM_OWNERSHIP_SUCCESSION_FAILED` 구조화 오류 신호와 최소 실패 코드를 남긴다. `npm run replay:room-succession -- --project ... --job ... --expected-target-uid ...`는 기본 dry-run이며 Production apply는 exact confirmation을 요구한다.
+- `firestore.indexes.json`에는 `Rooms.ownerUID + isClosed`와 role event subject collection-group query가 추가됐다. Task Queue/Functions/index와 alert policy는 아직 배포하지 않았다.
+
+### Moderator delegation Phase 6 migration·rollout gate
+
+- `functions/scripts/migrate-room-moderator-cutover.mjs`와 `room-moderator-cutover-plan.mjs`가 기본 dry-run, blocker fail-closed, exact room/write/hash apply fence와 멱등 재감사를 소유한다.
+- `functions/src/chat/moderation/rollout.ts`의 `CHAT_ROOM_MODERATOR_DELEGATION_ENABLED` Boolean parameter는 기본 false다. `functions.ts`에서 신규 임명과 관리자 대상 소유권 이전만 막고 회수·사임·자동 승계·종료 같은 안전 수렴 경로는 막지 않는다.
+- iOS Firebase Remote Config key는 `minimum_supported_ios_version`, `chat_room_moderator_delegation_enabled`, `ios_app_store_url`이다. 2026-09-01 Development는 migration 수렴 뒤 서버 flag와 앱 flag를 활성화했고 Remote Config version 1에는 앱 flag만 true로 게시했다. 최소 버전·App Store URL은 미설정이며 Production key는 없다.
+- migration은 사용자별 `joinedRooms`를 한 번 inventory해 room별 projection을 구성하므로 별도 collection-group index를 요구하지 않는다. Development 4개 방에 15 writes를 적용한 뒤 write 0·blocker 0으로 재감사했다.
+- Development Rules ruleset은 `d4643a2b-fb8b-4a02-8757-7079e0e25365`; role delegation index는 READY, delivery TTL은 ACTIVE다. 관련 Functions 20개와 Socket revision `outpick-socket-development-mod-delegation-0901`을 반영했으며 Production은 미변경이다.
+
 ### Index·retention
 
 - 관리자 신고 조회: 별도 queue projection 없이 `moderationMessageIncidents`, `moderationUserReports`, `moderationRoomReports` 원장을 `reviewState + queueClass/priorityClass + reviewDueAt/slaDueAt + lastReportedAt`으로 직접 필터·정렬한다.

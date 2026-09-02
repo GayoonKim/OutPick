@@ -22,6 +22,7 @@ import {
   unlinkKakaoAccount,
 } from "./providerCleanup.js";
 import {retryDelayMillis} from "./policy.js";
+import {accountDeletionSuccessionJobID} from "../chat/moderation/roomMembershipSweep.js";
 
 const LEASE_MS = 10 * 60 * 1000;
 const REQUEST_LIMIT = 10;
@@ -176,6 +177,29 @@ async function advance(
     ) {
       throw new Error("account_deletion_lease_lost");
     }
+    if (nextStage === "rooms") {
+      const jobRef = db.collection("roomOwnershipSuccessionJobs")
+        .doc(accountDeletionSuccessionJobID(claim.requestID));
+      transaction.create(jobRef, {
+        schemaVersion: 2,
+        targetUID: claim.uid,
+        cause: "accountDeletion",
+        accountDeletionRequestID: claim.requestID,
+        accountGenerationID: claim.accountGenerationID,
+        expectedStateVersion: null,
+        status: "pending",
+        attempt: 0,
+        nextAttemptAt: FieldValue.serverTimestamp(),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        result: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        completedAt: null,
+        expiresAt: null,
+      });
+    }
     transaction.update(ref, {
       stage: nextStage,
       leaseExpiresAt: Timestamp.fromMillis(Date.now() + LEASE_MS),
@@ -233,15 +257,24 @@ async function finalize(claim: ClaimedRequest): Promise<void> {
     .collection("accountDeletionNotificationOutbox")
     .doc(`${claim.requestID}-completed`);
   const auditRef = db.collection("accountDeletionAuditLogs").doc();
+  const successionJobRef = db.collection("roomOwnershipSuccessionJobs")
+    .doc(accountDeletionSuccessionJobID(claim.requestID));
 
   await db.runTransaction(async (transaction) => {
-    const requestSnapshot = await transaction.get(requestRef);
+    const [requestSnapshot, successionJob] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(successionJobRef),
+    ]);
     if (
       !requestSnapshot.exists ||
       requestSnapshot.data()?.status !== "finalizing" ||
       requestSnapshot.data()?.leaseOwner !== claim.leaseOwner
     ) {
       throw new Error("account_deletion_lease_lost");
+    }
+    if (!successionJob.exists || successionJob.get("status") !== "completed" ||
+      successionJob.get("result") !== "resolved") {
+      throw new Error("room_succession_pending");
     }
     transaction.set(suppressionRef, {
       requestID: claim.requestID,
@@ -330,7 +363,7 @@ async function processClaim(claim: ClaimedRequest): Promise<void> {
         await advance(claim, "rooms");
         break;
       case "rooms":
-        if (!(await resolveRoomPage(claim.uid))) {
+        if (!(await resolveRoomPage(claim.requestID))) {
           await yieldForRetry(claim, null);
           return;
         }

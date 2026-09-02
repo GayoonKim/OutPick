@@ -57,7 +57,7 @@ const admin = {
   }
 };
 
-test("신규 message는 next seq와 created true를 반환하고 message/room/reservation을 갱신한다", async () => {
+test("신규 message는 timeline과 unread seq를 함께 소비하고 message/room/reservation을 갱신한다", async () => {
   const documents = new Map([["Rooms/room", { seq: 4 }]]);
   const fixture = createFirestoreFake(documents);
   const mediaUploadRef = createDocumentReference("Rooms/room/MediaUploads/message");
@@ -75,13 +75,13 @@ test("신규 message는 next seq와 created true를 반환하고 message/room/re
     { mediaUploadRef }
   );
 
-  assert.deepEqual(outcome, { seq: 5, created: true });
+  assert.deepEqual(outcome, { seq: 5, unreadMessageSeq: 5, created: true });
   assert.deepEqual(fixture.reads, ["Rooms/room/Messages/message", "Rooms/room"]);
   assert.deepEqual(fixture.writes, [
     {
       type: "set",
       path: "Rooms/room/Messages/message",
-      data: { ...messageData, seq: 5 },
+      data: { ...messageData, seq: 5, unreadMessageSeq: 5 },
       options: { merge: true }
     },
     {
@@ -89,6 +89,7 @@ test("신규 message는 next seq와 created true를 반환하고 message/room/re
       path: "Rooms/room",
       data: {
         seq: 5,
+        unreadMessageSeq: 5,
         lastMessage: "hello",
         lastMessageAt: "server-time",
         lastMessageSeq: 5
@@ -104,8 +105,8 @@ test("신규 message는 next seq와 created true를 반환하고 message/room/re
 
 test("기존 message는 기존 seq와 created false를 반환하고 아무 문서도 다시 쓰지 않는다", async () => {
   const documents = new Map([
-    ["Rooms/room", { seq: 10 }],
-    ["Rooms/room/Messages/message", { seq: 7, msg: "original" }]
+    ["Rooms/room", { seq: 10, unreadMessageSeq: 8 }],
+    ["Rooms/room/Messages/message", { seq: 7, unreadMessageSeq: 6, msg: "original" }]
   ]);
   const fixture = createFirestoreFake(documents);
   const store = createSequenceStore({ db: fixture.db, admin });
@@ -117,7 +118,7 @@ test("기존 message는 기존 seq와 created false를 반환하고 아무 문�
     { mediaUploadRef: createDocumentReference("Rooms/room/MediaUploads/message") }
   );
 
-  assert.deepEqual(outcome, { seq: 7, created: false });
+  assert.deepEqual(outcome, { seq: 7, unreadMessageSeq: 6, created: false });
   assert.deepEqual(fixture.reads, ["Rooms/room/Messages/message"]);
   assert.deepEqual(fixture.writes, []);
 });

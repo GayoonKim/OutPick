@@ -26,6 +26,19 @@ type Endpoint = {
     schedule?: string;
     timeZone?: string;
   };
+  taskQueueTrigger?: {
+    retryConfig?: {
+      maxAttempts?: number;
+      maxRetrySeconds?: number;
+      minBackoffSeconds?: number;
+      maxBackoffSeconds?: number;
+      maxDoublings?: number;
+    };
+    rateLimits?: {
+      maxConcurrentDispatches?: number;
+      maxDispatchesPerSecond?: number;
+    };
+  };
 };
 
 type ExportedFunction = {__endpoint?: Endpoint};
@@ -115,6 +128,11 @@ const callableNames = [
   "removeRoomMember",
   "unbanRoomMember",
   "listRoomBans",
+  "assignRoomModerator",
+  "revokeRoomModerator",
+  "resignRoomModerator",
+  "leaveChatRoom",
+  "transferRoomOwnershipAndLeave",
 ] as const;
 
 const firestoreEndpoints = {
@@ -288,7 +306,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 111개를 유지한다", () => {
+test("Firebase deployment export 이름 117개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -297,9 +315,25 @@ test("Firebase deployment export 이름 111개를 유지한다", () => {
     "lookbookExtractionIssueOpsWrite",
     "verifyLookbookExtractionFix",
     "dispatchChatMediaProcessing",
+    "runRoomOwnershipSuccessionTask",
   ].sort();
-  assert.equal(expected.length, 111);
+  assert.equal(expected.length, 117);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
+});
+
+test("방장 자동 승계 task는 전달 실패만 짧게 복구하고 논리 재시도는 전용 job이 소유한다", () => {
+  const value = endpoint("runRoomOwnershipSuccessionTask");
+  assertCommonMetadata("runRoomOwnershipSuccessionTask", value);
+  assert.equal(runtimeNumber(value.timeoutSeconds), 60);
+  assert.deepEqual(value.taskQueueTrigger?.retryConfig, {
+    maxAttempts: 2,
+    maxBackoffSeconds: 5,
+    maxDoublings: 0,
+    maxRetrySeconds: 10,
+    minBackoffSeconds: 1,
+  });
+  assert.equal(value.taskQueueTrigger?.rateLimits?.maxConcurrentDispatches, 10);
+  assert.equal(value.taskQueueTrigger?.rateLimits?.maxDispatchesPerSecond, 20);
 });
 
 test("extraction issue 운영 HTTP API는 private invoker를 유지한다", () => {
@@ -610,6 +644,18 @@ test("chat moderation cleanup due query와 TTL 인덱스를 유지한다", () =>
       index.fields?.[0]?.fieldPath === "status" &&
       index.fields?.[1]?.fieldPath === dueField
     ), `chatMessageDeletionDeliveryJobs ${dueField} recovery index가 필요합니다.`);
+  }
+  assert.ok(config.fieldOverrides?.some((override) =>
+    override.collectionGroup === "chatRoleEventDeliveryJobs" &&
+    override.fieldPath === "expiresAt" && override.ttl === true
+  ));
+  for (const dueField of ["nextAttemptAt", "leaseExpiresAt"]) {
+    assert.ok(config.indexes?.some((index) =>
+      index.collectionGroup === "chatRoleEventDeliveryJobs" &&
+      index.queryScope === "COLLECTION" &&
+      index.fields?.[0]?.fieldPath === "status" &&
+      index.fields?.[1]?.fieldPath === dueField
+    ), `chatRoleEventDeliveryJobs ${dueField} recovery index가 필요합니다.`);
   }
   const replyPreviewOverride = config.fieldOverrides?.find((override) =>
     override.collectionGroup === "Messages" &&

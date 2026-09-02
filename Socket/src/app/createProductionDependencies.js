@@ -16,6 +16,7 @@ import { createLookbookShareHandler } from "../lookbookShare/lookbookShareHandle
 import { createDeletionDeliveryWatcher } from "../deletion/deletionDeliveryWatcher.js";
 import { createMediaUploadService } from "../media/mediaUploadService.js";
 import { createMediaDeliveryWatcher } from "../media/mediaDeliveryWatcher.js";
+import { createRoleEventDeliveryWatcher } from "../roles/roleEventDeliveryWatcher.js";
 import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySingleFlight.js";
 import { createSequenceStore } from "../messages/sequenceStore.js";
 import { createChatPushService } from "../push/chatPushService.js";
@@ -168,6 +169,14 @@ export function createProductionDependencies({
     logger
   });
   const stopDeletionDeliveryWatcher = startDeletionDeliveryWatcher();
+  const { start: startRoleEventDeliveryWatcher } = createRoleEventDeliveryWatcher({
+    db,
+    admin,
+    io,
+    clock,
+    logger
+  });
+  const stopRoleEventDeliveryWatcher = startRoleEventDeliveryWatcher();
   const handleLookbookShare = createLookbookShareHandler({
     io,
     rooms,
@@ -257,6 +266,7 @@ export function createProductionDependencies({
       stopRoomBanWatcher?.();
       stopMediaDeliveryWatcher?.();
       stopDeletionDeliveryWatcher?.();
+      stopRoleEventDeliveryWatcher?.();
     }
   };
 }

@@ -11,7 +11,7 @@ import FirebaseFirestore
 enum ChatRoomFirestoreMappingError: Error, Equatable {
     case missingDocumentID
     case emptyRoomName
-    case emptyCreatorUID
+    case emptyOwnerUID
 }
 
 enum ChatRoomFirestoreMapper {
@@ -27,8 +27,10 @@ enum ChatRoomFirestoreMapper {
         guard !dto.roomName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ChatRoomFirestoreMappingError.emptyRoomName
         }
-        guard !dto.creatorUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ChatRoomFirestoreMappingError.emptyCreatorUID
+        let ownerUID = (dto.ownerUID ?? dto.creatorUID ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ownerUID.isEmpty else {
+            throw ChatRoomFirestoreMappingError.emptyOwnerUID
         }
 
         let participants = dto.participantUIDs ?? []
@@ -37,7 +39,7 @@ enum ChatRoomFirestoreMapper {
             roomName: dto.roomName,
             roomDescription: dto.roomDescription ?? "",
             participants: participants,
-            creatorUID: dto.creatorUID,
+            ownerUID: ownerUID,
             createdAt: dto.createdAt,
             thumbPath: dto.thumbPath,
             originalPath: dto.originalPath,
@@ -46,6 +48,7 @@ enum ChatRoomFirestoreMapper {
             lastMessageSenderUID: dto.lastMessageSenderUID,
             memberCount: dto.memberCount ?? participants.count,
             seq: dto.seq ?? 0,
+            unreadMessageSeq: dto.unreadMessageSeq ?? dto.seq ?? 0,
             isClosed: dto.isClosed ?? false,
             closureType: dto.lifecycleStatus.flatMap(ChatRoomClosureType.init(rawValue:)),
             lifecycleVersion: dto.lifecycleVersion ?? 1,
@@ -65,7 +68,8 @@ enum ChatRoomFirestoreMapper {
         var data: [String: Any] = [
             "roomName": room.roomName,
             "roomDescription": room.roomDescription,
-            "creatorUID": room.creatorUID,
+            // 최소 지원 버전 전환 전까지 기존 서버·앱과 호환되는 생성 key를 유지한다.
+            "creatorUID": room.ownerUID,
             "createdAt": Timestamp(date: room.createdAt),
             "lastMessageAt": Timestamp(date: room.lastMessageAt ?? room.createdAt),
             "memberCount": max(1, room.memberCount),

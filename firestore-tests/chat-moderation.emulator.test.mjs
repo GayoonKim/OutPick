@@ -14,6 +14,14 @@ import {
   unbanRoomMemberService,
 } from "../functions/lib/chat/moderation/roomBanService.js";
 import {
+  assignRoomModeratorService,
+  leaveChatRoomService,
+  resignRoomModeratorService,
+  revokeRoomModeratorService,
+  transferRoomOwnershipAndLeaveService,
+} from "../functions/lib/chat/moderation/roomRoleService.js";
+import {
+  accountDeletionSuccessionJobID,
   processRoomOwnershipSuccessionJob,
   resolveRoomMembershipPage,
 } from "../functions/lib/chat/moderation/roomMembershipSweep.js";
@@ -23,11 +31,13 @@ import {
 } from "../functions/lib/chat/cleanup/moderationCleanup.js";
 import {
   hasIncompleteAccountDeletionMessageCleanup,
+  resolveRoomPage,
   scrubMessagePage,
 } from "../functions/lib/accountDeletion/cleanup.js";
 
 const ownerUID = "chat-owner";
 const memberUID = "chat-member";
+const moderatorUID = "chat-moderator";
 const roomID = "chat-moderation-room";
 const messageID = "message-1";
 const requestID = "123e4567-e89b-42d3-a456-426614174000";
@@ -52,12 +62,19 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("users").doc(memberUID)),
     db.recursiveDelete(db.collection("moderationAccounts").doc(ownerUID)),
     db.recursiveDelete(db.collection("moderationAccounts").doc(memberUID)),
+    db.recursiveDelete(db.collection("moderationAccounts").doc(moderatorUID)),
+    db.recursiveDelete(db.collection("users").doc(moderatorUID)),
+    db.recursiveDelete(db.collection("userPublicProfiles").doc(moderatorUID)),
     db.recursiveDelete(db.collection("userPublicProfiles").doc(memberUID)),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("chatMessageDeletionDeliveryJobs")),
     db.recursiveDelete(db.collection("moderationRoomCleanupJobs")),
     db.recursiveDelete(db.collection("roomOwnershipSuccessionJobs")),
     db.recursiveDelete(db.collection("moderationAuditLogs")),
+    db.recursiveDelete(db.collection("roomModerationStates")),
+    db.recursiveDelete(db.collection("roomRoleMutationReceipts")),
+    db.recursiveDelete(db.collection("chatRoleEventDeliveryJobs")),
+    db.recursiveDelete(db.collection("accountDeletionRequests")),
     db.recursiveDelete(db.collection("Rooms").doc("account-deletion-room")),
     ...bulkMemberUIDs.map((uid) => db.recursiveDelete(db.collection("users").doc(uid))),
   ]);
@@ -93,6 +110,10 @@ async function seedFixtures() {
     lastMessage: "삭제 대상",
     memberCount: 2,
   });
+  await db.collection("roomModerationStates").doc(roomID).set({
+    moderatorCount: 0,
+    updatedAt: now,
+  });
   await Promise.all([
     room.collection("members").doc(ownerUID).set({
       role: "owner", userID: ownerUID, joinedAt: new Date("2026-01-01T00:00:00Z"),
@@ -100,8 +121,8 @@ async function seedFixtures() {
     room.collection("members").doc(memberUID).set({
       role: "member", userID: memberUID, joinedAt: new Date("2026-01-02T00:00:00Z"),
     }),
-    db.collection("users").doc(ownerUID).collection("joinedRooms").doc(roomID).set({roomID}),
-    db.collection("users").doc(memberUID).collection("joinedRooms").doc(roomID).set({roomID}),
+    db.collection("users").doc(ownerUID).collection("joinedRooms").doc(roomID).set({roomID, role: "owner"}),
+    db.collection("users").doc(memberUID).collection("joinedRooms").doc(roomID).set({roomID, role: "member"}),
     room.collection("Messages").doc(messageID).set({
       ID: messageID,
       roomID,
@@ -141,7 +162,188 @@ beforeEach(async () => {
 after(clearFixtures);
 
 describe("chat moderation lifecycle transactions", () => {
-  test("계정 삭제 시 가장 오래된 유효 참여자에게 방장을 승계하고 기존 소유자를 제거한다", async () => {
+  test("관리자 임명·재생·회수는 projection, count, event, receipt를 원자 갱신한다", async () => {
+    await db.collection("roomModerationStates").doc(roomID).delete();
+    const assigned = await assignRoomModeratorService(ownerUID, {
+      roomID,
+      targetUID: memberUID,
+      clientRequestID: "823e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    assert.equal(assigned.role, "moderator");
+    assert.equal(assigned.moderatorCount, 1);
+    assert.equal((await db.collection("Rooms").doc(roomID).collection("members").doc(memberUID).get()).data()?.role, "moderator");
+    assert.equal((await db.collection("users").doc(memberUID).collection("joinedRooms").doc(roomID).get()).data()?.role, "moderator");
+    assert.equal((await db.collection("roomModerationStates").doc(roomID).get()).data()?.moderatorCount, 1);
+    assert.equal((await db.collection("roomModerationStates").doc(roomID).get()).data()?.schemaVersion, 1);
+    const event = await db.collection("Rooms").doc(roomID).collection("Messages").doc(assigned.eventID).get();
+    assert.equal(event.data()?.messageType, "roomRoleEvent");
+    assert.equal(event.data()?.serverGenerated, true);
+    assert.deepEqual(event.data()?.roleEvent, {
+      kind: "moderatorAssigned",
+      subjectUID: memberUID,
+      subjectNicknameSnapshot: "참여자",
+    });
+    assert.equal((await db.collection("chatRoleEventDeliveryJobs").doc(assigned.eventID).get()).exists, true);
+
+    const replay = await assignRoomModeratorService(ownerUID, {
+      roomID,
+      targetUID: memberUID,
+      clientRequestID: "823e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    assert.equal(replay.eventID, assigned.eventID);
+    assert.equal(replay.deduplicated, true);
+    assert.equal((await db.collection("Rooms").doc(roomID).collection("Messages")
+      .where("messageType", "==", "roomRoleEvent").get()).size, 1);
+
+    await assert.rejects(assignRoomModeratorService(ownerUID, {
+      roomID,
+      targetUID: ownerUID,
+      clientRequestID: "823e4567-e89b-42d3-a456-426614174000",
+    }, now, db), (error) => error?.details?.errorCode === "REQUEST_ID_CONFLICT");
+
+    const revoked = await revokeRoomModeratorService(ownerUID, {
+      roomID,
+      targetUID: memberUID,
+      clientRequestID: "923e4567-e89b-42d3-a456-426614174000",
+    }, new Date(now.getTime() + 1_000), db);
+    assert.equal(revoked.role, "member");
+    assert.equal(revoked.moderatorCount, 0);
+  });
+
+  test("관리자는 사임하거나 event와 count를 남기며 퇴장할 수 있고 방장은 직접 퇴장할 수 없다", async () => {
+    await assignRoomModeratorService(ownerUID, {
+      roomID, targetUID: memberUID, clientRequestID: "a23e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    const resigned = await resignRoomModeratorService(memberUID, {
+      roomID, clientRequestID: "b23e4567-e89b-42d3-a456-426614174000",
+    }, new Date(now.getTime() + 1_000), db);
+    assert.equal(resigned.role, "member");
+    await assignRoomModeratorService(ownerUID, {
+      roomID, targetUID: memberUID, clientRequestID: "c23e4567-e89b-42d3-a456-426614174000",
+    }, new Date(now.getTime() + 2_000), db);
+    const left = await leaveChatRoomService(memberUID, {
+      roomID, clientRequestID: "d23e4567-e89b-42d3-a456-426614174000",
+    }, new Date(now.getTime() + 3_000), db);
+    assert.equal(left.mode, "left");
+    assert.equal(left.moderatorCount, 0);
+    assert.equal((await db.collection("Rooms").doc(roomID).collection("members").doc(memberUID).get()).exists, false);
+    await assert.rejects(leaveChatRoomService(ownerUID, {
+      roomID, clientRequestID: "e23e4567-e89b-42d3-a456-426614174000",
+    }, now, db), (error) => error?.details?.errorCode === "OWNER_TRANSFER_REQUIRED");
+  });
+
+  test("소유권 이전은 임명 관리자만 owner로 올리고 기존 방장을 제거한다", async () => {
+    await assignRoomModeratorService(ownerUID, {
+      roomID, targetUID: memberUID, clientRequestID: "f23e4567-e89b-42d3-a456-426614174000",
+    }, now, db);
+    const transferred = await transferRoomOwnershipAndLeaveService(ownerUID, {
+      roomID,
+      successorUID: memberUID,
+      clientRequestID: "133e4567-e89b-42d3-a456-426614174001",
+    }, new Date(now.getTime() + 1_000), db);
+    assert.equal(transferred.ownerUID, memberUID);
+    const room = await db.collection("Rooms").doc(roomID).get();
+    assert.equal(room.data()?.ownerUID, memberUID);
+    assert.equal(room.data()?.creatorUID, ownerUID);
+    assert.equal((await room.ref.collection("members").doc(ownerUID).get()).exists, false);
+    assert.equal((await room.ref.collection("members").doc(memberUID).get()).data()?.role, "owner");
+    assert.equal((await db.collection("roomModerationStates").doc(roomID).get()).data()?.moderatorCount, 0);
+  });
+
+  test("임명 관리자는 일반·퇴장 사용자를 제재하지만 현재 방장·관리자는 제재할 수 없다", async () => {
+    const room = db.collection("Rooms").doc(roomID);
+    await Promise.all([
+      db.collection("users").doc(moderatorUID).set({accountStatus: "active"}),
+      db.collection("moderationAccounts").doc(moderatorUID).set({
+        accountStatus: "active",
+        moderationPrincipalID: "principal-chat-moderator",
+        moderationStatus: "active",
+        stateVersion: 1,
+      }),
+      db.collection("userPublicProfiles").doc(moderatorUID).set({nickname: "관리자"}),
+      room.collection("members").doc(moderatorUID).set({role: "moderator", userID: moderatorUID, moderatorSince: now}),
+      db.collection("users").doc(moderatorUID).collection("joinedRooms").doc(roomID).set({roomID, role: "moderator", moderatorSince: now}),
+      db.collection("roomModerationStates").doc(roomID).update({moderatorCount: 1}),
+      room.update({memberCount: 3}),
+    ]);
+
+    await assert.rejects(removeRoomMemberService(moderatorUID, {
+      roomID, targetUID: ownerUID, reasonCode: "harassment",
+      clientRequestID: "233e4567-e89b-42d3-a456-426614174001",
+    }, now, db), (error) => error?.details?.errorCode === "TARGET_IS_OWNER");
+
+    const removed = await removeRoomMemberService(moderatorUID, {
+      roomID, targetUID: memberUID, reasonCode: "harassment",
+      clientRequestID: "333e4567-e89b-42d3-a456-426614174001",
+    }, now, db);
+    assert.equal(removed.memberCount, 2);
+    const bans = await listRoomBansService(moderatorUID, {roomID, pageSize: 10, cursor: null}, db);
+    assert.equal(bans.items.length, 1);
+    await unbanRoomMemberService(moderatorUID, {
+      roomID, banEntryToken: bans.items[0].banEntryToken,
+      clientRequestID: "433e4567-e89b-42d3-a456-426614174001",
+    }, now, db);
+
+    await room.collection("Messages").doc("departed-message").set({
+      ID: "departed-message",
+      roomID,
+      senderUID: "departed-user",
+      senderNickname: "퇴장 사용자",
+      messageType: "text",
+      seq: 3,
+      msg: "과거 메시지",
+      sentAt: now,
+      isDeleted: false,
+    });
+    await room.update({seq: 3});
+    const deleted = await deleteChatMessageService(moderatorUID, null, {
+      roomID,
+      messageID: "departed-message",
+      expectedSeq: 3,
+      reasonCode: "chatMessageDeletion",
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: "533e4567-e89b-42d3-a456-426614174001",
+    }, now, db);
+    assert.equal(deleted.isDeleted, true);
+
+    await assert.rejects(deleteChatMessageService(moderatorUID, null, {
+      roomID,
+      messageID,
+      expectedSeq: 1,
+      reasonCode: "chatMessageDeletion",
+      reportTargetType: null,
+      reportTargetID: null,
+      clientRequestID: "633e4567-e89b-42d3-a456-426614174001",
+    }, now, db), (error) => error?.details?.errorCode === "TARGET_IS_OWNER");
+
+    const ownerRemoval = await removeRoomMemberService(ownerUID, {
+      roomID, targetUID: moderatorUID, reasonCode: "harassment",
+      clientRequestID: "733e4567-e89b-42d3-a456-426614174001",
+    }, now, db);
+    assert.equal(ownerRemoval.moderatorCount, 0);
+    assert.equal(typeof ownerRemoval.eventID, "string");
+  });
+  test("계정 삭제 시 일반 참여자를 건너뛰고 가장 오래된 적격 관리자에게만 승계한다", async () => {
+    const roomRef = db.collection("Rooms").doc(roomID);
+    await Promise.all([
+      db.collection("moderationAccounts").doc(moderatorUID).set({
+        accountStatus: "active",
+        moderationPrincipalID: "principal-chat-moderator",
+        moderationStatus: "active",
+        stateVersion: 1,
+      }),
+      db.collection("userPublicProfiles").doc(moderatorUID).set({nickname: "관리자"}),
+      roomRef.collection("members").doc(moderatorUID).set({
+        role: "moderator", userID: moderatorUID, joinedAt: new Date("2026-01-03T00:00:00Z"),
+        moderatorSince: new Date("2026-02-01T00:00:00Z"),
+      }),
+      db.collection("users").doc(moderatorUID).collection("joinedRooms").doc(roomID).set({
+        roomID, role: "moderator", moderatorSince: new Date("2026-02-01T00:00:00Z"),
+      }),
+      roomRef.update({ownerUID, memberCount: 3}),
+      db.collection("roomModerationStates").doc(roomID).set({moderatorCount: 1}, {merge: true}),
+    ]);
     const completed = await resolveRoomMembershipPage(
       ownerUID,
       "accountDeletion",
@@ -150,12 +352,15 @@ describe("chat moderation lifecycle transactions", () => {
     );
     assert.equal(completed, false);
     const room = await db.collection("Rooms").doc(roomID).get();
-    assert.equal(room.data()?.creatorUID, memberUID);
-    assert.equal(room.data()?.memberCount, 1);
+    assert.equal(room.data()?.ownerUID, moderatorUID);
+    assert.equal(room.data()?.creatorUID, ownerUID);
+    assert.equal(room.data()?.memberCount, 2);
     assert.equal((await room.ref.collection("members").doc(ownerUID).get()).exists, false);
-    assert.equal((await room.ref.collection("members").doc(memberUID).get()).data()?.role, "owner");
-    assert.equal((await db.collection("users").doc(memberUID)
+    assert.equal((await room.ref.collection("members").doc(memberUID).get()).data()?.role, "member");
+    assert.equal((await room.ref.collection("members").doc(moderatorUID).get()).data()?.role, "owner");
+    assert.equal((await db.collection("users").doc(moderatorUID)
       .collection("joinedRooms").doc(roomID).get()).data()?.role, "owner");
+    assert.equal((await db.collection("roomModerationStates").doc(roomID).get()).data()?.moderatorCount, 0);
   });
 
   test("영구 정지된 단독 방장은 방을 moderation 종료시키고 정리 작업을 남긴다", async () => {
@@ -178,6 +383,91 @@ describe("chat moderation lifecycle transactions", () => {
     const job = await db.collection("moderationRoomCleanupJobs").doc(roomID).get();
     assert.equal(job.data()?.closureType, "closedByModeration");
     assert.equal(job.data()?.status, "pending");
+  });
+
+  test("계정 삭제 시 적격 관리자가 없으면 일반 참여자에게 넘기지 않고 방을 종료한다", async () => {
+    const room = db.collection("Rooms").doc(roomID);
+    await room.update({ownerUID});
+
+    const completed = await resolveRoomMembershipPage(ownerUID, "accountDeletion", now, db);
+
+    assert.equal(completed, false);
+    const closed = await room.get();
+    assert.equal(closed.data()?.lifecycleStatus, "closedByOwner");
+    assert.equal(closed.data()?.closureNoticeCode, "ownerDeleted");
+    assert.equal((await room.collection("members").doc(memberUID).get()).data()?.role, "member");
+    assert.equal((await room.collection("members").doc(ownerUID).get()).exists, false);
+  });
+
+  test("계정 삭제 finalizer gate는 현재 generation의 승계 job resolved 완료만 허용한다", async () => {
+    const generation = "room-succession-generation";
+    const deletionRequestID = "room-succession-deletion-request";
+    const jobID = accountDeletionSuccessionJobID(deletionRequestID);
+    const jobRef = db.collection("roomOwnershipSuccessionJobs").doc(jobID);
+    await Promise.all([
+      db.collection("Rooms").doc(roomID).update({ownerUID}),
+      db.collection("users").doc(ownerUID).set({
+        accountStatus: "deletionPending",
+        accountGenerationID: generation,
+      }, {merge: true}),
+      db.collection("accountDeletionRequests").doc(deletionRequestID).set({
+        uid: ownerUID,
+        accountGenerationID: generation,
+        status: "finalizing",
+        stage: "rooms",
+      }),
+      jobRef.set({
+        schemaVersion: 2,
+        targetUID: ownerUID,
+        cause: "accountDeletion",
+        accountDeletionRequestID: deletionRequestID,
+        accountGenerationID: generation,
+        expectedStateVersion: null,
+        status: "pending",
+        attempt: 0,
+        nextAttemptAt: now,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      }),
+    ]);
+
+    assert.equal(await resolveRoomPage(deletionRequestID), false);
+    assert.equal(await processRoomOwnershipSuccessionJob(jobID, db, now), false);
+    const continued = await jobRef.get();
+    assert.equal(continued.data()?.status, "retryPending");
+    assert.equal(continued.data()?.attempt, 0);
+    assert.equal(await resolveRoomPage(deletionRequestID), false);
+
+    assert.equal(await processRoomOwnershipSuccessionJob(jobID, db, now), true);
+    const completed = await jobRef.get();
+    assert.equal(completed.data()?.status, "completed");
+    assert.equal(completed.data()?.result, "resolved");
+    assert.equal(await resolveRoomPage(deletionRequestID), true);
+  });
+
+  test("stale 영구 정지 fence는 방을 변경하지 않고 job만 안전하게 종료한다", async () => {
+    const jobRef = db.collection("roomOwnershipSuccessionJobs").doc("stale-suspension-job");
+    await jobRef.set({
+      schemaVersion: 2,
+      targetUID: ownerUID,
+      cause: "permanentSuspension",
+      expectedStateVersion: 99,
+      status: "pending",
+      attempt: 0,
+      nextAttemptAt: now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    });
+
+    assert.equal(await processRoomOwnershipSuccessionJob(jobRef.id, db, now), true);
+    const [job, room] = await Promise.all([
+      jobRef.get(),
+      db.collection("Rooms").doc(roomID).get(),
+    ]);
+    assert.equal(job.data()?.status, "completed");
+    assert.equal(job.data()?.result, "staleFence");
+    assert.equal(room.data()?.isClosed, false);
+    assert.equal((await room.ref.collection("members").doc(ownerUID).get()).exists, true);
   });
 
   test("최대 시도에서 lease가 만료된 승계 작업은 failed로 종결한다", async () => {
@@ -226,14 +516,21 @@ describe("chat moderation lifecycle transactions", () => {
   });
 
   test("방장 추방은 밴과 참여 projection을 원자적으로 갱신하고 해제 후 재가입만 허용한다", async () => {
-    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "member"});
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "member", role: "member"});
     const removed = await removeRoomMemberService(ownerUID, {
       roomID,
       targetUID: memberUID,
       reasonCode: "harassment",
       clientRequestID: "623e4567-e89b-42d3-a456-426614174000",
     }, now, db);
-    assert.deepEqual(removed, {removed: true, roomBanned: true, memberCount: 1});
+    assert.deepEqual(removed, {
+      removed: true,
+      roomBanned: true,
+      memberCount: 1,
+      moderatorCount: null,
+      eventID: null,
+      seq: null,
+    });
 
     const room = db.collection("Rooms").doc(roomID);
     const banRef = room.collection("bans").doc("principal-chat-member");
@@ -242,7 +539,7 @@ describe("chat moderation lifecycle transactions", () => {
       .collection("joinedRooms").doc(roomID).get()).exists, false);
     assert.equal((await room.get()).data()?.memberCount, 1);
     assert.equal((await banRef.get()).data()?.stateVersion, 1);
-    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "banned"});
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "banned", role: null});
 
     const replay = await removeRoomMemberService(ownerUID, {
       roomID,
@@ -271,7 +568,7 @@ describe("chat moderation lifecycle transactions", () => {
     assert.deepEqual(unbanned, {roomBanned: false, membershipRestored: false});
     assert.equal((await banRef.get()).data()?.isActive, false);
     assert.equal((await banRef.get()).data()?.stateVersion, 2);
-    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "joinable"});
+    assert.deepEqual(await getMyRoomAccessService(memberUID, {roomID}, db), {status: "joinable", role: null});
     assert.equal((await room.collection("members").doc(memberUID).get()).exists, false);
     assert.equal((await listRoomBansService(ownerUID, {
       roomID,
@@ -378,6 +675,16 @@ describe("chat moderation lifecycle transactions", () => {
         senderNickname: "탈퇴 대상", sentAt: now.toISOString(), seq: 10,
         msg: "첫 번째", message: "첫 번째", isDeleted: false,
       }),
+      secondRoom.collection("Messages").doc("role-event-owner").set({
+        ID: "role-event-owner", roomID: secondRoom.id, senderUID: "system",
+        senderNickname: "OutPick", sentAt: now.toISOString(), seq: 12,
+        messageType: "roomRoleEvent", serverGenerated: true,
+        roleEvent: {
+          kind: "moderatorAssigned",
+          subjectUID: ownerUID,
+          subjectNicknameSnapshot: "탈퇴 대상",
+        },
+      }),
     ]);
 
     assert.equal(await scrubMessagePage(
@@ -386,9 +693,10 @@ describe("chat moderation lifecycle transactions", () => {
       generation,
       now,
     ), true);
-    const [first, second, secondRoomAfter] = await Promise.all([
+    const [first, second, roleEvent, secondRoomAfter] = await Promise.all([
       secondRoom.collection("Messages").doc("account-message-a").get(),
       secondRoom.collection("Messages").doc("account-message-b").get(),
+      secondRoom.collection("Messages").doc("role-event-owner").get(),
       secondRoom.get(),
     ]);
     assert.equal(first.data()?.deletionRevision, 5);
@@ -403,6 +711,12 @@ describe("chat moderation lifecycle transactions", () => {
     assert.equal("senderAvatarPath" in first.data(), false);
     assert.equal(first.data()?.sentAt, now.toISOString());
     assert.equal((await db.collection("chatMessageDeletionDeliveryJobs").get()).size, 2);
+    assert.equal(roleEvent.data()?.roleEvent?.subjectUID, undefined);
+    assert.equal(roleEvent.data()?.roleEvent?.subjectNicknameSnapshot, "알 수 없는 사용자");
+    const privacyDelivery = await db.collection("chatRoleEventDeliveryJobs")
+      .doc("role-event-owner-privacy").get();
+    assert.equal(privacyDelivery.data()?.eventID, "role-event-owner");
+    assert.equal(privacyDelivery.data()?.status, "pending");
     assert.equal(await hasIncompleteAccountDeletionMessageCleanup(deletionRequestID), true);
 
     const jobs = await db.collection("chatMessageCleanupJobs")

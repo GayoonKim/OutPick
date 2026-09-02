@@ -7,7 +7,7 @@ import {
   MessageDeletionTarget,
   messageCleanupJobID,
 } from "../chat/deletion/mutation.js";
-import {resolveRoomMembershipPage} from "../chat/moderation/roomMembershipSweep.js";
+import {accountDeletionSuccessionJobID} from "../chat/moderation/roomMembershipSweep.js";
 import {messageIncidentID} from "../moderation/messageEvidence/contracts.js";
 
 const PAGE_SIZE = 100;
@@ -280,7 +280,7 @@ export async function scrubMessagePage(
   accountGenerationID: string,
   now = new Date(),
 ): Promise<boolean> {
-  const [snapshot, roomPreviews] = await Promise.all([
+  const [snapshot, roomPreviews, roleEvents] = await Promise.all([
     db.collectionGroup("Messages")
       .where("senderUID", "==", uid)
       .limit(30)
@@ -289,8 +289,12 @@ export async function scrubMessagePage(
       .where("lastMessage.senderUID", "==", uid)
       .limit(PAGE_SIZE)
       .get(),
+    db.collectionGroup("Messages")
+      .where("roleEvent.subjectUID", "==", uid)
+      .limit(30)
+      .get(),
   ]);
-  if (snapshot.empty && roomPreviews.empty) return true;
+  if (snapshot.empty && roomPreviews.empty && roleEvents.empty) return true;
   const byRoom = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
   for (const document of snapshot.docs) {
     const roomRef = document.ref.parent.parent;
@@ -322,7 +326,41 @@ export async function scrubMessagePage(
     }, {merge: true}));
     await batch.commit();
   }
-  return snapshot.size < 30 && roomPreviews.size < PAGE_SIZE;
+  if (!roleEvents.empty) {
+    const user = await db.collection("users").doc(uid).get();
+    if (!user.exists || user.get("accountStatus") !== "deletionPending" ||
+        user.get("accountGenerationID") !== accountGenerationID) {
+      throw new Error("account_deletion_fence_lost");
+    }
+    const batch = db.batch();
+    roleEvents.docs.forEach((document) => {
+      const roomRef = document.ref.parent.parent;
+      if (!roomRef) throw new Error("account_deletion_role_event_room_missing");
+      batch.update(document.ref, {
+        "roleEvent.subjectUID": FieldValue.delete(),
+        "roleEvent.subjectNicknameSnapshot": "알 수 없는 사용자",
+      });
+      const outboxRef = db.collection("chatRoleEventDeliveryJobs")
+        .doc(`${document.id}-privacy`);
+      batch.create(outboxRef, {
+        schemaVersion: 1,
+        roomID: roomRef.id,
+        eventID: document.id,
+        seq: document.get("seq"),
+        status: "pending",
+        attempt: 0,
+        nextAttemptAt: nowTimestamp,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        createdAt: nowTimestamp,
+        updatedAt: nowTimestamp,
+        expiresAt: null,
+      });
+    });
+    await batch.commit();
+  }
+  return snapshot.size < 30 && roomPreviews.size < PAGE_SIZE && roleEvents.size < 30;
 }
 
 export async function hasIncompleteAccountDeletionMessageCleanup(
@@ -356,8 +394,13 @@ async function activeUserIDs(userIDs: string[]): Promise<Set<string>> {
     .map((snapshot) => snapshot.id));
 }
 
-export async function resolveRoomPage(uid: string): Promise<boolean> {
-  return resolveRoomMembershipPage(uid, "accountDeletion", new Date(), db);
+export async function resolveRoomPage(accountDeletionRequestID: string): Promise<boolean> {
+  const job = await db.collection("roomOwnershipSuccessionJobs")
+    .doc(accountDeletionSuccessionJobID(accountDeletionRequestID))
+    .get();
+  if (!job.exists) throw new Error("room_succession_job_missing");
+  if (job.get("status") === "failed") throw new Error("room_succession_failed");
+  return job.get("status") === "completed" && job.get("result") === "resolved";
 }
 
 export async function removeRolePage(uid: string): Promise<boolean> {

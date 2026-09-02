@@ -131,6 +131,40 @@ struct ChatMessageWindowStoreTests {
         #expect(readMarkerIndex < secondMessageIndex)
     }
 
+    @Test func roleEventsAfterReadBoundaryDoNotCreateReadMarker() {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        let items = store.reset(
+            messages: [
+                makeMessage(id: "m8", seq: 8, sentAt: sentAt),
+                makeRoleEvent(id: "role-9", seq: 9, sentAt: sentAt.addingTimeInterval(1)),
+                makeRoleEvent(id: "role-10", seq: 10, sentAt: sentAt.addingTimeInterval(2))
+            ],
+            readBoundarySeq: 8
+        )
+
+        #expect(items.contains(where: isReadMarker) == false)
+    }
+
+    @Test func readMarkerAppearsBeforeFirstUnreadMessageAfterRoleEvent() throws {
+        var store = makeStore()
+        let sentAt = Date(timeIntervalSince1970: 100)
+        var unreadMessage = makeMessage(id: "m10", seq: 10, sentAt: sentAt.addingTimeInterval(2))
+        unreadMessage.unreadMessageSeq = 9
+        let items = store.reset(
+            messages: [
+                makeMessage(id: "m8", seq: 8, sentAt: sentAt),
+                makeRoleEvent(id: "role-9", seq: 9, sentAt: sentAt.addingTimeInterval(1)),
+                unreadMessage
+            ],
+            readBoundarySeq: 8
+        )
+
+        let markerIndex = try #require(items.firstIndex(where: isReadMarker))
+        let unreadIndex = try #require(items.firstIndex(where: { $0.messageID == "m10" }))
+        #expect(markerIndex + 1 == unreadIndex)
+    }
+
     @Test func applyNewerVirtualizesOldestItemsAndPrunesMessageMap() {
         var store = makeStore()
         let sentAt = Date(timeIntervalSince1970: 100)
@@ -310,6 +344,27 @@ struct ChatMessageWindowStoreTests {
             senderNickname: "보낸 사람",
             senderAvatarPath: nil,
             msg: text,
+            sentAt: sentAt,
+            attachments: [],
+            replyPreview: nil
+        )
+    }
+
+    private func makeRoleEvent(id: String, seq: Int64, sentAt: Date) -> ChatMessage {
+        ChatMessage(
+            ID: id,
+            seq: seq,
+            roomID: "room-1",
+            senderUID: "owner",
+            senderNickname: "방장",
+            messageType: .roomRoleEvent,
+            serverGenerated: true,
+            roleEvent: RoomRoleEventPayload(
+                kind: .moderatorAssigned,
+                subjectUID: "member",
+                subjectNicknameSnapshot: "참여자"
+            ),
+            msg: nil,
             sentAt: sentAt,
             attachments: [],
             replyPreview: nil

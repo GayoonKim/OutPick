@@ -108,7 +108,7 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canRemoveMember)
     }
 
-    @Test func onlyRoomOwnerCanRemoveAnotherMessageAuthor() {
+    @Test func unresolvedRoleOnlyLetsRoomOwnerRemoveAnotherMessageAuthor() {
         let message = makeMessage(
             senderUID: "member@example.com",
             messageType: .text,
@@ -132,6 +132,79 @@ struct ChatMessageActionPolicyTests {
         #expect(memberPolicy.allows(.removeMember) == false)
     }
 
+    @Test func moderatorCanDeleteAndRemoveOnlyResolvedOrdinaryOrExitedAuthor() {
+        let message = makeMessage(
+            senderUID: "member@example.com",
+            messageType: .text,
+            msg: "안녕",
+            sharedContent: nil
+        )
+        let ordinary = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "moderator@example.com",
+            roomCreatorID: "owner@example.com",
+            actorRole: .moderator,
+            targetRole: .member,
+            isTargetRoleResolved: true
+        )
+        let exited = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "moderator@example.com",
+            roomCreatorID: "owner@example.com",
+            actorRole: .moderator,
+            targetRole: nil,
+            isTargetRoleResolved: true
+        )
+
+        #expect(ordinary.canDelete)
+        #expect(ordinary.canRemoveMember)
+        #expect(exited.canDelete)
+        #expect(exited.canRemoveMember)
+    }
+
+    @Test func moderatorCannotSanctionOwnerOrAnotherModerator() {
+        let message = makeMessage(
+            senderUID: "target@example.com",
+            messageType: .text,
+            msg: "안녕",
+            sharedContent: nil
+        )
+        for targetRole in [ChatRoomMemberRole.owner, .moderator] {
+            let policy = ChatMessageActionPolicy.make(
+                for: message,
+                currentUserID: "moderator@example.com",
+                roomCreatorID: "owner@example.com",
+                actorRole: .moderator,
+                targetRole: targetRole,
+                isTargetRoleResolved: true
+            )
+            #expect(policy.canDelete == false)
+            #expect(policy.canRemoveMember == false)
+        }
+    }
+
+    @Test func cachedRoleCannotExposeModerationActions() {
+        let message = makeMessage(
+            senderUID: "member@example.com",
+            messageType: .text,
+            msg: "안녕",
+            sharedContent: nil
+        )
+        let policy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "owner@example.com",
+            roomCreatorID: "owner@example.com",
+            actorRole: .owner,
+            targetRole: .member,
+            isTargetRoleResolved: true,
+            isRoleManagementEnabled: false
+        )
+
+        #expect(policy.canDelete == false)
+        #expect(policy.canRemoveMember == false)
+        #expect(policy.canAnnounce == false)
+    }
+
     @Test func deletedMessageExposesNoActionsIncludingReport() {
         let message = makeMessage(
             senderUID: "sender@example.com",
@@ -152,6 +225,41 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canDelete == false)
         #expect(policy.canReport == false)
         #expect(policy.canBlock == false)
+    }
+
+    @Test func roomRoleEventExposesNoMessageActions() {
+        let message = ChatMessage(
+            ID: "role-event-1",
+            seq: 7,
+            roomID: "room-1",
+            senderUID: "",
+            senderNickname: "",
+            messageType: .roomRoleEvent,
+            serverGenerated: true,
+            roleEvent: RoomRoleEventPayload(
+                kind: .moderatorAssigned,
+                subjectUID: "member@example.com",
+                subjectNicknameSnapshot: "참여자"
+            ),
+            msg: nil,
+            sentAt: Date(timeIntervalSince1970: 0),
+            attachments: [],
+            replyPreview: nil
+        )
+
+        let policy = ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: "owner@example.com",
+            roomCreatorID: "owner@example.com"
+        )
+
+        #expect(policy.canReply == false)
+        #expect(policy.canCopy == false)
+        #expect(policy.canDelete == false)
+        #expect(policy.canReport == false)
+        #expect(policy.canBlock == false)
+        #expect(policy.canAnnounce == false)
+        #expect(policy.canRemoveMember == false)
     }
 
     @Test func lookbookSharePreviewUsesMessageTextThenFallback() {

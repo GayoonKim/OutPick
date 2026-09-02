@@ -130,6 +130,27 @@ struct ChatRoomSessionActorTests {
         await actor.finishAll()
     }
 
+    @Test func roleEventPrivacyRedactionIsDeliveredOnceForSameEventID() async {
+        let actor = ChatRoomSessionActor(roomID: "room")
+        let consumer = await actor.addConsumer()
+
+        await actor.publishIncoming(makeRoleEvent(id: "event", subjectUID: "deleted-user"))
+        await actor.publishIncoming(makeRoleEvent(id: "event", subjectUID: nil))
+        await actor.publishIncoming(makeRoleEvent(id: "event", subjectUID: nil))
+        await actor.publishIncoming(makeMessage(id: "next", seq: 2))
+
+        var iterator = consumer.stream.makeAsyncIterator()
+        let original = await iterator.next()
+        let redacted = await iterator.next()
+        let next = await iterator.next()
+
+        #expect(original?.roleEvent?.subjectUID == "deleted-user")
+        #expect(redacted?.roleEvent?.subjectUID == nil)
+        #expect(redacted?.roleEvent?.subjectNicknameSnapshot == "알 수 없는 사용자")
+        #expect(next?.ID == "next")
+        await actor.finishAll()
+    }
+
     private func makeMessage(
         id: String,
         seq: Int64,
@@ -148,5 +169,15 @@ struct ChatRoomSessionActorTests {
             attachments: [],
             replyPreview: nil
         )
+    }
+
+    private func makeRoleEvent(id: String, subjectUID: String?) -> ChatMessage {
+        var message = makeMessage(id: id, seq: 1, type: .roomRoleEvent)
+        message.roleEvent = RoomRoleEventPayload(
+            kind: .moderatorAssigned,
+            subjectUID: subjectUID,
+            subjectNicknameSnapshot: subjectUID == nil ? "알 수 없는 사용자" : "사용자"
+        )
+        return message
     }
 }

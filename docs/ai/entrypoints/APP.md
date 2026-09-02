@@ -23,6 +23,7 @@
   - `RealtimeSocketService`, `JoinedRoomsSessionStore`, `BrandAdminSessionStore`, `CurrentUserSessionStore`, `CurrentUserProviding`, `AppSessionRuntime`, `AppCoordinator`를 같은 앱 graph에서 만든다.
   - 앱 세션 단위 `AvatarImageService`도 여기서 생성해 Chat/Lookbook/Profile로 전달한다.
 - AppCoordinator: `OutPick/App/AppCoordinator.swift`
+  - 앱 rollout gate: `OutPick/App/Rollout/AppRolloutGate.swift`의 최소 버전·기능 결정 → `FirebaseRemoteConfigAppRolloutRepository.swift`의 `minimum_supported_ios_version`, `chat_room_moderator_delegation_enabled`, `ios_app_store_url` → `AppUpdateRequiredViewController.swift`. 설정 오류는 앱 전체를 fail-open하되 신규 관리자 기능은 fail-closed한다.
   - 로그인 여부 확인, 로그인/프로필/메인 탭 루트 전환, 강제 로그아웃 라우팅을 담당한다.
   - Lookbook/Chat Container를 메인 탭 수명 동안 유지한다.
   - 인증 세션 runtime 시작/정지, 같은 realtime service 주입, 같은 avatar manager 주입 흐름을 연결한다.

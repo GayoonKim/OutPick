@@ -8,10 +8,34 @@
 import Foundation
 import FirebaseFirestore
 
+struct RoomMemberSummary: Equatable, Sendable {
+    let userID: String
+    let role: ChatRoomMemberRole
+    let moderatorSince: Date?
+}
+
 struct RoomMemberPage {
-    let userIDs: [String]
+    let members: [RoomMemberSummary]
     let nextCursorUserID: String?
     let hasMore: Bool
+
+    var userIDs: [String] { members.map(\.userID) }
+
+    init(members: [RoomMemberSummary], nextCursorUserID: String?, hasMore: Bool) {
+        self.members = members
+        self.nextCursorUserID = nextCursorUserID
+        self.hasMore = hasMore
+    }
+
+    init(userIDs: [String], nextCursorUserID: String?, hasMore: Bool) {
+        self.init(
+            members: userIDs.map {
+                RoomMemberSummary(userID: $0, role: .member, moderatorSince: nil)
+            },
+            nextCursorUserID: nextCursorUserID,
+            hasMore: hasMore
+        )
+    }
 }
 
 /// 채팅방 생성 화면이 요구하는 최소 Repository 계약
@@ -85,6 +109,9 @@ protocol FirebaseChatRoomRepositoryProtocol: CreateRoomRepositoryProtocol {
 
     /// 방 멤버 UID 페이지 조회 (Rooms/{roomID}/members)
     func fetchRoomMembersPage(roomID: String, limit: Int, afterUserID: String?) async throws -> RoomMemberPage
+
+    /// 현재 사용자·방장·관리자 고정 정렬용 소량 조회
+    func fetchPinnedRoomMembers(roomID: String, currentUserID: String, ownerUID: String) async throws -> [RoomMemberSummary]
 
     /// 방 정보 업데이트
     func updateRoomInfo(room: ChatRoom, newImagePath: String, roomName: String, roomDescription: String) async throws

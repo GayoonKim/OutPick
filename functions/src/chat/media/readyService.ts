@@ -148,6 +148,10 @@ export async function publishCompletedMediaUpload(input: {
 
     const currentSeq = Number.isInteger(room.data()?.seq) ? Number(room.data()?.seq) : 0;
     const seq = currentSeq + 1;
+    // 역할 이벤트 활성화 전 legacy Room은 timeline seq와 unread seq가 동일하다.
+    const currentUnreadMessageSeq = Number.isInteger(room.data()?.unreadMessageSeq) ?
+      Number(room.data()?.unreadMessageSeq) : currentSeq;
+    const unreadMessageSeq = currentUnreadMessageSeq + 1;
     const sentAt = Timestamp.fromMillis(input.nowMillis);
     const attachments = buildAttachments(kind, manifest, data.technicalValidationResult);
     const nickname = boundedString(profile.data()?.nickname).trim().slice(0, 80);
@@ -174,6 +178,7 @@ export async function publishCompletedMediaUpload(input: {
       mediaUploadPath: input.uploadRef.path,
       readyAttachmentIDs: manifest.map((entry) => entry.attachmentID),
       seq,
+      unreadMessageSeq,
     };
 
     transaction.create(messageRef, messageData);
@@ -203,6 +208,7 @@ export async function publishCompletedMediaUpload(input: {
     });
     transaction.set(roomRef, {
       seq,
+      unreadMessageSeq,
       lastMessage: kind === "images" ?
         (attachments.length === 1 ? "[사진]" : `[사진 ${attachments.length}장]`) : "[동영상]",
       lastMessageAt: sentAt,

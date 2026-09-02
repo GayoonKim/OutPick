@@ -12,12 +12,66 @@ struct ChatMessageRecordMapperTests {
         let restored = try ChatMessageRecordMapper.message(from: record)
 
         #expect(restored.ID == message.ID)
+        #expect(restored.unreadMessageSeq == message.seq)
         #expect(restored.attachments.map(\.index) == [1, 2])
     }
 
     @Test func invalidRequiredIdentifiersAreSkipped() {
         let invalid = GRDBTestFixtures.message(roomID: "")
         #expect(ChatMessageRecordMapper.record(from: invalid) == nil)
+    }
+
+    @Test func senderlessServerRoleEventRoundTripPreservesStructuredPayload() throws {
+        let payload = RoomRoleEventPayload(
+            kind: .moderatorAssigned,
+            subjectUID: "user-1",
+            subjectNicknameSnapshot: "사용자"
+        )
+        let message = ChatMessage(
+            ID: "role-event-1",
+            seq: 13,
+            roomID: "room-1",
+            senderUID: "",
+            senderNickname: "",
+            messageType: .roomRoleEvent,
+            serverGenerated: true,
+            roleEvent: payload,
+            msg: nil,
+            sentAt: Date(timeIntervalSince1970: 300),
+            attachments: []
+        )
+
+        let record = try #require(ChatMessageRecordMapper.record(from: message))
+        let restored = try ChatMessageRecordMapper.message(from: record)
+
+        #expect(record.roleEvent != nil)
+        #expect(restored.messageType == .roomRoleEvent)
+        #expect(restored.serverGenerated)
+        #expect(restored.roleEvent == payload)
+        #expect(restored.unreadMessageSeq == nil)
+        #expect(restored.senderUID.isEmpty)
+    }
+
+    @Test func clientShapedRoleEventIsRejectedFromLocalPersistence() {
+        let message = ChatMessage(
+            ID: "invalid-role-event",
+            seq: 14,
+            roomID: "room-1",
+            senderUID: "forged-user",
+            senderNickname: "Forged User",
+            messageType: .roomRoleEvent,
+            serverGenerated: false,
+            roleEvent: RoomRoleEventPayload(
+                kind: .moderatorAssigned,
+                subjectUID: "user-1",
+                subjectNicknameSnapshot: "사용자"
+            ),
+            msg: nil,
+            sentAt: nil,
+            attachments: []
+        )
+
+        #expect(ChatMessageRecordMapper.record(from: message) == nil)
     }
 
     @Test func regularDeletionRoundTripKeepsPresentationAndScrubsContent() throws {

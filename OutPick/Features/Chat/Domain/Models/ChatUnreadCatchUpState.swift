@@ -160,6 +160,8 @@ struct ChatLatestJumpPresentation: Equatable {
 struct ChatUnreadCatchUpState: Equatable {
     private(set) var knownLatestSeq: Int64
     private(set) var readFrontierSeq: Int64
+    private(set) var knownLatestUnreadMessageSeq: Int64
+    private(set) var readUnreadMessageFrontierSeq: Int64
     private(set) var latestPreview: ChatLatestMessagePreview?
     private(set) var jumpPreview: ChatLatestMessagePreview?
     private(set) var jumpTargetSeq: Int64?
@@ -169,11 +171,22 @@ struct ChatUnreadCatchUpState: Equatable {
     init(
         knownLatestSeq: Int64 = 0,
         readFrontierSeq: Int64 = 0,
+        knownLatestUnreadMessageSeq: Int64? = nil,
+        readUnreadMessageFrontierSeq: Int64? = nil,
         latestPreview: ChatLatestMessagePreview? = nil
     ) {
         let normalizedFrontier = max(Int64(0), readFrontierSeq)
         self.readFrontierSeq = normalizedFrontier
         self.knownLatestSeq = max(normalizedFrontier, knownLatestSeq)
+        let normalizedUnreadFrontier = max(
+            Int64(0),
+            readUnreadMessageFrontierSeq ?? normalizedFrontier
+        )
+        self.readUnreadMessageFrontierSeq = normalizedUnreadFrontier
+        self.knownLatestUnreadMessageSeq = max(
+            normalizedUnreadFrontier,
+            knownLatestUnreadMessageSeq ?? self.knownLatestSeq
+        )
         self.latestPreview = latestPreview?.targetSeq == self.knownLatestSeq
             ? latestPreview
             : nil
@@ -184,13 +197,13 @@ struct ChatUnreadCatchUpState: Equatable {
     }
 
     var unreadCount: Int64 {
-        max(Int64(0), knownLatestSeq - readFrontierSeq)
+        max(Int64(0), knownLatestUnreadMessageSeq - readUnreadMessageFrontierSeq)
     }
 
     var canBeginLatestJump: Bool {
         !isJumpLoading
-            && knownLatestSeq > readFrontierSeq
-            && latestPreview?.targetSeq == knownLatestSeq
+            && unreadCount > 0
+            && latestPreview != nil
     }
 
     var presentedPreview: ChatLatestMessagePreview? {
@@ -206,19 +219,38 @@ struct ChatUnreadCatchUpState: Equatable {
     mutating func observeLatestSeq(_ seq: Int64) {
         guard seq > knownLatestSeq else { return }
         knownLatestSeq = seq
+        knownLatestUnreadMessageSeq = max(knownLatestUnreadMessageSeq, seq)
         latestPreview = nil
+    }
+
+    mutating func observeTimelineEvent(_ seq: Int64) {
+        guard seq > knownLatestSeq else { return }
+        knownLatestSeq = seq
     }
 
     mutating func observeLatestMessage(_ message: ChatMessage) {
         guard message.seq >= knownLatestSeq else { return }
         knownLatestSeq = message.seq
+        knownLatestUnreadMessageSeq = max(
+            knownLatestUnreadMessageSeq,
+            message.effectiveUnreadMessageSeq ?? knownLatestUnreadMessageSeq
+        )
         latestPreview = ChatLatestMessagePreview.make(from: message)
     }
 
-    mutating func syncReadFrontier(_ seq: Int64) {
+    mutating func syncReadFrontier(_ seq: Int64, unreadMessageSeq: Int64? = nil) {
         guard seq > readFrontierSeq else { return }
         readFrontierSeq = seq
         knownLatestSeq = max(knownLatestSeq, seq)
+        let resolvedUnreadSeq = unreadMessageSeq ?? seq
+        readUnreadMessageFrontierSeq = max(
+            readUnreadMessageFrontierSeq,
+            resolvedUnreadSeq
+        )
+        knownLatestUnreadMessageSeq = max(
+            knownLatestUnreadMessageSeq,
+            readUnreadMessageFrontierSeq
+        )
         if let previewTargetSeq = latestPreview?.targetSeq,
            readFrontierSeq >= previewTargetSeq {
             latestPreview = nil
@@ -237,18 +269,16 @@ struct ChatUnreadCatchUpState: Equatable {
     }
 
     mutating func beginLatestJump() -> ChatLatestJumpRequest? {
-        guard canBeginLatestJump else { return nil }
+        guard canBeginLatestJump, let latestPreview else { return nil }
 
         jumpGeneration = nextGeneration(after: jumpGeneration)
-        jumpTargetSeq = knownLatestSeq
-        jumpPreview = latestPreview?.targetSeq == knownLatestSeq
-            ? latestPreview
-            : ChatLatestMessagePreview.generic(targetSeq: knownLatestSeq)
+        jumpTargetSeq = latestPreview.targetSeq
+        jumpPreview = latestPreview
         isJumpLoading = true
 
         return ChatLatestJumpRequest(
             generation: jumpGeneration,
-            targetSeq: knownLatestSeq
+            targetSeq: latestPreview.targetSeq
         )
     }
 

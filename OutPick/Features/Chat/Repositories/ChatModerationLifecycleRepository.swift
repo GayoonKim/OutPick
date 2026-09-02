@@ -19,6 +19,24 @@ enum ChatRoomAccessStatus: String, Equatable {
     case closed
 }
 
+struct ChatRoomRoleAccess: Equatable {
+    let status: ChatRoomAccessStatus
+    let role: ChatRoomMemberRole?
+}
+
+struct ChatRoomRoleMutationReceipt: Equatable {
+    let roomID: String
+    let subjectUID: String?
+    let role: ChatRoomMemberRole?
+    let moderatorCount: Int
+    let memberCount: Int?
+    let eventID: String?
+    let seq: Int64?
+    let ownerUID: String?
+    let exitMode: ChatRoomExitMode?
+    let isDeduplicated: Bool
+}
+
 struct ChatRoomBanEntry: Equatable, Identifiable {
     let token: String
     let reasonCode: String
@@ -55,6 +73,9 @@ struct ChatRoomClosureNotice: Equatable, Identifiable {
     var message: String {
         switch closureType {
         case .closedByOwner:
+            if noticeCode == "ownerDeleted" {
+                return "방장이 없어 방이 종료됐어요."
+            }
             return "방장이 채팅방을 종료했어요."
         case .closedByModeration:
             return "운영 정책에 따라 이용이 종료됐어요."
@@ -83,8 +104,21 @@ protocol ChatModerationLifecycleRepositoryProtocol {
     func unbanRoomMember(roomID: String, banEntryToken: String) async throws
 }
 
+protocol ChatRoomRoleMutationRepositoryProtocol {
+    func fetchMyRoomRoleAccess(roomID: String) async throws -> ChatRoomRoleAccess
+    func assignModerator(roomID: String, targetUID: String) async throws -> ChatRoomRoleMutationReceipt
+    func revokeModerator(roomID: String, targetUID: String) async throws -> ChatRoomRoleMutationReceipt
+    func resignModerator(roomID: String) async throws -> ChatRoomRoleMutationReceipt
+    func leaveChatRoom(roomID: String) async throws -> ChatRoomRoleMutationReceipt
+    func transferOwnershipAndLeave(
+        roomID: String,
+        successorUID: String
+    ) async throws -> ChatRoomRoleMutationReceipt
+}
+
 final class CloudFunctionsChatModerationLifecycleRepository:
-    ChatModerationLifecycleRepositoryProtocol {
+    ChatModerationLifecycleRepositoryProtocol,
+    ChatRoomRoleMutationRepositoryProtocol {
     private let transport: any CloudFunctionsTransporting
     private let firestore: Firestore
     private let currentUserID: () -> String
@@ -164,12 +198,28 @@ final class CloudFunctionsChatModerationLifecycleRepository:
     }
 
     func fetchMyRoomAccess(roomID: String) async throws -> ChatRoomAccessStatus {
+        try await fetchMyRoomRoleAccess(roomID: roomID).status
+    }
+
+    func fetchMyRoomRoleAccess(roomID: String) async throws -> ChatRoomRoleAccess {
         let response = try await transport.call("getMyRoomAccess", data: ["roomID": roomID])
-        let rawStatus = try CloudFunctionResponseDecoder(dictionary: response).string("status")
-        guard let status = ChatRoomAccessStatus(rawValue: rawStatus) else {
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        guard let status = ChatRoomAccessStatus(rawValue: try decoder.string("status")) else {
             throw CloudFunctionsClientError.invalidResponse
         }
-        return status
+        let role: ChatRoomMemberRole?
+        if let rawRole = decoder.optionalString("role") {
+            guard let decodedRole = ChatRoomMemberRole(rawValue: rawRole) else {
+                throw CloudFunctionsClientError.invalidResponse
+            }
+            role = decodedRole
+        } else {
+            role = nil
+        }
+        if status == .member, role == nil {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        return ChatRoomRoleAccess(status: status, role: role)
     }
 
     func removeRoomMember(
@@ -227,6 +277,89 @@ final class CloudFunctionsChatModerationLifecycleRepository:
         guard try CloudFunctionResponseDecoder(dictionary: response).bool("roomBanned") == false else {
             throw CloudFunctionsClientError.invalidResponse
         }
+    }
+
+    func assignModerator(
+        roomID: String,
+        targetUID: String
+    ) async throws -> ChatRoomRoleMutationReceipt {
+        try await roleMutation(
+            name: "assignRoomModerator",
+            roomID: roomID,
+            subjectKey: "targetUID",
+            subjectUID: targetUID
+        )
+    }
+
+    func revokeModerator(
+        roomID: String,
+        targetUID: String
+    ) async throws -> ChatRoomRoleMutationReceipt {
+        try await roleMutation(
+            name: "revokeRoomModerator",
+            roomID: roomID,
+            subjectKey: "targetUID",
+            subjectUID: targetUID
+        )
+    }
+
+    func resignModerator(roomID: String) async throws -> ChatRoomRoleMutationReceipt {
+        try await roleMutation(name: "resignRoomModerator", roomID: roomID)
+    }
+
+    func leaveChatRoom(roomID: String) async throws -> ChatRoomRoleMutationReceipt {
+        try await roleMutation(name: "leaveChatRoom", roomID: roomID)
+    }
+
+    func transferOwnershipAndLeave(
+        roomID: String,
+        successorUID: String
+    ) async throws -> ChatRoomRoleMutationReceipt {
+        try await roleMutation(
+            name: "transferRoomOwnershipAndLeave",
+            roomID: roomID,
+            subjectKey: "successorUID",
+            subjectUID: successorUID
+        )
+    }
+
+    private func roleMutation(
+        name: String,
+        roomID: String,
+        subjectKey: String? = nil,
+        subjectUID: String? = nil
+    ) async throws -> ChatRoomRoleMutationReceipt {
+        var request: [String: Any] = [
+            "roomID": roomID,
+            "clientRequestID": UUID().uuidString.lowercased()
+        ]
+        if let subjectKey, let subjectUID {
+            request[subjectKey] = subjectUID
+        }
+        let response = try await transport.call(name, data: request)
+        let decoder = CloudFunctionResponseDecoder(dictionary: response)
+        let role: ChatRoomMemberRole?
+        if let rawRole = decoder.optionalString("role") {
+            guard let decodedRole = ChatRoomMemberRole(rawValue: rawRole) else {
+                throw CloudFunctionsClientError.invalidResponse
+            }
+            role = decodedRole
+        } else {
+            role = nil
+        }
+        let exitMode = decoder.optionalString("mode").map(ChatRoomExitMode.init(serverValue:))
+        return ChatRoomRoleMutationReceipt(
+            roomID: try decoder.string("roomID"),
+            subjectUID: decoder.optionalString("subjectUID"),
+            role: role,
+            moderatorCount: try decoder.int("moderatorCount"),
+            memberCount: decoder.optionalInt("memberCount"),
+            eventID: decoder.optionalString("eventID"),
+            seq: decoder.optionalInt("seq").map(Int64.init),
+            ownerUID: decoder.optionalString("ownerUID"),
+            exitMode: exitMode,
+            isDeduplicated: try decoder.bool("deduplicated")
+        )
     }
 
     private static func notice(_ document: QueryDocumentSnapshot) -> ChatRoomClosureNotice? {

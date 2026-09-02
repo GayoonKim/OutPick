@@ -13,6 +13,13 @@ protocol ChatRoomLocalExitCleaning {
 
 protocol ChatRoomExitUseCaseProtocol {
     func leaveOrClose(room: ChatRoom) async throws -> ChatRoomExitResult
+    func transferOwnershipAndLeave(room: ChatRoom, successorUID: String) async throws -> ChatRoomExitResult
+}
+
+extension ChatRoomExitUseCaseProtocol {
+    func transferOwnershipAndLeave(room: ChatRoom, successorUID: String) async throws -> ChatRoomExitResult {
+        throw ChatRoomExitError.transferUnavailable
+    }
 }
 
 protocol ChatRoomClosureAcknowledging {
@@ -39,11 +46,14 @@ final class ChatRoomClosureAcknowledgementUseCase: ChatRoomClosureAcknowledging 
 
 enum ChatRoomExitError: LocalizedError, Equatable {
     case missingRoomID
+    case transferUnavailable
 
     var errorDescription: String? {
         switch self {
         case .missingRoomID:
             return "방 정보를 확인할 수 없습니다."
+        case .transferUnavailable:
+            return "방장 권한을 이전할 수 없습니다."
         }
     }
 }
@@ -51,13 +61,16 @@ enum ChatRoomExitError: LocalizedError, Equatable {
 final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
     private let repository: ChatRoomExitRepositoryProtocol
     private let localCleaner: ChatRoomLocalExitCleaning
+    private let roleMutationRepository: ChatRoomRoleMutationRepositoryProtocol?
 
     init(
         repository: ChatRoomExitRepositoryProtocol,
-        localCleaner: ChatRoomLocalExitCleaning
+        localCleaner: ChatRoomLocalExitCleaning,
+        roleMutationRepository: ChatRoomRoleMutationRepositoryProtocol? = nil
     ) {
         self.repository = repository
         self.localCleaner = localCleaner
+        self.roleMutationRepository = roleMutationRepository
     }
 
     func leaveOrClose(room: ChatRoom) async throws -> ChatRoomExitResult {
@@ -73,6 +86,25 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
             print("❌ local room exit cleanup failed:", error)
         }
         return result
+    }
+
+    func transferOwnershipAndLeave(
+        room: ChatRoom,
+        successorUID: String
+    ) async throws -> ChatRoomExitResult {
+        let roomID = room.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty else { throw ChatRoomExitError.missingRoomID }
+        guard let roleMutationRepository else { throw ChatRoomExitError.transferUnavailable }
+        let receipt = try await roleMutationRepository.transferOwnershipAndLeave(
+            roomID: roomID,
+            successorUID: successorUID
+        )
+        do {
+            try await localCleaner.cleanLocalRoomDataAfterExit(roomID: roomID)
+        } catch {
+            print("❌ local room ownership transfer cleanup failed:", error)
+        }
+        return ChatRoomExitResult(roomID: roomID, mode: receipt.exitMode ?? .left)
     }
 }
 

@@ -99,6 +99,69 @@ struct CloudFunctionsChatModerationLifecycleRepositoryTests {
         #expect(transport.calls[0].data["roomID"] as? String == "room-1")
     }
 
+    @Test
+    func roomRoleAccessRequiresRoleForActiveMember() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [["status": "member", "role": "moderator"]]
+        let repository = CloudFunctionsChatModerationLifecycleRepository(
+            transport: transport,
+            currentUserID: { "moderator" }
+        )
+
+        let access = try await repository.fetchMyRoomRoleAccess(roomID: "room-1")
+
+        #expect(access == ChatRoomRoleAccess(status: .member, role: .moderator))
+        #expect(transport.calls[0].name == "getMyRoomAccess")
+    }
+
+    @Test
+    func roomRoleMutationsMapCanonicalCallableContracts() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [
+            [
+                "roomID": "room-1", "subjectUID": "member-1", "role": "moderator",
+                "moderatorCount": 1, "eventID": "event-1", "seq": 8,
+                "deduplicated": false
+            ],
+            [
+                "roomID": "room-1", "moderatorCount": 0, "memberCount": 2,
+                "eventID": NSNull(), "seq": NSNull(), "mode": "left",
+                "deduplicated": false
+            ],
+            [
+                "roomID": "room-1", "moderatorCount": 0, "memberCount": 1,
+                "eventID": "event-2", "seq": 9, "mode": "left",
+                "ownerUID": "moderator-1", "deduplicated": true
+            ]
+        ]
+        let repository = CloudFunctionsChatModerationLifecycleRepository(
+            transport: transport,
+            currentUserID: { "owner" }
+        )
+
+        let assigned = try await repository.assignModerator(
+            roomID: "room-1",
+            targetUID: "member-1"
+        )
+        let left = try await repository.leaveChatRoom(roomID: "room-1")
+        let transferred = try await repository.transferOwnershipAndLeave(
+            roomID: "room-1",
+            successorUID: "moderator-1"
+        )
+
+        #expect(assigned.role == .moderator)
+        #expect(assigned.eventID == "event-1")
+        #expect(left.exitMode == .left)
+        #expect(transferred.ownerUID == "moderator-1")
+        #expect(transferred.isDeduplicated)
+        #expect(transport.calls.map(\.name) == [
+            "assignRoomModerator", "leaveChatRoom", "transferRoomOwnershipAndLeave"
+        ])
+        #expect(transport.calls[0].data["targetUID"] as? String == "member-1")
+        #expect(transport.calls[2].data["successorUID"] as? String == "moderator-1")
+        #expect(transport.calls.allSatisfy { $0.data["clientRequestID"] as? String != nil })
+    }
+
 
     @Test
     func roomMemberRemovalAndBanManagementMapSafeCallableContracts() async throws {

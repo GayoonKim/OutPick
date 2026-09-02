@@ -63,7 +63,7 @@ final class GRDBChatMediaIndexStore: ChatMediaIndexPersisting {
                         (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
-                                      entry.thumbURL, entry.originalURL, entry.width, entry.height, entry.bytesOriginal,
+                                      entry.thumbResourcePath, entry.originalResourcePath, entry.width, entry.height, entry.bytesOriginal,
                                       entry.hash, false, nil, entry.sentAt])
                 case .video:
                     try db.execute(sql: """
@@ -71,7 +71,7 @@ final class GRDBChatMediaIndexStore: ChatMediaIndexPersisting {
                         (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
-                                      entry.thumbURL, entry.originalURL, entry.width, entry.height, entry.bytesOriginal,
+                                      entry.thumbResourcePath, entry.originalResourcePath, entry.width, entry.height, entry.bytesOriginal,
                                       entry.duration, nil, nil, entry.hash, false, nil, entry.sentAt])
                 }
             }

@@ -62,6 +62,27 @@ export type GetMyRoomAccessInput = {
   roomID: string;
 };
 
+export type AssignRoomModeratorInput = {
+  roomID: string;
+  targetUID: string;
+  clientRequestID: string;
+};
+
+export type RevokeRoomModeratorInput = AssignRoomModeratorInput;
+
+export type ResignRoomModeratorInput = {
+  roomID: string;
+  clientRequestID: string;
+};
+
+export type LeaveChatRoomInput = ResignRoomModeratorInput;
+
+export type TransferRoomOwnershipAndLeaveInput = {
+  roomID: string;
+  successorUID: string;
+  clientRequestID: string;
+};
+
 function positiveInteger(data: Record<string, unknown>, key: string): number {
   const value = data[key];
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -185,4 +206,41 @@ export function parseListRoomBansInput(data: unknown): ListRoomBansInput {
 
 export function parseGetMyRoomAccessInput(data: unknown): GetMyRoomAccessInput {
   return {roomID: roomID(recordData(data))};
+}
+
+function targetUID(data: Record<string, unknown>, key = "targetUID"): string {
+  return requiredDocumentID(requiredString(data, key, 128), key);
+}
+
+export function parseAssignRoomModeratorInput(data: unknown): AssignRoomModeratorInput {
+  const record = recordData(data);
+  return {
+    roomID: roomID(record),
+    targetUID: targetUID(record),
+    clientRequestID: clientRequestID(record),
+  };
+}
+
+export function parseRevokeRoomModeratorInput(data: unknown): RevokeRoomModeratorInput {
+  return parseAssignRoomModeratorInput(data);
+}
+
+export function parseResignRoomModeratorInput(data: unknown): ResignRoomModeratorInput {
+  const record = recordData(data);
+  return {roomID: roomID(record), clientRequestID: clientRequestID(record)};
+}
+
+export function parseLeaveChatRoomInput(data: unknown): LeaveChatRoomInput {
+  return parseResignRoomModeratorInput(data);
+}
+
+export function parseTransferRoomOwnershipAndLeaveInput(
+  data: unknown,
+): TransferRoomOwnershipAndLeaveInput {
+  const record = recordData(data);
+  return {
+    roomID: roomID(record),
+    successorUID: targetUID(record, "successorUID"),
+    clientRequestID: clientRequestID(record),
+  };
 }

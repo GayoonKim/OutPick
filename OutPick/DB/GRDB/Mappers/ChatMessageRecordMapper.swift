@@ -2,19 +2,29 @@ import Foundation
 
 enum ChatMessageRecordMapper {
     static func record(from message: ChatMessage) -> ChatMessageRecord? {
-        guard !message.roomID.isEmpty,
-              message.isDeleted || (!message.senderUID.isEmpty && !message.senderNickname.isEmpty) else {
+        let isValidRoleEvent = message.messageType == .roomRoleEvent
+            && message.serverGenerated
+            && message.roleEvent != nil
+        guard !message.roomID.isEmpty else {
+            return nil
+        }
+        if message.messageType == .roomRoleEvent {
+            guard isValidRoleEvent else { return nil }
+        } else if !message.isDeleted
+                    && (message.senderUID.isEmpty || message.senderNickname.isEmpty) {
             return nil
         }
 
         return ChatMessageRecord(
             id: message.ID,
             seq: message.seq,
+            unreadMessageSeq: message.effectiveUnreadMessageSeq,
             roomID: message.roomID,
             senderUID: message.senderUID.isEmpty ? nil : message.senderUID,
             senderNickname: message.senderNickname.isEmpty ? nil : message.senderNickname,
             senderAvatarPath: message.senderAvatarPath,
             messageType: message.isDeleted ? nil : message.messageType?.rawValue,
+            roleEvent: message.isDeleted ? nil : message.roleEvent.flatMap(encode),
             msg: message.isDeleted ? nil : message.msg,
             sentAt: message.sentAt,
             attachments: message.isDeleted ? "[]" : (encode(message.attachments.sorted { $0.index < $1.index }) ?? "[]"),
@@ -37,11 +47,14 @@ enum ChatMessageRecordMapper {
         return ChatMessage(
             ID: record.id,
             seq: record.seq,
+            unreadMessageSeq: record.unreadMessageSeq,
             roomID: record.roomID,
             senderUID: record.senderUID ?? "",
             senderNickname: record.senderNickname ?? "",
             senderAvatarPath: record.senderAvatarPath,
             messageType: messageType,
+            serverGenerated: messageType == .roomRoleEvent,
+            roleEvent: decode(RoomRoleEventPayload.self, from: record.roleEvent),
             msg: record.msg,
             sentAt: record.sentAt,
             attachments: attachments,

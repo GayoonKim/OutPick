@@ -26,6 +26,19 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     init(db: Firestore) {
         self.db = db
     }
+
+    static func eligiblePreviewMessages(
+        fromNewestFirst messages: [ChatMessage],
+        limit: Int
+    ) -> [ChatMessage] {
+        guard limit > 0 else { return [] }
+        return Array(
+            messages
+                .filter(\.isEligibleForRoomListPreview)
+                .prefix(limit)
+                .reversed()
+        )
+    }
     
     deinit {
         removeParticipantTask?.cancel()
@@ -48,7 +61,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
 
     func applyLocalIncomingMessagePreview(_ message: ChatMessage) {
         let roomID = message.roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !roomID.isEmpty else { return }
+        guard !roomID.isEmpty, message.isEligibleForRoomListPreview else { return }
 
         let existingPreviews = previewByRoomID[roomID] ?? []
         let withoutDuplicate = existingPreviews.filter { $0.ID != message.ID }
@@ -122,6 +135,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
     }
     
     private func fetchPreviewMessages(roomID: String, limit: Int) async -> [ChatMessage] {
+        guard limit > 0 else { return [] }
         let messagesRef = db.collection("Rooms").document(roomID).collection("Messages")
         
         func decode(_ snap: QuerySnapshot) -> [ChatMessage] {
@@ -138,26 +152,52 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             return arr
         }
         
+        func fetchEligibleMessages(orderBy field: String) async throws -> (
+            messages: [ChatMessage],
+            foundDocuments: Bool
+        ) {
+            var collected: [ChatMessage] = []
+            var cursor: DocumentSnapshot?
+            var scannedCount = 0
+            var foundDocuments = false
+            let maximumScanCount = max(30, limit * 10)
+
+            while collected.count < limit, scannedCount < maximumScanCount {
+                var query: Query = messagesRef
+                    .order(by: field, descending: true)
+                    .limit(to: min(limit, maximumScanCount - scannedCount))
+                if let cursor {
+                    query = query.start(afterDocument: cursor)
+                }
+
+                let snapshot = try await query.getDocuments()
+                guard !snapshot.documents.isEmpty else { break }
+
+                foundDocuments = true
+                scannedCount += snapshot.documents.count
+                cursor = snapshot.documents.last
+                collected.append(contentsOf: decode(snapshot).filter(\.isEligibleForRoomListPreview))
+
+                if snapshot.documents.count < limit { break }
+            }
+
+            return (
+                Self.eligiblePreviewMessages(fromNewestFirst: collected, limit: limit),
+                foundDocuments
+            )
+        }
+
         // 1) seq 기반 시도
         do {
-            let snap = try await messagesRef
-                .order(by: "seq", descending: true)
-                .limit(to: limit)
-                .getDocuments()
-            let arr = decode(snap)
-            if !arr.isEmpty { return arr.reversed() }
+            let result = try await fetchEligibleMessages(orderBy: "seq")
+            if result.foundDocuments { return result.messages }
         } catch {
             // 계속 폴백 시도
         }
         
         // 2) sentAt 기반 폴백
         do {
-            let snap = try await messagesRef
-                .order(by: "sentAt", descending: true)
-                .limit(to: limit)
-                .getDocuments()
-            let arr = decode(snap)
-            return arr.reversed()
+            return try await fetchEligibleMessages(orderBy: "sentAt").messages
         } catch {
             print("⚠️ _fetchPreviewMessages fallback failed (roomID=\(roomID)): \(error)")
             return []
@@ -268,7 +308,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
             roomName: input.roomName,
             roomDescription: input.roomDescription,
             participants: [creatorUID],
-            creatorUID: creatorUID,
+            ownerUID: creatorUID,
             createdAt: input.createdAt,
             lastMessageAt: input.createdAt,
             memberCount: 1
@@ -403,7 +443,7 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
                 guard snapshot.exists,
                       snapshot.data()?["isClosed"] as? Bool == true,
                       let room = try? createRoom(from: snapshot),
-                      !(room.closureType == .closedByOwner && room.creatorUID == normalizedUID) else {
+                      !(room.closureType == .closedByOwner && room.ownerUID == normalizedUID) else {
                     continue
                 }
                 rooms.append(room)
@@ -444,18 +484,80 @@ final class FirebaseChatRoomRepository: FirebaseChatRoomRepositoryProtocol {
 
         let snapshot = try await query.getDocuments()
 
-        let userIDs: [String] = snapshot.documents.compactMap { document -> String? in
-            let data = document.data()
-            let rawUserID = (data["userID"] as? String) ?? document.documentID
-            let userID = rawUserID.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !userID.isEmpty, !userID.contains("/") else { return nil }
-            return userID
-        }
+        let members = snapshot.documents.compactMap(Self.roomMemberSummary)
 
         return RoomMemberPage(
-            userIDs: userIDs,
+            members: members,
             nextCursorUserID: snapshot.documents.last?.documentID,
             hasMore: snapshot.documents.count == limit
+        )
+    }
+
+    func fetchPinnedRoomMembers(
+        roomID: String,
+        currentUserID: String,
+        ownerUID: String
+    ) async throws -> [RoomMemberSummary] {
+        let trimmedRoomID = roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentUID = currentUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ownerID = ownerUID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRoomID.isEmpty, !trimmedRoomID.contains("/") else {
+            throw FirebaseError.FailedToFetchRoom
+        }
+        let members = db.collection("Rooms").document(trimmedRoomID).collection("members")
+        async let moderatorsSnapshot = members.whereField("role", isEqualTo: ChatRoomMemberRole.moderator.rawValue)
+            .limit(to: 4)
+            .getDocuments()
+        async let currentSnapshot = currentUID.isEmpty || currentUID.contains("/")
+            ? nil
+            : members.document(currentUID).getDocument()
+        async let ownerSnapshot = ownerID.isEmpty || ownerID.contains("/") || ownerID == currentUID
+            ? nil
+            : members.document(ownerID).getDocument()
+
+        var summaries = try await moderatorsSnapshot.documents.compactMap(Self.roomMemberSummary)
+        if let current = try await currentSnapshot,
+           var summary = Self.roomMemberSummary(current) {
+            if summary.userID == ownerID {
+                summary = RoomMemberSummary(
+                    userID: summary.userID,
+                    role: .owner,
+                    moderatorSince: nil
+                )
+            }
+            summaries.append(summary)
+        }
+        if let owner = try await ownerSnapshot,
+           let summary = Self.roomMemberSummary(owner) {
+            summaries.append(RoomMemberSummary(
+                userID: summary.userID,
+                role: .owner,
+                moderatorSince: nil
+            ))
+        }
+        var seen = Set<String>()
+        return summaries.filter { seen.insert($0.userID).inserted }
+    }
+
+    private static func roomMemberSummary(_ document: DocumentSnapshot) -> RoomMemberSummary? {
+        let data = document.data() ?? [:]
+        let rawUserID = (data["userID"] as? String) ?? document.documentID
+        let userID = rawUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userID.isEmpty, !userID.contains("/") else {
+            return nil
+        }
+        let role: ChatRoomMemberRole
+        if let rawRole = data["role"] as? String {
+            guard let decodedRole = ChatRoomMemberRole(rawValue: rawRole) else { return nil }
+            role = decodedRole
+        } else {
+            // 역할 마이그레이션 전 기존 방도 참여자 목록을 계속 표시한다.
+            role = .member
+        }
+        return RoomMemberSummary(
+            userID: userID,
+            role: role,
+            moderatorSince: (data["moderatorSince"] as? Timestamp)?.dateValue()
         )
     }
 

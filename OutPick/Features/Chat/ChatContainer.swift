@@ -21,6 +21,7 @@ final class ChatContainer {
     let currentUserProvider: CurrentUserProviding
     let realtimeSocketService: RealtimeSocketService
     let userBlockVisibilityStore: any UserBlockVisibilityChecking
+    let featureGate: any AppFeatureGateChecking
 
     private let managers: ChatManagerProvider
     private let avatarImageManager: AvatarImageManaging
@@ -40,6 +41,8 @@ final class ChatContainer {
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
     let roomClosureAcknowledgementUseCase: ChatRoomClosureAcknowledging
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
+    private let roleMutationRepository: ChatRoomRoleMutationRepositoryProtocol
+    private let observeRoomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
@@ -66,6 +69,7 @@ final class ChatContainer {
         currentUserProvider: CurrentUserProviding,
         realtimeSocketService: RealtimeSocketService,
         avatarImageManager: AvatarImageManaging,
+        featureGate: any AppFeatureGateChecking,
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         userBlockRepository: any UserBlockRepositoryProtocol = CloudFunctionsUserBlockRepository(),
         userBlockSessionSynchronizer: (any UserBlockSessionSynchronizing)? = nil,
@@ -95,6 +99,10 @@ final class ChatContainer {
             currentUserID: { currentUserProvider.canonicalUserID }
         )
         self.moderationLifecycleRepository = moderationLifecycleRepository
+        self.roleMutationRepository = moderationLifecycleRepository
+        self.observeRoomRoleUseCase = ObserveChatRoomRoleUseCase(
+            repository: FirestoreChatRoomRoleRepository()
+        )
         let managers = ChatManagerProvider(
             repositories: repositories,
             publicProfileRepository: publicProfileRepository,
@@ -112,6 +120,7 @@ final class ChatContainer {
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.currentUserProvider = currentUserProvider
         self.realtimeSocketService = realtimeSocketService
+        self.featureGate = featureGate
         self.userBlockVisibilityStore = userBlockVisibilityStore
         self.blockUserUseCase = BlockUserUseCase(
             repository: userBlockRepository,
@@ -142,9 +151,11 @@ final class ChatContainer {
             repository: DefaultChatRoomExitRepository(
                 socket: realtimeSocketService,
                 moderationLifecycleRepository: moderationLifecycleRepository,
+                roleMutationRepository: moderationLifecycleRepository,
                 currentUserID: { currentUserProvider.canonicalUserID }
             ),
-            localCleaner: roomLocalExitCleaner
+            localCleaner: roomLocalExitCleaner,
+            roleMutationRepository: moderationLifecycleRepository
         )
         self.roomClosureAcknowledgementUseCase = ChatRoomClosureAcknowledgementUseCase(
             repository: moderationLifecycleRepository,
@@ -276,7 +287,17 @@ final class ChatContainer {
     }
 
     func makeChatRoomViewModel(room: ChatRoom) -> ChatRoomViewModel {
-        ChatRoomViewModel(
+        let currentUserID = currentUserProvider.canonicalUserID
+        let cachedRole: ChatRoomMemberRole? = room.ownerUID == currentUserID
+            ? .owner
+            : (joinedRoomsStore.contains(room.id) ? .member : nil)
+        let roleSession = ChatRoomRoleSession(
+            roomID: room.id,
+            userID: currentUserID,
+            cachedRole: cachedRole,
+            observeUseCase: observeRoomRoleUseCase
+        )
+        return ChatRoomViewModel(
             room: room,
             initialLoadUseCase: chatInitialLoadUseCase,
             messageUseCase: chatRoomMessageUseCase,
@@ -290,7 +311,9 @@ final class ChatContainer {
             userBlockVisibilityStore: userBlockVisibilityStore,
             blockUserUseCase: blockUserUseCase,
             memberModerationUseCase: makeChatRoomMemberModerationUseCase(),
-            deletionSyncUseCase: chatDeletionSyncUseCase
+            deletionSyncUseCase: chatDeletionSyncUseCase,
+            roomRoleSession: roleSession,
+            roomRoleUseCase: observeRoomRoleUseCase
         )
     }
 
@@ -308,6 +331,10 @@ final class ChatContainer {
 
     func makeChatRoomMemberModerationUseCase() -> ChatRoomMemberModerationUseCaseProtocol {
         ChatRoomMemberModerationUseCase(repository: moderationLifecycleRepository)
+    }
+
+    func makeManageChatRoomRoleUseCase() -> ManageChatRoomRoleUseCaseProtocol {
+        ManageChatRoomRoleUseCase(repository: roleMutationRepository)
     }
 
     func makeChatRoomBannedUsersViewModel(roomID: String) -> ChatRoomBannedUsersViewModel {

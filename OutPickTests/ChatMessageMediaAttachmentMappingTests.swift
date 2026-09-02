@@ -74,4 +74,34 @@ struct ChatMessageMediaAttachmentMappingTests {
         #expect(attachment.isAnimated == true)
         #expect(attachment.isAnimatedGIF)
     }
+
+    @Test func mediaIndexEntryResolvesReadyBucketPathsForSettingsGallery() throws {
+        let message = try #require(ChatMessage.from([
+            "ID": "message-index",
+            "seq": 3,
+            "roomID": "room-1",
+            "senderUID": "user-1",
+            "senderNickname": "사용자",
+            "attachments": [[
+                "type": "video",
+                "index": 0,
+                "bucketThumb": "outpick-test-chat-media",
+                "bucketOriginal": "outpick-test-chat-media",
+                "pathThumb": "rooms/room-1/messages/message-index/thumbnail",
+                "pathOriginal": "rooms/room-1/messages/message-index/display",
+                "w": 1920,
+                "h": 1080,
+                "bytesOriginal": 2_048,
+                "duration": 3.5,
+                "hash": "video-hash"
+            ]]
+        ]))
+
+        let entry = try #require(ChatRoomMediaIndexEntry.entries(from: message).first)
+
+        #expect(entry.thumbResourcePath ==
+            "gs://outpick-test-chat-media/rooms/room-1/messages/message-index/thumbnail")
+        #expect(entry.originalResourcePath ==
+            "gs://outpick-test-chat-media/rooms/room-1/messages/message-index/display")
+    }
 }

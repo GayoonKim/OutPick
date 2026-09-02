@@ -106,6 +106,8 @@ test("worker 완료는 message/seq/index/preview/delivery/ready와 slot 반환�
   assert.equal(memory.values.get("Rooms/room")?.seq, 5);
   assert.equal(memory.values.get("Rooms/room/Messages/message")?.seq, 5);
   const message = memory.values.get("Rooms/room/Messages/message");
+  assert.equal(message?.unreadMessageSeq, 5);
+  assert.equal(memory.values.get("Rooms/room")?.unreadMessageSeq, 5);
   const attachment = (message?.attachments as Array<Record<string, unknown>>)[0];
   assert.equal(attachment.bucketOriginal, "ready");
   assert.equal(attachment.bucketThumb, "ready");

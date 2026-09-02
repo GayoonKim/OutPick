@@ -54,6 +54,7 @@ struct RealtimeSocketListenerBinderTests {
             RealtimeSocketListenerBinder.chatMessageEvent,
             RealtimeSocketListenerBinder.imagesReceivedEvent,
             RealtimeSocketListenerBinder.videoReceivedEvent,
+            RealtimeSocketListenerBinder.roomRoleEvent,
             RealtimeSocketListenerBinder.roomClosedEvent,
             RealtimeSocketListenerBinder.roomMembershipRemovedEvent,
             RealtimeSocketListenerBinder.messageDeletedEvent,
@@ -69,7 +70,7 @@ struct RealtimeSocketListenerBinderTests {
         #expect(binder.bind(to: listener, callbacks: callbacks))
         #expect(!binder.bind(to: listener, callbacks: callbacks))
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 8)
+        #expect(listener.namedEvents.count == 9)
     }
 
     @Test func repeatedConnectCallbackDoesNotChangeRegistrationCount() {
@@ -83,7 +84,7 @@ struct RealtimeSocketListenerBinderTests {
 
         #expect(callbacks.connectedPayloads.count == 2)
         #expect(listener.clientEvents.count == 3)
-        #expect(listener.namedEvents.count == 8)
+        #expect(listener.namedEvents.count == 9)
     }
 
     @Test func newBinderRegistersAnIndependentSocketSurface() {
@@ -94,9 +95,9 @@ struct RealtimeSocketListenerBinderTests {
         RealtimeSocketListenerBinder().bind(to: secondListener, callbacks: .spy())
 
         #expect(firstListener.clientEvents.count == 3)
-        #expect(firstListener.namedEvents.count == 8)
+        #expect(firstListener.namedEvents.count == 9)
         #expect(secondListener.clientEvents.count == 3)
-        #expect(secondListener.namedEvents.count == 8)
+        #expect(secondListener.namedEvents.count == 9)
     }
 
     @Test func namedEventsForwardPayloadsToTheirActorBridgeCallbacks() {
@@ -108,6 +109,7 @@ struct RealtimeSocketListenerBinderTests {
         listener.emit(namedEvent: RealtimeSocketListenerBinder.chatMessageEvent, data: ["chat"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.imagesReceivedEvent, data: ["images"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.videoReceivedEvent, data: ["video"])
+        listener.emit(namedEvent: RealtimeSocketListenerBinder.roomRoleEvent, data: ["role"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.roomClosedEvent, data: ["closed"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.roomMembershipRemovedEvent, data: ["removed"])
         listener.emit(namedEvent: RealtimeSocketListenerBinder.messageDeletedEvent, data: ["deleted"])
@@ -117,6 +119,7 @@ struct RealtimeSocketListenerBinderTests {
         #expect(callbacks.chatPayloads.count == 1)
         #expect(callbacks.imagePayloads.count == 1)
         #expect(callbacks.videoPayloads.count == 1)
+        #expect(callbacks.roomRoleEventPayloads.count == 1)
         #expect(callbacks.roomClosedPayloads.count == 1)
         #expect(callbacks.roomMembershipRemovedPayloads.count == 1)
         #expect(callbacks.messageDeletedPayloads.count == 1)
@@ -213,6 +216,22 @@ struct RealtimeSocketListenerBinderTests {
         #expect(roomBAdmissionAfterReset)
     }
 
+    @Test func commonAdmissionAllowsRoleEventPrivacyRedactionOnlyOnce() {
+        var state = RealtimeSocketAdmissionState()
+        let original = makeAdmissionRoleEvent(subjectUID: "deleted-user")
+        let redacted = makeAdmissionRoleEvent(subjectUID: nil)
+
+        let originalAdmission = state.admit(original)
+        let redactionAdmission = state.admit(redacted)
+        let duplicateRedactionAdmission = state.admit(redacted)
+        let staleOriginalAdmission = state.admit(original)
+
+        #expect(originalAdmission)
+        #expect(redactionAdmission)
+        #expect(!duplicateRedactionAdmission)
+        #expect(!staleOriginalAdmission)
+    }
+
     @Test func routingPromotionCarriesBackgroundHighWatermark() {
         var state = RealtimeRoomRoutingState()
         state.recordBackgroundAcceptance(roomID: "room", seq: 103)
@@ -271,6 +290,17 @@ private func makeAdmissionMessage(
     )
 }
 
+private func makeAdmissionRoleEvent(subjectUID: String?) -> ChatMessage {
+    var message = makeAdmissionMessage(id: "role-event", seq: 1, roomID: "room")
+    message.messageType = .roomRoleEvent
+    message.roleEvent = RoomRoleEventPayload(
+        kind: .moderatorAssigned,
+        subjectUID: subjectUID,
+        subjectNicknameSnapshot: subjectUID == nil ? "알 수 없는 사용자" : "사용자"
+    )
+    return message
+}
+
 private final class SocketEventListenerSpy: RealtimeSocketEventListening {
     private(set) var clientEvents: [SocketClientEvent] = []
     private(set) var namedEvents: [String] = []
@@ -302,6 +332,7 @@ private final class ListenerCallbackSpy {
     private(set) var chatPayloads: [[Any]] = []
     private(set) var imagePayloads: [[Any]] = []
     private(set) var videoPayloads: [[Any]] = []
+    private(set) var roomRoleEventPayloads: [[Any]] = []
     private(set) var roomClosedPayloads: [[Any]] = []
     private(set) var roomMembershipRemovedPayloads: [[Any]] = []
     private(set) var messageDeletedPayloads: [[Any]] = []
@@ -315,6 +346,7 @@ private final class ListenerCallbackSpy {
         chatMessage: { [weak self] in self?.chatPayloads.append($0) },
         imagesReceived: { [weak self] in self?.imagePayloads.append($0) },
         videoReceived: { [weak self] in self?.videoPayloads.append($0) },
+        roomRoleEvent: { [weak self] in self?.roomRoleEventPayloads.append($0) },
         roomClosed: { [weak self] in self?.roomClosedPayloads.append($0) },
         roomMembershipRemoved: { [weak self] in self?.roomMembershipRemovedPayloads.append($0) },
         messageDeleted: { [weak self] in self?.messageDeletedPayloads.append($0) },
@@ -332,6 +364,7 @@ private extension RealtimeSocketListenerCallbacks {
             chatMessage: { _ in },
             imagesReceived: { _ in },
             videoReceived: { _ in },
+            roomRoleEvent: { _ in },
             roomClosed: { _ in },
             roomMembershipRemoved: { _ in },
             messageDeleted: { _ in },

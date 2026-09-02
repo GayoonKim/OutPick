@@ -210,6 +210,25 @@ struct ChatUnreadCatchUpStateTests {
         #expect(state.presentedPreview?.targetSeq == 11)
     }
 
+    @Test func timelineOnlyRoleEventPreservesUnreadCountAndLatestMessagePreview() throws {
+        var state = ChatUnreadCatchUpState(
+            knownLatestSeq: 10,
+            readFrontierSeq: 0,
+            knownLatestUnreadMessageSeq: 10,
+            readUnreadMessageFrontierSeq: 0,
+            latestPreview: .generic(targetSeq: 10, text: "일반 메시지")
+        )
+
+        state.observeTimelineEvent(11)
+
+        #expect(state.knownLatestSeq == 11)
+        #expect(state.unreadCount == 10)
+        #expect(state.latestPreview?.targetSeq == 10)
+        let optionalRequest = state.beginLatestJump()
+        let request = try #require(optionalRequest)
+        #expect(request.targetSeq == 10)
+    }
+
     @Test func mismatchedInitialPreviewIsDiscarded() {
         let state = ChatUnreadCatchUpState(
             knownLatestSeq: 20,

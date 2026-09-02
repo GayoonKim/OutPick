@@ -10,13 +10,16 @@ import Foundation
 struct ChatRoomReadSnapshot: Equatable {
     let roomID: String
     var latestSeq: Int64?
+    var latestUnreadMessageSeq: Int64? = nil
     var lastReadSeq: Int64?
+    var lastReadUnreadMessageSeq: Int64? = nil
     var lastMessageSenderUID: String?
     var latestMessagePreview: String? = nil
     var latestMessageAt: Date? = nil
 
     func unreadCount(currentUserID: String) -> Int64? {
-        guard let latestSeq, let lastReadSeq else { return nil }
+        guard let latestSeq = latestUnreadMessageSeq ?? latestSeq,
+              let lastReadSeq = lastReadUnreadMessageSeq ?? lastReadSeq else { return nil }
 
         var unread = max(Int64(0), latestSeq - lastReadSeq)
         if unread > 0,
@@ -69,8 +72,20 @@ final class ChatRoomReadStateStore {
             if let latestSeq = snapshot.latestSeq {
                 current.latestSeq = max(current.latestSeq ?? 0, latestSeq)
             }
+            if let latestUnreadMessageSeq = snapshot.latestUnreadMessageSeq {
+                current.latestUnreadMessageSeq = max(
+                    current.latestUnreadMessageSeq ?? 0,
+                    latestUnreadMessageSeq
+                )
+            }
             if let lastReadSeq = snapshot.lastReadSeq {
                 current.lastReadSeq = max(current.lastReadSeq ?? 0, lastReadSeq)
+            }
+            if let lastReadUnreadMessageSeq = snapshot.lastReadUnreadMessageSeq {
+                current.lastReadUnreadMessageSeq = max(
+                    current.lastReadUnreadMessageSeq ?? 0,
+                    lastReadUnreadMessageSeq
+                )
             }
             current.lastMessageSenderUID = snapshot.lastMessageSenderUID
             current.latestMessagePreview = snapshot.latestMessagePreview
@@ -82,6 +97,7 @@ final class ChatRoomReadStateStore {
     func seedLatest(
         roomID: String,
         latestSeq: Int64?,
+        latestUnreadMessageSeq: Int64? = nil,
         lastMessageSenderUID: String?
     ) -> ChatRoomReadSnapshot? {
         guard !roomID.isEmpty else { return nil }
@@ -95,6 +111,12 @@ final class ChatRoomReadStateStore {
             } else if current.latestSeq == nil {
                 current.lastMessageSenderUID = lastMessageSenderUID
             }
+            if let latestUnreadMessageSeq {
+                current.latestUnreadMessageSeq = max(
+                    current.latestUnreadMessageSeq ?? 0,
+                    latestUnreadMessageSeq
+                )
+            }
         }
     }
 
@@ -106,6 +128,12 @@ final class ChatRoomReadStateStore {
             let currentLatest = current.latestSeq ?? 0
             guard message.seq >= currentLatest else { return }
             current.latestSeq = message.seq
+            if let unreadMessageSeq = message.effectiveUnreadMessageSeq {
+                current.latestUnreadMessageSeq = max(
+                    current.latestUnreadMessageSeq ?? 0,
+                    unreadMessageSeq
+                )
+            }
             current.lastMessageSenderUID = message.senderUID
             current.latestMessagePreview = message.previewTextForRoomList
             current.latestMessageAt = message.sentAt ?? Date()
@@ -113,13 +141,36 @@ final class ChatRoomReadStateStore {
     }
 
     @discardableResult
-    func markReadFlushed(roomID: String, lastReadSeq: Int64) -> ChatRoomReadSnapshot? {
+    func seedIncomingTimelineEvent(_ message: ChatMessage) -> ChatRoomReadSnapshot? {
+        let roomID = message.roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roomID.isEmpty, message.seq > 0 else { return nil }
+        return update(roomID: roomID) { current in
+            current.latestSeq = max(current.latestSeq ?? 0, message.seq)
+        }
+    }
+
+    @discardableResult
+    func markReadFlushed(
+        roomID: String,
+        lastReadSeq: Int64,
+        lastReadUnreadMessageSeq: Int64? = nil
+    ) -> ChatRoomReadSnapshot? {
         guard !roomID.isEmpty, lastReadSeq > 0 else { return nil }
         return update(roomID: roomID) { current in
-            if let existing = current.lastReadSeq, existing >= lastReadSeq {
+            let timelineAlreadyFlushed = (current.lastReadSeq ?? 0) >= lastReadSeq
+            let unreadAlreadyFlushed = lastReadUnreadMessageSeq.map {
+                (current.lastReadUnreadMessageSeq ?? 0) >= $0
+            } ?? true
+            if timelineAlreadyFlushed && unreadAlreadyFlushed {
                 return
             }
-            current.lastReadSeq = lastReadSeq
+            current.lastReadSeq = max(current.lastReadSeq ?? 0, lastReadSeq)
+            if let lastReadUnreadMessageSeq {
+                current.lastReadUnreadMessageSeq = max(
+                    current.lastReadUnreadMessageSeq ?? 0,
+                    lastReadUnreadMessageSeq
+                )
+            }
         }
     }
 
@@ -138,7 +189,9 @@ final class ChatRoomReadStateStore {
         var snapshot = snapshots[roomID] ?? ChatRoomReadSnapshot(
             roomID: roomID,
             latestSeq: nil,
+            latestUnreadMessageSeq: nil,
             lastReadSeq: nil,
+            lastReadUnreadMessageSeq: nil,
             lastMessageSenderUID: nil,
             latestMessagePreview: nil,
             latestMessageAt: nil

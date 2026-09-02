@@ -243,9 +243,10 @@ export async function resolveMessageModerationService(
         if (input.accountAction === "permanentSuspension") {
           const jobID = roomOwnershipSuccessionJobID(account.id, "permanentSuspension", nextStateVersion);
           transaction.create(firestore.collection("roomOwnershipSuccessionJobs").doc(jobID), {
-            schemaVersion: 1, targetUID: account.id, cause: "permanentSuspension", expectedStateVersion: nextStateVersion,
+            schemaVersion: 2, targetUID: account.id, cause: "permanentSuspension", expectedStateVersion: nextStateVersion,
+            accountDeletionRequestID: null, accountGenerationID: null,
             status: "pending", attempt: 0, nextAttemptAt: nowTimestamp, leaseOwner: null, leaseExpiresAt: null,
-            lastErrorCode: null, createdAt: nowTimestamp, updatedAt: nowTimestamp, completedAt: null, expiresAt: null,
+            lastErrorCode: null, result: null, createdAt: nowTimestamp, updatedAt: nowTimestamp, completedAt: null, expiresAt: null,
           });
         }
       }

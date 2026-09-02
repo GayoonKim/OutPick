@@ -466,6 +466,7 @@ struct RealtimeSocketAdmissionState {
     private struct RoomState {
         var messageIDs = Set<String>()
         var messageIDOrder: [String] = []
+        var roleEventRedactionByMessageID: [String: Bool] = [:]
     }
 
     private let capacityPerRoom: Int
@@ -480,12 +481,22 @@ struct RealtimeSocketAdmissionState {
         guard !message.roomID.isEmpty, !message.ID.isEmpty else { return false }
 
         var room = rooms[message.roomID] ?? RoomState()
-        guard room.messageIDs.insert(message.ID).inserted else { return false }
+        guard room.messageIDs.insert(message.ID).inserted else {
+            guard room.roleEventRedactionByMessageID[message.ID] == false,
+                  message.roleEventSubjectIsRedacted == true else { return false }
+            room.roleEventRedactionByMessageID[message.ID] = true
+            rooms[message.roomID] = room
+            return true
+        }
         room.messageIDOrder.append(message.ID)
+        if let isRedacted = message.roleEventSubjectIsRedacted {
+            room.roleEventRedactionByMessageID[message.ID] = isRedacted
+        }
 
         if room.messageIDOrder.count > capacityPerRoom {
             let oldestID = room.messageIDOrder.removeFirst()
             room.messageIDs.remove(oldestID)
+            room.roleEventRedactionByMessageID.removeValue(forKey: oldestID)
         }
 
         rooms[message.roomID] = room
@@ -513,6 +524,7 @@ actor ChatRoomSessionActor {
     private var recentMessageIDs = Set<String>()
     private var recentMessageOrder: [String] = []
     private var recentSeqByMessageID: [String: Int64] = [:]
+    private var recentRoleEventRedactionByMessageID: [String: Bool] = [:]
 
     init(roomID: String, recentMessageCapacity: Int = 300) {
         self.roomID = roomID
@@ -539,6 +551,12 @@ actor ChatRoomSessionActor {
 
     func publishIncoming(_ message: ChatMessage) {
         if recentMessageIDs.contains(message.ID) {
+            if recentRoleEventRedactionByMessageID[message.ID] == false,
+               message.roleEventSubjectIsRedacted == true {
+                recentRoleEventRedactionByMessageID[message.ID] = true
+                yield(message)
+                return
+            }
             let previousSeq = recentSeqByMessageID[message.ID] ?? message.seq
             #if DEBUG
             if previousSeq != message.seq {
@@ -555,11 +573,15 @@ actor ChatRoomSessionActor {
         recentMessageIDs.insert(message.ID)
         recentMessageOrder.append(message.ID)
         recentSeqByMessageID[message.ID] = message.seq
+        if let isRedacted = message.roleEventSubjectIsRedacted {
+            recentRoleEventRedactionByMessageID[message.ID] = isRedacted
+        }
 
         if recentMessageOrder.count > recentMessageCapacity {
             let oldestMessageID = recentMessageOrder.removeFirst()
             recentMessageIDs.remove(oldestMessageID)
             recentSeqByMessageID.removeValue(forKey: oldestMessageID)
+            recentRoleEventRedactionByMessageID.removeValue(forKey: oldestMessageID)
         }
 
         yield(message)
@@ -587,6 +609,7 @@ actor ChatRoomSessionActor {
         recentMessageIDs.removeAll(keepingCapacity: false)
         recentMessageOrder.removeAll(keepingCapacity: false)
         recentSeqByMessageID.removeAll(keepingCapacity: false)
+        recentRoleEventRedactionByMessageID.removeAll(keepingCapacity: false)
     }
 
     nonisolated private static func makeStream() -> (AsyncStream<ChatMessage>, AsyncStream<ChatMessage>.Continuation) {
@@ -1605,6 +1628,12 @@ actor RealtimeSocketService {
                     messageIngressQueue?.enqueue(
                         data: data,
                         event: RealtimeSocketListenerBinder.videoReceivedEvent
+                    )
+                },
+                roomRoleEvent: { [weak messageIngressQueue] data in
+                    messageIngressQueue?.enqueue(
+                        data: data,
+                        event: RealtimeSocketListenerBinder.roomRoleEvent
                     )
                 },
                 roomClosed: { [weak self] data in

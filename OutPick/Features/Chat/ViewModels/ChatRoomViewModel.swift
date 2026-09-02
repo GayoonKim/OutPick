@@ -55,6 +55,8 @@ final class ChatRoomViewModel {
     private let blockUserUseCase: (any BlockUserUseCaseProtocol)?
     private let memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol?
     private let deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol?
+    private let roomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol?
+    let roomRoleSession: ChatRoomRoleSession?
 
     private(set) var isInitialLoading: Bool = true
     private(set) var isLoadingOlder: Bool = false
@@ -102,6 +104,7 @@ final class ChatRoomViewModel {
     private var olderRawCursor: String?
     private var newerRawCursor: String?
     private var admittedHiddenSeqs = Set<Int64>()
+    private var unreadMessageSeqByTimelineSeq: [Int64: Int64] = [:]
     private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
 
     let minTriggerDistance: Int = 3
@@ -144,7 +147,9 @@ final class ChatRoomViewModel {
         userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
         blockUserUseCase: (any BlockUserUseCaseProtocol)? = nil,
         memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol? = nil,
-        deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil
+        deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil,
+        roomRoleSession: ChatRoomRoleSession? = nil,
+        roomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
@@ -160,7 +165,10 @@ final class ChatRoomViewModel {
         self.blockUserUseCase = blockUserUseCase
         self.memberModerationUseCase = memberModerationUseCase
         self.deletionSyncUseCase = deletionSyncUseCase
+        self.roomRoleSession = roomRoleSession
+        self.roomRoleUseCase = roomRoleUseCase
         seedRoomReadLatest(from: room)
+        roomRoleSession?.start()
     }
 
     deinit {
@@ -202,7 +210,7 @@ final class ChatRoomViewModel {
     }
 
     func isCurrentUserAdmin(of room: ChatRoom) -> Bool {
-        room.creatorUID == currentUserUID
+        room.ownerUID == currentUserUID
     }
 
     func applyRoomUpdate(_ updatedRoom: ChatRoom) {
@@ -312,6 +320,7 @@ final class ChatRoomViewModel {
 
                 self.isInitialLoading = true
                 self.admittedHiddenSeqs.removeAll()
+                self.unreadMessageSeqByTimelineSeq.removeAll()
                 defer {
                     self.isInitialLoading = false
                     continuation.finish()
@@ -428,8 +437,15 @@ final class ChatRoomViewModel {
             return false
         }
 
-        _ = readStateStore.queueExplicitJumpTarget(approvedTarget)
-        unreadCatchUpState.syncReadFrontier(approvedTarget)
+        let unreadFrontier = unreadMessageFrontier(through: approvedTarget)
+        _ = readStateStore.queueExplicitJumpTarget(
+            approvedTarget,
+            unreadMessageSeq: unreadFrontier
+        )
+        unreadCatchUpState.syncReadFrontier(
+            approvedTarget,
+            unreadMessageSeq: unreadFrontier
+        )
         windowMaxSeq = approvedTarget
         liveMode = approvedTarget >= unreadCatchUpState.knownLatestSeq ? .live : .catchingUp
         hasMoreOlder = true
@@ -460,21 +476,30 @@ final class ChatRoomViewModel {
         highestVisibleSeq: Int64,
         contiguousLoadedThroughSeq: Int64
     ) -> Int64? {
+        let candidateLimit = min(highestVisibleSeq, contiguousLoadedThroughSeq)
+        let unreadFrontier = unreadMessageFrontier(through: candidateLimit)
         guard let candidate = readStateStore.queueVisibleCandidate(
             highestVisibleSeq,
-            contiguousLoadedThroughSeq: contiguousLoadedThroughSeq
+            contiguousLoadedThroughSeq: contiguousLoadedThroughSeq,
+            unreadMessageSeq: unreadFrontier
         ) else {
             return nil
         }
 
-        unreadCatchUpState.syncReadFrontier(candidate)
+        unreadCatchUpState.syncReadFrontier(candidate, unreadMessageSeq: unreadFrontier)
         scheduleDebouncedLastReadFlush(userUID: currentUserDocumentID)
         return candidate
     }
 
     func handleIncomingMessage(_ message: ChatMessage) -> IncomingMessageAction {
-        seedRoomReadLatest(from: message)
-        unreadCatchUpState.observeLatestMessage(message)
+        trackUnreadMessageSequence(message)
+        if message.messageType == .roomRoleEvent {
+            roomReadStateStore?.seedIncomingTimelineEvent(message)
+            unreadCatchUpState.observeTimelineEvent(message.seq)
+        } else {
+            seedRoomReadLatest(from: message)
+            unreadCatchUpState.observeLatestMessage(message)
+        }
 
         switch liveMode {
         case .catchingUp:
@@ -497,8 +522,11 @@ final class ChatRoomViewModel {
     }
 
     func admitVisibleMessages(from messages: [ChatMessage]) -> [ChatMessage] {
-        for message in messages where !shouldAdmitMessage(message) && message.seq > 0 {
-            admittedHiddenSeqs.insert(message.seq)
+        for message in messages where message.seq > 0 {
+            trackUnreadMessageSequence(message)
+            if !shouldAdmitMessage(message) {
+                admittedHiddenSeqs.insert(message.seq)
+            }
         }
         return visibleMessages(from: messages)
     }
@@ -520,15 +548,18 @@ final class ChatRoomViewModel {
 
     func consumeHiddenLiveMessage(_ message: ChatMessage) {
         guard message.seq > 0 else { return }
+        trackUnreadMessageSequence(message)
         admittedHiddenSeqs.insert(message.seq)
         guard liveMode == .live, message.seq == readStateStore.frontierSeq + 1 else { return }
         seedRoomReadLatest(from: message)
         windowMaxSeq = max(windowMaxSeq, message.seq)
+        let unreadFrontier = unreadMessageFrontier(through: message.seq)
         if let candidate = readStateStore.queueVisibleCandidate(
             message.seq,
-            contiguousLoadedThroughSeq: message.seq
+            contiguousLoadedThroughSeq: message.seq,
+            unreadMessageSeq: unreadFrontier
         ) {
-            unreadCatchUpState.syncReadFrontier(candidate)
+            unreadCatchUpState.syncReadFrontier(candidate, unreadMessageSeq: unreadFrontier)
             scheduleDebouncedLastReadFlush(userUID: currentUserDocumentID)
         }
     }
@@ -557,16 +588,25 @@ final class ChatRoomViewModel {
         newerRawCursor = nil
         liveMode = (windowMaxSeq >= entryTailSeq) ? .live : .catchingUp
         let persistedFrontier = state.readBoundarySeq ?? 0
-        readStateStore.reset(persistedLastReadSeq: persistedFrontier)
+        let persistedUnreadFrontier = roomReadStateStore?
+            .snapshot(for: roomID)?.lastReadUnreadMessageSeq ?? persistedFrontier
+        readStateStore.reset(
+            persistedLastReadSeq: persistedFrontier,
+            persistedLastReadUnreadMessageSeq: persistedUnreadFrontier
+        )
         unreadCatchUpState = ChatUnreadCatchUpState(
             knownLatestSeq: state.latestSeq,
-            readFrontierSeq: persistedFrontier
+            readFrontierSeq: persistedFrontier,
+            knownLatestUnreadMessageSeq: room.unreadMessageSeq,
+            readUnreadMessageFrontierSeq: persistedUnreadFrontier
         )
         roomReadStateStore?.seed(
             ChatRoomReadSnapshot(
                 roomID: roomID,
                 latestSeq: state.latestSeq,
+                latestUnreadMessageSeq: room.unreadMessageSeq,
                 lastReadSeq: state.readBoundarySeq,
+                lastReadUnreadMessageSeq: persistedUnreadFrontier,
                 lastMessageSenderUID: room.lastMessageSenderUID
             )
         )
@@ -607,7 +647,33 @@ final class ChatRoomViewModel {
         ChatMessageActionPolicy.make(
             for: message,
             currentUserID: currentUserUID,
-            roomCreatorID: room.creatorUID
+            roomCreatorID: room.ownerUID,
+            actorRole: roomRoleSession?.state.role,
+            isRoleManagementEnabled: roomRoleSession?.state.isManagementEnabled ?? true
+        )
+    }
+
+    func resolvedMessageActionPolicy(for message: ChatMessage) async throws -> ChatMessageActionPolicy {
+        let actorRole = roomRoleSession?.state.role
+        guard roomRoleSession?.state.isManagementEnabled == true,
+              actorRole == .moderator,
+              message.senderUID != currentUserUID,
+              !message.senderUID.isEmpty,
+              let roomRoleUseCase else {
+            return messageActionPolicy(for: message)
+        }
+        let targetRole = try await roomRoleUseCase.fetchMemberRole(
+            roomID: roomID,
+            userID: message.senderUID
+        )
+        return ChatMessageActionPolicy.make(
+            for: message,
+            currentUserID: currentUserUID,
+            roomCreatorID: room.ownerUID,
+            actorRole: actorRole,
+            targetRole: targetRole,
+            isTargetRoleResolved: true,
+            isRoleManagementEnabled: true
         )
     }
 
@@ -773,7 +839,10 @@ final class ChatRoomViewModel {
 
     func persistFinalLastReadSeq(userUID: String) async throws {
         let finalSeq = finalLastReadSeqForSessionEnd()
-        readStateStore.queue(finalSeq)
+        readStateStore.queue(
+            finalSeq,
+            unreadMessageSeq: unreadMessageFrontier(through: finalSeq)
+        )
         lastReadFlushTask?.cancel()
         lastReadFlushTask = nil
         try await flushPendingLastReadSeq(userUID: userUID)
@@ -848,15 +917,23 @@ final class ChatRoomViewModel {
     private func flushPendingLastReadSeq(userUID: String) async throws {
         guard !userUID.isEmpty else { return }
 
-        guard let seqToPersist = readStateStore.pendingFlushSeq() else { return }
+        guard let frontier = readStateStore.pendingFlushFrontier() else { return }
 
-        try await lifecycleUseCase.updateLastReadSeq(
+        try await lifecycleUseCase.updateReadFrontier(
             roomID: roomID,
             userUID: userUID,
-            lastReadSeq: seqToPersist
+            lastReadSeq: frontier.timelineSeq,
+            lastReadUnreadMessageSeq: frontier.unreadMessageSeq
         )
-        readStateStore.markFlushed(seqToPersist)
-        roomReadStateStore?.markReadFlushed(roomID: roomID, lastReadSeq: seqToPersist)
+        readStateStore.markFlushed(
+            frontier.timelineSeq,
+            unreadMessageSeq: frontier.unreadMessageSeq
+        )
+        roomReadStateStore?.markReadFlushed(
+            roomID: roomID,
+            lastReadSeq: frontier.timelineSeq,
+            lastReadUnreadMessageSeq: frontier.unreadMessageSeq
+        )
     }
 
     private func seedRoomReadLatest(from room: ChatRoom) {
@@ -865,6 +942,7 @@ final class ChatRoomViewModel {
         roomReadStateStore?.seedLatest(
             roomID: roomID,
             latestSeq: room.seq,
+            latestUnreadMessageSeq: room.unreadMessageSeq,
             lastMessageSenderUID: room.lastMessageSenderUID
         )
     }
@@ -879,8 +957,23 @@ final class ChatRoomViewModel {
         roomReadStateStore?.seedLatest(
             roomID: roomID,
             latestSeq: message.seq,
+            latestUnreadMessageSeq: message.effectiveUnreadMessageSeq,
             lastMessageSenderUID: message.senderUID
         )
+    }
+
+    private func trackUnreadMessageSequence(_ message: ChatMessage) {
+        guard message.seq > 0,
+              let unreadMessageSeq = message.effectiveUnreadMessageSeq else { return }
+        unreadMessageSeqByTimelineSeq[message.seq] = unreadMessageSeq
+    }
+
+    private func unreadMessageFrontier(through timelineSeq: Int64) -> Int64 {
+        let observed = unreadMessageSeqByTimelineSeq
+            .filter { $0.key <= timelineSeq }
+            .map(\.value)
+            .max() ?? 0
+        return max(readStateStore.frontierUnreadMessageSeq, observed)
     }
 
 }

@@ -186,6 +186,10 @@ final class BannerManager {
     }
 
     private func handleIncomingMessage(_ msg: ChatMessage, roomID: String) async {
+        if msg.messageType == .roomRoleEvent {
+            roomReadStateStore?.seedIncomingTimelineEvent(msg)
+            return
+        }
         guard userBlockVisibilityStore?.isBlocked(msg.senderUID) != true else { return }
         let text = bannerText(from: msg)
         roomReadStateStore?.seedIncomingMessage(msg)

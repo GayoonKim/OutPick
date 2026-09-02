@@ -9,6 +9,38 @@ import Foundation
 import UIKit
 import Combine
 
+enum ChatRoomParticipantAction: Equatable {
+    case assignModerator
+    case revokeModerator
+    case resignModerator
+    case removeFromRoom
+}
+
+enum ChatRoomParticipantActionPolicy {
+    static func actions(
+        actorRole: ChatRoomMemberRole?,
+        actorUserID: String,
+        target: ChatRoomParticipant,
+        isEnabled: Bool,
+        isModeratorDelegationEnabled: Bool = true
+    ) -> [ChatRoomParticipantAction] {
+        guard isEnabled else { return [] }
+        switch (actorRole, target.role, target.userID == actorUserID) {
+        case (.owner, .member, false):
+            return isModeratorDelegationEnabled ?
+                [.assignModerator, .removeFromRoom] : [.removeFromRoom]
+        case (.owner, .moderator, false):
+            return [.revokeModerator, .removeFromRoom]
+        case (.moderator, .moderator, true):
+            return [.resignModerator]
+        case (.moderator, .member, false):
+            return [.removeFromRoom]
+        default:
+            return []
+        }
+    }
+}
+
 @MainActor
 final class ChatRoomSettingViewModel {
     struct GalleryItemModel {
@@ -28,7 +60,10 @@ final class ChatRoomSettingViewModel {
 
     @Published private(set) var roomInfo: ChatRoom
     @Published private(set) var mediaItems: [ChatRoomSettingMediaItem]
-    @Published private(set) var localUsers: [LocalChatUser]
+    @Published private(set) var participants: [ChatRoomParticipant]
+    @Published private(set) var roleState: ChatRoomRoleSessionState
+
+    var localUsers: [LocalChatUser] { participants.map(\.user) }
 
     var participantsHasMore: Bool { participantsHasMoreStorage }
     var participantsIsLoading: Bool { participantsIsLoadingStorage }
@@ -39,9 +74,13 @@ final class ChatRoomSettingViewModel {
     private let loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol
     private let exitUseCase: ChatRoomExitUseCaseProtocol
     private let memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol
+    private let manageRoleUseCase: ManageChatRoomRoleUseCaseProtocol
+    private let roleSession: ChatRoomRoleSession
+    private let currentUserID: String
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let avatarImageManager: AvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
+    private let isModeratorDelegationEnabled: Bool
     private let mediaThumbMaxBytes = 12 * 1024 * 1024
     private let avatarPrefetchMaxBytes = 3 * 1024 * 1024
 
@@ -51,6 +90,7 @@ final class ChatRoomSettingViewModel {
     private var mediaIsLoadingStorage: Bool = false
     private var mediaHasMoreStorage: Bool = false
     private var galleryItemsByID: [String: GalleryItemModel] = [:]
+    private var cancellables = Set<AnyCancellable>()
 
     init(
         room: ChatRoom,
@@ -61,11 +101,16 @@ final class ChatRoomSettingViewModel {
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
         exitUseCase: ChatRoomExitUseCaseProtocol,
         memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol,
-        networkStatusProvider: NetworkStatusProviding
+        manageRoleUseCase: ManageChatRoomRoleUseCaseProtocol,
+        roleSession: ChatRoomRoleSession,
+        currentUserID: String,
+        networkStatusProvider: NetworkStatusProviding,
+        isModeratorDelegationEnabled: Bool
     ) {
         self.roomInfo = room
         self.mediaItems = []
-        self.localUsers = initialParticipants.users
+        self.participants = initialParticipants.participants
+        self.roleState = roleSession.state
         self.participantsIsLoadingStorage = true
         self.participantsHasMoreStorage = initialParticipants.hasMore
         self.attachmentImageLoader = attachmentImageLoader
@@ -74,7 +119,19 @@ final class ChatRoomSettingViewModel {
         self.loadMediaUseCase = loadMediaUseCase
         self.exitUseCase = exitUseCase
         self.memberModerationUseCase = memberModerationUseCase
+        self.manageRoleUseCase = manageRoleUseCase
+        self.roleSession = roleSession
+        self.currentUserID = currentUserID
         self.networkStatusProvider = networkStatusProvider
+        self.isModeratorDelegationEnabled = isModeratorDelegationEnabled
+        roleSession.$state
+            .removeDuplicates()
+            .sink { [weak self] state in
+                guard let self else { return }
+                self.roleState = state
+                self.applyCurrentUserRole(state.role)
+            }
+            .store(in: &cancellables)
     }
 
     func updateRoomInfo(_ room: ChatRoom) {
@@ -85,14 +142,70 @@ final class ChatRoomSettingViewModel {
         try await exitUseCase.leaveOrClose(room: roomInfo)
     }
 
+    var eligibleOwnershipSuccessors: [ChatRoomParticipant] {
+        guard isModeratorDelegationEnabled else { return [] }
+        return participants.filter { $0.role == .moderator }
+            .sorted {
+                let lhsDate = $0.moderatorSince ?? .distantFuture
+                let rhsDate = $1.moderatorSince ?? .distantFuture
+                if lhsDate != rhsDate { return lhsDate < rhsDate }
+                return $0.userID < $1.userID
+            }
+    }
+
+    func transferOwnershipAndLeave(to participant: ChatRoomParticipant) async throws -> ChatRoomExitResult {
+        let result = try await exitUseCase.transferOwnershipAndLeave(
+            room: roomInfo,
+            successorUID: participant.userID
+        )
+        roleSession.applyConfirmedCurrentRole(nil)
+        return result
+    }
+
     func removeParticipant(_ user: LocalChatUser, reasonCode: String) async throws {
         let receipt = try await memberModerationUseCase.removeMember(
             roomID: roomInfo.id,
             targetUID: user.userID,
             reasonCode: reasonCode
         )
-        localUsers.removeAll { $0.userID == user.userID }
+        participants.removeAll { $0.userID == user.userID }
         roomInfo.memberCount = receipt.memberCount
+    }
+
+    var isRoleManagementEnabled: Bool {
+        roleState.isManagementEnabled && networkStatusProvider.currentStatus.isOnline
+    }
+
+    func actions(for participant: ChatRoomParticipant) -> [ChatRoomParticipantAction] {
+        ChatRoomParticipantActionPolicy.actions(
+            actorRole: roleState.role,
+            actorUserID: currentUserID,
+            target: participant,
+            isEnabled: isRoleManagementEnabled,
+            isModeratorDelegationEnabled: isModeratorDelegationEnabled
+        )
+    }
+
+    func assignModerator(_ participant: ChatRoomParticipant) async throws {
+        let receipt = try await manageRoleUseCase.assignModerator(
+            roomID: roomInfo.id,
+            targetUID: participant.userID
+        )
+        updateParticipantRole(userID: participant.userID, role: .moderator, moderatorSince: Date())
+        roomInfo.memberCount = receipt.memberCount ?? roomInfo.memberCount
+    }
+
+    func revokeModerator(_ participant: ChatRoomParticipant) async throws {
+        _ = try await manageRoleUseCase.revokeModerator(
+            roomID: roomInfo.id,
+            targetUID: participant.userID
+        )
+        updateParticipantRole(userID: participant.userID, role: .member, moderatorSince: nil)
+    }
+
+    func resignModerator() async throws {
+        _ = try await manageRoleUseCase.resignModerator(roomID: roomInfo.id)
+        roleSession.applyConfirmedCurrentRole(.member)
     }
 
     func loadInitialParticipants() async {
@@ -103,17 +216,33 @@ final class ChatRoomSettingViewModel {
             let room = roomInfo
             let localResult = try loadParticipantsUseCase.loadLocalInitial(room: room)
             participantsHasMoreStorage = localResult.hasMore
-            localUsers = localResult.users
+            participants = localResult.participants
             scheduleAvatarPrefetch(for: localResult.users)
 
             guard networkStatusProvider.currentStatus.isOnline else { return }
 
             let reconciledResult = try await loadParticipantsUseCase.reconcileInitial(room: room)
             participantsHasMoreStorage = reconciledResult.hasMore
-            localUsers = reconciledResult.users
+            participants = reconciledResult.participants
             scheduleAvatarPrefetch(for: reconciledResult.users)
         } catch {
             print("❌ 초기 참여자 로드 실패:", error)
+        }
+    }
+
+    func reconcileParticipantsAfterRoleEvent() async {
+        guard networkStatusProvider.currentStatus.isOnline,
+              !participantsIsLoadingStorage else { return }
+        participantsIsLoadingStorage = true
+        defer { participantsIsLoadingStorage = false }
+
+        do {
+            let result = try await loadParticipantsUseCase.reconcileInitial(room: roomInfo)
+            participantsHasMoreStorage = result.hasMore
+            participants = result.participants
+            scheduleAvatarPrefetch(for: result.users)
+        } catch {
+            print("❌ 역할 변경 후 참여자 동기화 실패:", error)
         }
     }
 
@@ -126,8 +255,8 @@ final class ChatRoomSettingViewModel {
             let result = try await loadParticipantsUseCase.loadMore(room: roomInfo)
             participantsHasMoreStorage = result.hasMore
 
-            if !result.users.isEmpty {
-                localUsers.append(contentsOf: result.users)
+            if !result.participants.isEmpty {
+                mergeParticipants(result.participants)
                 scheduleAvatarPrefetch(for: result.users)
             }
         } catch {
@@ -250,6 +379,44 @@ final class ChatRoomSettingViewModel {
         Task(priority: .utility) { [weak self] in
             await self?.prefetchProfileAvatars(for: users, topCount: users.count)
         }
+    }
+
+    private func applyCurrentUserRole(_ role: ChatRoomMemberRole?) {
+        guard let role else { return }
+        updateParticipantRole(
+            userID: currentUserID,
+            role: role,
+            moderatorSince: role == .moderator
+                ? participants.first(where: { $0.userID == currentUserID })?.moderatorSince
+                : nil
+        )
+    }
+
+    private func updateParticipantRole(
+        userID: String,
+        role: ChatRoomMemberRole,
+        moderatorSince: Date?
+    ) {
+        guard let index = participants.firstIndex(where: { $0.userID == userID }) else { return }
+        participants[index].role = role
+        participants[index].moderatorSince = moderatorSince
+        participants = sortedParticipants(participants)
+    }
+
+    private func mergeParticipants(_ incoming: [ChatRoomParticipant]) {
+        participants = ChatRoomParticipantOrdering.deduplicatedAndSorted(
+            participants + incoming,
+            currentUserID: currentUserID,
+            ownerUID: roomInfo.ownerUID
+        )
+    }
+
+    private func sortedParticipants(_ values: [ChatRoomParticipant]) -> [ChatRoomParticipant] {
+        ChatRoomParticipantOrdering.sorted(
+            values,
+            currentUserID: currentUserID,
+            ownerUID: roomInfo.ownerUID
+        )
     }
 
     private func prefetchProfileAvatars(for users: [LocalChatUser], topCount: Int = 50) async {
