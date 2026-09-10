@@ -209,7 +209,7 @@ struct ChatOutgoingOutboxUseCaseTests {
         #expect(pairs.count == 1)
     }
 
-    @Test func restoreManualRetryClearsSessionAndKeepsLocalRetryPayload() async throws {
+    @Test func restoreManualRetryPreservesUnconfirmedSessionAndLocalRetryPayload() async throws {
         let persistence = ChatOutgoingOutboxPersistenceFake()
         let useCase = makeUseCase(persistence: persistence)
         let message = makeMessage(id: "restore-manual")
@@ -229,8 +229,8 @@ struct ChatOutgoingOutboxUseCaseTests {
 
         let failed = try #require(await persistence.record(messageID: message.ID))
         #expect(failed.stage == .failed)
-        #expect(failed.processingStatus == ChatMediaServerProcessingStatus.failed.rawValue)
-        #expect(failed.sessionPayloadJSON == nil)
+        #expect(failed.processingStatus == ChatMediaServerProcessingStatus.uploading.rawValue)
+        #expect(failed.sessionPayloadJSON != nil)
         #expect(failed.requiresManualMediaRetryAfterRestore)
         guard case let .uploadImages(_, restoredID, pairs) = await useCase.retryPayload(
             messageID: message.ID,

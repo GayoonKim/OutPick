@@ -277,9 +277,11 @@ struct ChatMediaUploadUseCaseTests {
             retryable: true,
             failureCode: nil
         )
+        let turns = ChatMediaUploadTurnQueue()
         let useCase = makeUseCase(
             sendingRepository: sendingRepository,
-            foregroundUploader: uploader
+            foregroundUploader: uploader,
+            uploadTurnQueue: turns
         )
 
         let snapshot = try await useCase.enqueueImageProcessing(
@@ -292,16 +294,44 @@ struct ChatMediaUploadUseCaseTests {
         )
 
         #expect(snapshot.processingStatus == .queued)
+        #expect(await turns.snapshot(lane: .images).activeUploadIDs == ["upload-1"])
+        await useCase.finishImageUploadTurn(uploadID: "upload-1")
+        #expect(await turns.snapshot(lane: .images).activeUploadIDs.isEmpty)
         #expect(uploader.uploadedSourceIndexes == [0])
-        #expect(sendingRepository.refreshCallCount == 1)
+        #expect(sendingRepository.refreshCallCount == 0)
         #expect(sendingRepository.finalizeCallCount == 1)
         try? FileManager.default.removeItem(at: pair.originalFileURL)
+    }
+
+    @Test func finalizeIncompleteRefreshesOnlyMissingFilesAndRetriesFinalize() async throws {
+        let repository = ChatMediaMessageSendingRepositorySpy()
+        let uploader = ChatMediaForegroundUploaderFake()
+        let pair = try makeProcessedImage(sha256: String(repeating: "a", count: 64))
+        defer { try? FileManager.default.removeItem(at: pair.originalFileURL) }
+        let target = ChatMediaUploadTarget(attachmentID: "attachment", sourceIndex: 0,
+            path: "room/user/upload/attachment/source",
+            signedURL: URL(string: "https://storage.example/put")!, requiredHeaders: [:],
+            contentType: "image/jpeg", sizeBytes: 3, sha256: String(repeating: "a", count: 64))
+        repository.reserveResult = ChatMediaUploadReservation(uploadID: "upload", clientMutationID: "mutation",
+            processingStatus: .uploading, targets: [target], expiresAt: Date().addingTimeInterval(1000))
+        repository.refreshResult = repository.reserveResult
+        repository.finalizeOutcomes = [.failure(ChatMediaUploadError.uploadIncomplete),
+            .success(ChatMediaProcessingSnapshot(uploadID: "upload", processingStatus: .queued,
+                messageID: nil, seq: nil, retryable: true, failureCode: nil))]
+        let useCase = makeUseCase(sendingRepository: repository, foregroundUploader: uploader)
+        let result = try await useCase.enqueueImageProcessing(pairs: [pair], roomID: "room",
+            uploadID: "upload", clientMutationID: "mutation", onReservation: { _ in }, onProgress: { _ in })
+        #expect(result.processingStatus == .queued)
+        #expect(repository.refreshCallCount == 1)
+        #expect(repository.finalizeCallCount == 2)
+        #expect(repository.cancelCallCount == 0)
+        #expect(uploader.uploadedSourceIndexes == [0, 0])
     }
 
     @Test func reservedUploadFailureCancelsServerReservationToReleaseSlot() async throws {
         let sendingRepository = ChatMediaMessageSendingRepositorySpy()
         let uploader = ChatMediaForegroundUploaderFake()
-        uploader.uploadError = TestError.unimplemented
+        uploader.uploadError = URLError(.networkConnectionLost)
         let sha256 = String(repeating: "c", count: 64)
         let pair = try makeProcessedImage(sha256: sha256)
         sendingRepository.reserveResult = ChatMediaUploadReservation(
@@ -320,6 +350,8 @@ struct ChatMediaUploadUseCaseTests {
             )],
             expiresAt: Date().addingTimeInterval(86_400)
         )
+        sendingRepository.refreshResult = sendingRepository.reserveResult
+        sendingRepository.finalizeError = ChatMediaUploadError.uploadIncomplete
         sendingRepository.cancelResult = ChatMediaProcessingSnapshot(
             uploadID: "upload-cancel",
             processingStatus: .canceled,
@@ -345,7 +377,9 @@ struct ChatMediaUploadUseCaseTests {
             Issue.record("예약 이후 전송 실패가 성공하면 안 됩니다.")
         } catch {
             #expect(sendingRepository.cancelCallCount == 1)
-            #expect(sendingRepository.finalizeCallCount == 0)
+            #expect(sendingRepository.finalizeCallCount == 4)
+            #expect(uploader.uploadedSourceIndexes.count == 4)
+            #expect(ChatMediaTransportFailurePolicy.isTransient(error))
         }
 
         try? FileManager.default.removeItem(at: pair.originalFileURL)
@@ -580,6 +614,83 @@ struct ChatMediaUploadUseCaseTests {
         #expect(sendingRepository.statusCallCount == 4)
         #expect(sendingRepository.cancelCallCount == 1)
         #expect(uploader.uploadedSourceIndexes.isEmpty)
+    }
+
+    @Test func nextBatchAndManualRetryWaitForExplicitTerminalRelease() async throws {
+        let repository = ChatMediaMessageSendingRepositorySpy()
+        let pair = try makeProcessedImage()
+        defer { try? FileManager.default.removeItem(at: pair.originalFileURL) }
+        let reservation = ChatMediaUploadReservation(uploadID: "first", clientMutationID: "mutation",
+            processingStatus: .uploading, targets: [], expiresAt: Date().addingTimeInterval(1000))
+        repository.reserveOutcomes = [.success(reservation), .failure(TestError.unimplemented),
+            .success(reservation), .success(reservation)]
+        repository.finalizeResult = makeProcessingSnapshot(status: .queued)
+        let turns = ChatMediaUploadTurnQueue()
+        let useCase = makeUseCase(sendingRepository: repository, uploadTurnQueue: turns)
+        func enqueue(_ id: String) async throws -> ChatMediaProcessingSnapshot {
+            try await useCase.enqueueImageProcessing(pairs: [pair], roomID: "room", uploadID: id,
+                clientMutationID: id, onReservation: { _ in }, onProgress: { _ in })
+        }
+        _ = try await enqueue("first")
+        let second = Task { try await enqueue("second") }
+        for _ in 0..<2000 {
+            if await turns.snapshot(lane: .images).waitingUploadIDs.count == 1 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let third = Task { try await enqueue("third") }
+        for _ in 0..<2000 {
+            if await turns.snapshot(lane: .images).waitingUploadIDs.count == 2 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(repository.reserveCalls.map(\.uploadID) == ["first"])
+        await useCase.finishImageUploadTurn(uploadID: "first")
+        do { _ = try await second.value; Issue.record("두 번째 묶음은 실패해야 한다") } catch { }
+        #expect(await turns.snapshot(lane: .images).activeUploadIDs == ["second"])
+        let retry = Task { try await enqueue("retry") }
+        for _ in 0..<2000 {
+            if await turns.snapshot(lane: .images).waitingUploadIDs.count == 2 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(await turns.snapshot(lane: .images).waitingUploadIDs == ["third", "retry"])
+        await useCase.finishImageUploadTurn(uploadID: "second")
+        _ = try await third.value
+        #expect(repository.reserveCalls.map(\.uploadID) == ["first", "second", "third"])
+        await useCase.finishImageUploadTurn(uploadID: "third")
+        _ = try await retry.value
+        await useCase.finishImageUploadTurn(uploadID: "retry")
+        #expect(repository.reserveCalls.map(\.uploadID) == ["first", "second", "third", "retry"])
+    }
+
+    @Test func filesInsideBatchRunAtMostFourAtOnceBeforeFinalize() async throws {
+        let repository = ChatMediaMessageSendingRepositorySpy()
+        let pairs = try (0..<9).map { try makeProcessedImage(index: $0) }
+        defer { pairs.forEach { try? FileManager.default.removeItem(at: $0.originalFileURL) } }
+        let targets = pairs.flatMap { pair in
+            (0..<2).map { role in
+                ChatMediaUploadTarget(attachmentID: "a\(pair.index)", sourceIndex: pair.index * 2 + role,
+                    path: "test/\(pair.index)/\(role)", signedURL: URL(string: "https://storage.example/put")!,
+                    requiredHeaders: [:], contentType: "image/jpeg", sizeBytes: 3, sha256: "")
+            }
+        }
+        repository.reserveResult = ChatMediaUploadReservation(uploadID: "batch", clientMutationID: "mutation",
+            processingStatus: .uploading, targets: targets, expiresAt: Date().addingTimeInterval(1000))
+        repository.finalizeResult = makeProcessingSnapshot(status: .queued)
+        let uploader = GatedBatchUploader()
+        let useCase = makeUseCase(sendingRepository: repository, foregroundUploader: uploader)
+        let task = Task { try await useCase.enqueueImageProcessing(pairs: pairs, roomID: "room",
+            uploadID: "batch", clientMutationID: "mutation", onReservation: { _ in }, onProgress: { _ in }) }
+        for _ in 0..<2000 {
+            if await uploader.startedCount == 4 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(await uploader.startedCount == 4)
+        #expect(repository.finalizeCallCount == 0)
+        await uploader.open()
+        _ = try await task.value
+        #expect(await uploader.peak == 4)
+        #expect(await uploader.startedCount == 18)
+        #expect(repository.finalizeCallCount == 1)
+        await useCase.finishImageUploadTurn(uploadID: "batch")
     }
 
     private func makeUseCase(
@@ -849,6 +960,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
     var reserveOutcomes: [Result<ChatMediaUploadReservation, Error>] = []
     var refreshResult: ChatMediaUploadReservation?
     var finalizeResult: ChatMediaProcessingSnapshot?
+    var finalizeError: Error?
+    var finalizeOutcomes: [Result<ChatMediaProcessingSnapshot, Error>] = []
     var cancelResult: ChatMediaProcessingSnapshot?
     var statusOutcomes: [Result<ChatMediaProcessingSnapshot, Error>] = []
     private(set) var refreshCallCount = 0
@@ -894,6 +1007,8 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
         kind: String
     ) async throws -> ChatMediaProcessingSnapshot {
         finalizeCallCount += 1
+        if !finalizeOutcomes.isEmpty { return try finalizeOutcomes.removeFirst().get() }
+        if let finalizeError { throw finalizeError }
         guard let finalizeResult else { throw TestError.unimplemented }
         return finalizeResult
     }
@@ -991,6 +1106,31 @@ private final class ChatMediaMessageSendingRepositorySpy: ChatMediaMessageSendin
             height: height,
             presetCode: presetCode
         ))
+    }
+}
+
+private actor GatedBatchUploader: ChatMediaForegroundUploading {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var active = 0
+    private(set) var peak = 0
+    private(set) var startedCount = 0
+    func upload(source: ChatMediaSourceDescriptor, target: ChatMediaUploadTarget,
+        onProgress: @escaping @Sendable (Double) -> Void) async throws -> ChatMediaUploadedSource {
+        active += 1
+        startedCount += 1
+        peak = max(peak, active)
+        if !isOpen { await withCheckedContinuation { waiters.append($0) } }
+        active -= 1
+        onProgress(1)
+        return .init(attachmentID: target.attachmentID, sourceIndex: target.sourceIndex,
+            path: target.path, sizeBytes: target.sizeBytes)
+    }
+    func open() {
+        isOpen = true
+        let values = waiters
+        waiters.removeAll()
+        values.forEach { $0.resume() }
     }
 }
 

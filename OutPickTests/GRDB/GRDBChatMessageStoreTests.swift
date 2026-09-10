@@ -3,6 +3,21 @@ import Testing
 @testable import OutPick
 
 struct GRDBChatMessageStoreTests {
+    @Test func lateLocalFailureAndFailedDeletionCannotReplaceConfirmedMessage() async throws {
+        let store = GRDBChatMessageStore(database: try TemporaryAppDatabase.make())
+        try await store.saveChatMessages([GRDBTestFixtures.message(id: "confirmed", seq: 42)])
+        var stale = GRDBTestFixtures.message(id: "confirmed", seq: 0)
+        stale.isFailed = true
+        try await store.saveChatMessages([stale])
+        try await store.deleteUnconfirmedMessage(id: "confirmed", inRoom: "room-1")
+        let restored = try await store.fetchMessage(id: "confirmed", inRoom: "room-1")
+        #expect(restored?.seq == 42)
+        #expect(restored?.isFailed == false)
+        try await store.saveChatMessages([GRDBTestFixtures.message(id: "pending", seq: 0)])
+        try await store.deleteUnconfirmedMessage(id: "pending", inRoom: "room-1")
+        #expect(try await store.fetchMessage(id: "pending", inRoom: "room-1") == nil)
+    }
+
     @Test func saveAndPaginationPreserveAscendingResultOrder() async throws {
         let database = try TemporaryAppDatabase.make()
         let store = GRDBChatMessageStore(database: database)

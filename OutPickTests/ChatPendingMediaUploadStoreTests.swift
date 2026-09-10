@@ -11,11 +11,12 @@ import Testing
 
 @MainActor
 struct ChatPendingMediaUploadStoreTests {
-    @Test func activeStatesAreSilentAndOnlyFailureStatesRequestUserAction() {
-        #expect(ChatPendingMediaUploadState.uploading(0).presentationState == .silent)
-        #expect(ChatPendingMediaUploadState.uploading(1).presentationState == .silent)
-        #expect(ChatPendingMediaUploadState.queued.presentationState == .silent)
-        #expect(ChatPendingMediaUploadState.processing.presentationState == .silent)
+    @Test func activeStatesRemainInProgressUntilServerSuccess() {
+        #expect(ChatPendingMediaUploadState.waitingForSlot.presentationState == .inProgress)
+        #expect(ChatPendingMediaUploadState.uploading(0).presentationState == .inProgress)
+        #expect(ChatPendingMediaUploadState.uploading(1).presentationState == .inProgress)
+        #expect(ChatPendingMediaUploadState.queued.presentationState == .inProgress)
+        #expect(ChatPendingMediaUploadState.processing.presentationState == .inProgress)
         #expect(ChatPendingMediaUploadState.failed.presentationState == .failure)
         #expect(ChatPendingMediaUploadState.expired.presentationState == .failure)
     }
@@ -32,7 +33,7 @@ struct ChatPendingMediaUploadStoreTests {
         )
 
         #expect(staged == true)
-        #expect(store.imageUploadState(for: "message-1") == .uploading(0))
+        #expect(store.imageUploadState(for: "message-1") == .waitingForTurn)
         #expect(store.retryPayload(for: "message-1") == nil)
 
         store.failImageUpload(for: "message-1")
@@ -92,7 +93,7 @@ struct ChatPendingMediaUploadStoreTests {
         let secondTask = Task<Void, Never> {}
 
         #expect(staged == true)
-        #expect(store.videoUploadState(for: "video-1") == .uploading(0))
+        #expect(store.videoUploadState(for: "video-1") == .waitingForTurn)
         store.setVideoUploadState(.uploading(0.5), for: "video-1")
         #expect(store.uploadState(for: "video-1") == .uploading(0.5))
         #expect(store.startVideoUploadTask(firstTask, for: "video-1") == true)
@@ -177,7 +178,7 @@ struct ChatPendingMediaUploadStoreTests {
         store.cancelAndRemove(roomID: "room-1")
 
         #expect(store.uploadState(for: "image-1") == nil)
-        #expect(store.uploadState(for: "video-2") == .uploading(0))
+        #expect(store.uploadState(for: "video-2") == .waitingForTurn)
     }
 
     private func makeProcessedImage() throws -> ProcessedImage {
