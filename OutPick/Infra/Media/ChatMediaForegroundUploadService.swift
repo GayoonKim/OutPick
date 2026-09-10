@@ -19,6 +19,11 @@ final class URLSessionChatMediaForegroundUploader: NSObject, ChatMediaForeground
         let onProgress: @Sendable (Double) -> Void
     }
 
+    // stateQueue 안에서만 접근하며 콜백 등록 전 취소도 기억한다.
+    private final class CancellationState: @unchecked Sendable {
+        var canceled = false
+    }
+
     private enum UploadError: LocalizedError {
         case invalidResponse
         case http(Int)
@@ -33,8 +38,14 @@ final class URLSessionChatMediaForegroundUploader: NSObject, ChatMediaForeground
 
     private let stateQueue = DispatchQueue(label: "outpick.chat-media-foreground-upload")
     private var pending: [Int: PendingUpload] = [:]
+    private let configuration: URLSessionConfiguration
+
+    init(configuration: URLSessionConfiguration = .default) {
+        self.configuration = configuration
+        super.init()
+    }
+
     private lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = false
         configuration.allowsCellularAccess = true
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -52,21 +63,34 @@ final class URLSessionChatMediaForegroundUploader: NSObject, ChatMediaForeground
             request.setValue(value, forHTTPHeaderField: name)
         }
         request.setValue(String(source.sizeBytes), forHTTPHeaderField: "Content-Length")
-        let task = session.uploadTask(with: request, fromFile: source.fileURL)
+        // lazy 세션의 최초 생성도 직렬화해 세션별 taskIdentifier 충돌을 막는다.
+        let task = stateQueue.sync {
+            session.uploadTask(with: request, fromFile: source.fileURL)
+        }
+        let cancellation = CancellationState()
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 stateQueue.sync {
+                    guard !cancellation.canceled else {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
                     pending[task.taskIdentifier] = PendingUpload(
                         target: target,
                         continuation: continuation,
                         onProgress: onProgress
                     )
+                    task.resume()
                 }
-                task.resume()
             }
         } onCancel: {
-            task.cancel()
+            self.stateQueue.sync {
+                cancellation.canceled = true
+                task.cancel()
+                self.pending.removeValue(forKey: task.taskIdentifier)?
+                    .continuation.resume(throwing: CancellationError())
+            }
         }
     }
 

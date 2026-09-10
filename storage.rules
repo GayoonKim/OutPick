@@ -68,7 +68,7 @@ service firebase.storage {
     function canReadReadyMedia(roomID, messageID, attachmentID) {
       return isReadableAccount()
         && firestore.exists(messagePath(roomID, messageID))
-        && firestore.get(messagePath(roomID, messageID)).data.mediaContractVersion == 2
+        && firestore.get(messagePath(roomID, messageID)).data.mediaContractVersion in [2, 3]
         && firestore.get(messagePath(roomID, messageID)).data.readyAttachmentIDs is list
         && attachmentID in firestore.get(messagePath(roomID, messageID)).data.readyAttachmentIDs
         && firestore.get(messagePath(roomID, messageID)).data.isDeleted != true

@@ -44,6 +44,7 @@ final class ChatContainer {
     private let roleMutationRepository: ChatRoomRoleMutationRepositoryProtocol
     private let observeRoomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol
     private let chatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol
+    let mediaSelectionUseCase: ChatMediaSelectionUseCase
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let chatVideoAssetLoader: ChatVideoAssetLoading
@@ -78,6 +79,12 @@ final class ChatContainer {
         repositories: FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared
     ) {
         self.persistence = persistence
+        let selectionRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ChatMediaSelections", isDirectory: true)
+        let mediaLimits = ChatMediaPipelineLimits()
+        self.mediaSelectionUseCase = ChatMediaSelectionUseCase(repository: ChatMediaSelectionRepository(
+            persistence: persistence.outboxStore, root: selectionRoot
+        ), limits: mediaLimits)
         self.firebaseRepositories = repositories
         let attachmentImageLoader = ChatAttachmentImageService(
             imageStorageRepository: repositories.imageStorageRepository
@@ -177,7 +184,8 @@ final class ChatContainer {
             outboxPersistence: persistence.outboxStore,
             messagePersistence: persistence.messageStore,
             imageStorageRepository: repositories.imageStorageRepository,
-            videoStorageRepository: repositories.videoStorageRepository
+            videoStorageRepository: repositories.videoStorageRepository,
+            mediaSendingRepository: SocketChatMediaMessageSendingRepository(socketManager: realtimeSocketService)
         )
         self.chatOutgoingOutboxUseCase = chatOutgoingOutboxUseCase
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
@@ -226,6 +234,7 @@ final class ChatContainer {
         self.chatMediaUploadUseCase = ChatMediaUploadUseCase(
             imageStorageRepository: repositories.imageStorageRepository,
             videoStorageRepository: repositories.videoStorageRepository,
+            messageRepository: repositories.messageRepository,
             sendingRepository: chatMediaMessageSendingRepository,
             attachmentImageLoader: attachmentImageLoader,
             currentUserProvider: {
@@ -234,7 +243,9 @@ final class ChatContainer {
                     senderNickname: currentUserProvider.nickname ?? "",
                     senderAvatarPath: currentUserProvider.avatarPath
                 )
-            }
+            },
+            uploadTurnQueue: ChatMediaUploadTurnQueue(),
+            filesPerBatch: mediaLimits.filesPerBatch
         )
         self.storageDownloadURLCache = StorageDownloadURLCache.shared
         self.chatVideoDiskCache = OPVideoDiskCache.shared

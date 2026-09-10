@@ -19,4 +19,12 @@ protocol ChatFailedOutgoingMessagePersisting {
     func saveChatMessages(_ messages: [ChatMessage]) async throws
     func fetchMessage(id messageID: String, inRoom roomID: String) async throws -> ChatMessage?
     func hardDeleteMessage(id messageID: String, inRoom roomID: String) async throws
+    func deleteUnconfirmedMessage(id messageID: String, inRoom roomID: String) async throws
+}
+
+extension ChatFailedOutgoingMessagePersisting {
+    func deleteUnconfirmedMessage(id messageID: String, inRoom roomID: String) async throws {
+        guard try await fetchMessage(id: messageID, inRoom: roomID)?.seq ?? 0 <= 0 else { return }
+        try await hardDeleteMessage(id: messageID, inRoom: roomID)
+    }
 }

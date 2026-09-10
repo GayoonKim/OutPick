@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { MAX_IMAGES_PER_MESSAGE } from "../config.js";
 import { normalizeUID } from "../utils/strings.js";
+import { boundedMap } from "./boundedMap.js";
 
 const MEDIA_UPLOAD_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 const MEDIA_V2_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -68,10 +69,6 @@ function stableAttachmentID(uploadID, index, kind) {
     .update(`${uploadID}:${index}:${kind}`)
     .digest("hex")
     .slice(0, 32);
-}
-
-function principalSlotID(principalID, kind, index) {
-  return `${principalID}_${kind}_${index}`;
 }
 
 function v2SourceContentTypeAllowed(kind, contentType) {
@@ -216,11 +213,17 @@ export function createMediaUploadService({
   db,
   admin,
   clock,
+  directService,
   quarantineBucketName = "",
   loadQuarantineObject,
   deleteQuarantineObject,
-  createQuarantineSignedUploadTarget
+  createQuarantineSignedUploadTarget,
+  metadataConcurrency = 1,
+  logger = console
 }) {
+  if (!Number.isInteger(metadataConcurrency) || metadataConcurrency < 1 || metadataConcurrency > 30) {
+    throw new Error("CHAT_MEDIA_METADATA_CONCURRENCY must be 1...30");
+  }
   const storagePrefix = (roomID, messageID) => `rooms/${roomID}/messages/${messageID}`;
   const reservationRef = (roomID, messageID) => db
     .collection("Rooms").doc(roomID).collection("MediaUploads").doc(messageID);
@@ -426,37 +429,20 @@ export function createMediaUploadService({
         return { ok: false, error: "media_reservation_conflict" };
       }
 
-      const slotCount = kind === "images" ? 2 : 1;
-      let selectedSlot = null;
-      const slots = [];
-      for (let index = 0; index < slotCount; index += 1) {
-        const id = principalSlotID(moderationPrincipalID, kind, index);
-        const slotRef = db.collection("chatMediaPrincipalUploadSlots").doc(id);
-        const slot = await transaction.get(slotRef);
-        slots.push({ id, index, ref: slotRef, snapshot: slot });
-      }
-      if (slots.some(({ snapshot }) =>
-        snapshot.data()?.clientMutationID === clientMutationID)) {
+      // 사용자 실행 제한과 요청 identity 보호를 분리한다.
+      const receiptID = createHash("sha256")
+        .update(JSON.stringify([moderationPrincipalID, kind, clientMutationID]))
+        .digest("hex");
+      const receiptRef = db.collection("chatMediaReservationReceipts").doc(receiptID);
+      const receipt = await transaction.get(receiptRef);
+      if (receipt.exists) {
         return { ok: false, error: "media_client_mutation_conflict" };
       }
-      for (const { id, index, ref: slotRef, snapshot: slot } of slots) {
-        const leaseMillis = timestampMillis(slot.data()?.leaseExpiresAt) || 0;
-        if (!slot.exists || !slot.data()?.ownerUploadPath || leaseMillis <= nowMillis) {
-          selectedSlot = { id, index, ref: slotRef };
-          break;
-        }
-      }
-      if (!selectedSlot) return { ok: false, error: "active_upload_limit" };
-
-      transaction.set(selectedSlot.ref, {
-        moderationPrincipalID,
-        kind,
-        slotIndex: selectedSlot.index,
-        ownerUploadPath: uploadPath,
-        clientMutationID,
-        leaseExpiresAt: uploadExpiresAt,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+      transaction.set(receiptRef, {
+        uploadPath,
+        // 24시간 업로드 + 6시간 처리 + terminal 7일보다 먼저 지우지 않는다.
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(nowMillis + 9 * 24 * 60 * 60 * 1000))
+      });
       transaction.set(ref, {
         schemaVersion: 1,
         contractVersion: 2,
@@ -474,7 +460,6 @@ export function createMediaUploadService({
         quarantinePaths,
         sourceDescriptors: sourceValidation.descriptors,
         uploadSources,
-        principalSlotID: selectedSlot.id,
         processingStatus: "uploading",
         processingAttempt: 0,
         dispatchGeneration: 0,
@@ -630,18 +615,6 @@ export function createMediaUploadService({
       return { ok: false, error: "media_reservation_expired" };
     }
 
-    const reconciliation = await refreshUploadTargetsV2({
-      roomID,
-      uploadID,
-      clientMutationID,
-      senderUID,
-      moderationPrincipalID
-    });
-    if (!reconciliation.ok) return reconciliation;
-    if (reconciliation.uploads.length > 0) {
-      return {ok: false, error: "media_upload_incomplete"};
-    }
-
     const descriptors = Array.isArray(reservation.sourceDescriptors) ?
       reservation.sourceDescriptors : [];
     const attachmentIDs = Array.isArray(reservation.attachmentIDs) ?
@@ -658,13 +631,26 @@ export function createMediaUploadService({
       return {ok: false, error: "media_upload_sources_invalid"};
     }
 
+    const verificationStartedAt = Date.now();
+    const objects = await boundedMap(descriptors, metadataConcurrency, async (descriptor, index) => {
+      try { return await loadQuarantineObject(quarantinePaths[index]); }
+      catch (error) { if (isObjectNotFound(error)) return null; throw error; }
+    });
+    logger.info?.(JSON.stringify({event: "media_finalize_metadata", uploadID, count: descriptors.length,
+      concurrency: metadataConcurrency, durationMs: Date.now() - verificationStartedAt}));
     const verified = [];
     let aggregateBytes = 0;
+    let missing = false;
     for (let sourceIndex = 0; sourceIndex < descriptors.length; sourceIndex += 1) {
       const descriptor = descriptors[sourceIndex];
       const destinationPath = quarantinePaths[sourceIndex];
-      const metadata = await loadQuarantineObject(destinationPath);
-      if (!sourceMetadataMatches(descriptor, metadata)) {
+      const source = storedSources[sourceIndex];
+      const metadata = objects[sourceIndex];
+      if (source.path !== destinationPath || source.attachmentID !== attachmentIDs[sourceIndex]) {
+        return {ok: false, error: "media_upload_sources_invalid"};
+      }
+      if (!metadata) { missing = true; continue; }
+      if (!uploadSourceMetadataMatches(source, metadata) || !sourceMetadataMatches(descriptor, metadata)) {
         return {ok: false, error: "media_object_metadata_mismatch"};
       }
       aggregateBytes += descriptor.sizeBytes;
@@ -677,6 +663,7 @@ export function createMediaUploadService({
         sha256: descriptor.sha256
       });
     }
+    if (missing) return {ok: false, error: "media_upload_incomplete"};
     if (reservation.kind === "images" && aggregateBytes > MEDIA_V2_MAX_IMAGE_AGGREGATE_BYTES) {
       return {ok: false, error: "media_aggregate_too_large"};
     }
@@ -772,7 +759,31 @@ export function createMediaUploadService({
     const outcome = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(ref);
       const data = snapshot.data() || {};
-      if (!snapshot.exists || data.contractVersion !== 2 ||
+      if (!snapshot.exists) {
+        const message = await transaction.get(db.collection("Rooms").doc(input.roomID)
+          .collection("Messages").doc(input.uploadID));
+        if (message.exists) {
+          if (normalizeUID(message.data()?.senderUID) !== normalizeUID(input.senderUID)) {
+            return {ok: false, error: "media_reservation_conflict"};
+          }
+          return {ok: true, processingStatus: "ready", uploadID: input.uploadID,
+            messageID: input.uploadID, seq: message.data()?.seq ?? null};
+        }
+        const member = await transaction.get(db.collection("Rooms").doc(input.roomID)
+          .collection("members").doc(input.senderUID));
+        if (!member.exists) return {ok: false, error: "media_reservation_conflict"};
+        // 예약 응답 유실/늦은 preflight를 취소 tombstone으로 차단한다.
+        transaction.set(ref, {
+          schemaVersion: 1, contractVersion: 2, roomID: input.roomID,
+          uploadID: input.uploadID, clientMutationID: input.clientMutationID,
+          senderUID: input.senderUID, moderationPrincipalID: input.moderationPrincipalID,
+          processingStatus: "canceled", retryable: false, cleanupStatus: "completed",
+          terminalAt: admin.firestore.Timestamp.fromDate(new Date(nowMillis)),
+          expiresAt: admin.firestore.Timestamp.fromDate(new Date(nowMillis + MEDIA_V2_TERMINAL_TTL_MS))
+        });
+        return {ok: true, duplicate: true, processingStatus: "canceled", uploadID: input.uploadID, paths: []};
+      }
+      if (data.contractVersion !== 2 ||
           data.clientMutationID !== input.clientMutationID ||
           normalizeUID(data.senderUID) !== normalizeUID(input.senderUID) ||
           data.moderationPrincipalID !== input.moderationPrincipalID) {
@@ -870,15 +881,23 @@ export function createMediaUploadService({
     };
   }
 
+  // 실제 남아 있는 구 예약만 복구하며 신규 요청은 직접 업로드 계약을 사용한다.
+  const routeExisting = (modern, legacy) => async args => {
+    if (!directService) return legacy(args);
+    const old = (await reservationRef(args.roomID, args.uploadID).get()).data();
+    return old?.contractVersion === 2 ? legacy(args) : directService[modern](args);
+  };
   return {
     assertReservation,
     loadExistingMessage,
     preflight,
     preflightV2,
-    refreshUploadTargetsV2,
+    preflightDirect: args => directService.preflight(args),
+    finalizeDirect: args => directService.finalize(args),
+    refreshUploadTargetsV2: routeExisting("refresh", refreshUploadTargetsV2),
     finalizeV2,
-    statusV2,
-    cancelV2
+    statusV2: routeExisting("status", statusV2),
+    cancelV2: routeExisting("cancel", cancelV2)
   };
 }
 

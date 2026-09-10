@@ -19,9 +19,14 @@ struct ChatMessageCellCommands {
 class ChatMessageCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatMessageCell"
     enum MediaUploadRecoveryState: Equatable {
+        case waiting(Int)
         case none
+        case uploading(Double)
+        case processing
         case failed
     }
+
+    private let mediaUploadProgressView = ChatMediaUploadProgressView()
 
     private var widthConstraint: NSLayoutConstraint?
     private(set) var representedMessageID: String?
@@ -266,6 +271,14 @@ class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(nickNameLabel)
         contentView.addSubview(bubbleView)
         contentView.addSubview(imagesPreviewCollectionView)
+        contentView.addSubview(mediaUploadProgressView)
+        mediaUploadProgressView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            mediaUploadProgressView.leadingAnchor.constraint(equalTo: imagesPreviewCollectionView.leadingAnchor),
+            mediaUploadProgressView.trailingAnchor.constraint(equalTo: imagesPreviewCollectionView.trailingAnchor),
+            mediaUploadProgressView.topAnchor.constraint(equalTo: imagesPreviewCollectionView.topAnchor),
+            mediaUploadProgressView.bottomAnchor.constraint(equalTo: imagesPreviewCollectionView.bottomAnchor)
+        ])
         contentView.addSubview(lookbookShareContentView)
         contentView.addSubview(timeLabel)
         contentView.addSubview(imageUploadRecoveryStack)
@@ -998,13 +1011,25 @@ class ChatMessageCell: UICollectionViewCell {
     }
 
     func applyMediaUploadRecoveryState(_ state: MediaUploadRecoveryState) {
+        resetMediaUploadRecoveryConstraints()
+        imageUploadRecoveryStack.isHidden = true
+        imageUploadRetryButton.isHidden = true
+        imageUploadDeleteButton.isHidden = true
         switch state {
         case .none:
-            resetMediaUploadRecoveryConstraints()
-            imageUploadRecoveryStack.isHidden = true
-            imageUploadRetryButton.isHidden = true
-            imageUploadDeleteButton.isHidden = true
+            mediaUploadProgressView.reset()
+        case .uploading(let progress):
+            mediaUploadProgressView.show(progress: progress)
+            contentView.bringSubviewToFront(mediaUploadProgressView)
+        case .waiting(let count):
+            mediaUploadProgressView.showWaiting(count: count)
+            contentView.bringSubviewToFront(mediaUploadProgressView)
+        case .processing:
+            mediaUploadProgressView.show(progress: nil)
+            contentView.bringSubviewToFront(mediaUploadProgressView)
         case .failed:
+            mediaUploadProgressView.showFailure()
+            contentView.bringSubviewToFront(mediaUploadProgressView)
             timeLabel.isHidden = true
             NSLayoutConstraint.deactivate([
                 timeBottomConstraint,

@@ -16,6 +16,18 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
         self.db = db
     }
 
+    func fetchConfirmedMessage(roomID: String, messageID: String) async throws -> ChatMessage? {
+        let snapshot = try await db.collection("Rooms").document(roomID)
+            .collection("Messages").document(messageID).getDocument(source: .server)
+        guard var data = snapshot.data() else { return nil }
+        data["ID"] = messageID
+        data["roomID"] = roomID
+        guard let message = ChatMessage.from(data), message.seq > 0 else {
+            throw ChatMediaUploadError.invalidUploadContract
+        }
+        return message
+    }
+
     func fetchMessageDeletionRevision(roomID: String) async throws -> Int64 {
         guard !roomID.isEmpty else { throw FirebaseError.FailedToFetchRoom }
         let snapshot = try await db.collection("Rooms").document(roomID).getDocument()

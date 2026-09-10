@@ -15,7 +15,9 @@ struct ProcessedImage: Sendable {
     let originalFileURL: URL
 
     /// 전송/캐시용 썸네일 JPEG 데이터.
-    let thumbData: Data
+    private let inlineThumbData: Data
+    let thumbFileURL: URL?
+    var thumbData: Data { thumbFileURL.flatMap { try? Data(contentsOf: $0, options: .mappedIfSafe) } ?? inlineThumbData }
 
     /// 원본 픽셀 크기.
     let originalWidth: Int
@@ -31,6 +33,7 @@ struct ProcessedImage: Sendable {
     let contentType: String
     let mediaFormat: String
     let isAnimated: Bool
+    let preparationVersion: Int
 
     init(
         index: Int,
@@ -42,11 +45,14 @@ struct ProcessedImage: Sendable {
         sha256: String,
         contentType: String = "image/jpeg",
         mediaFormat: String = "jpeg",
-        isAnimated: Bool = false
+        isAnimated: Bool = false,
+        thumbFileURL: URL? = nil,
+        preparationVersion: Int = 3
     ) {
         self.index = index
         self.originalFileURL = originalFileURL
-        self.thumbData = thumbData
+        self.inlineThumbData = thumbData
+        self.thumbFileURL = thumbFileURL
         self.originalWidth = originalWidth
         self.originalHeight = originalHeight
         self.bytesOriginal = bytesOriginal
@@ -54,6 +60,7 @@ struct ProcessedImage: Sendable {
         self.contentType = contentType
         self.mediaFormat = mediaFormat
         self.isAnimated = isAnimated
+        self.preparationVersion = preparationVersion
     }
 
     /// Storage/cache key로 쓰는 base name.

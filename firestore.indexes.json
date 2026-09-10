@@ -1,6 +1,15 @@
 {
   "indexes": [
     {
+      "collectionGroup": "MediaUploads",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "contractVersion", "order": "ASCENDING"},
+        {"fieldPath": "cleanupStatus", "order": "ASCENDING"},
+        {"fieldPath": "cleanupAfter", "order": "ASCENDING"}
+      ]
+    },
+    {
       "collectionGroup": "bans",
       "queryScope": "COLLECTION",
       "fields": [
@@ -1083,6 +1092,12 @@
     },
     {
       "collectionGroup": "moderationReportRateLimitBuckets",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "chatMediaReservationReceipts",
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []

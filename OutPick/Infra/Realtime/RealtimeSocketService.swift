@@ -1076,19 +1076,23 @@ actor RealtimeSocketService {
         ackTimeout: Double = 10
     ) async throws -> ChatMediaUploadReservation {
         let body: [String: Any] = [
-            "contractVersion": 2,
+            "contractVersion": 3,
             "roomID": roomID,
             "uploadID": uploadID,
             "clientMutationID": clientMutationID,
             "kind": kind,
-            "attachmentCount": sources.count,
+            "attachmentCount": Set(sources.map(\.attachmentIndex)).count,
             "expectedPathCount": sources.count,
             "sources": sources.sorted(by: { $0.index < $1.index }).map {
                 [
                     "index": $0.index,
+                    "attachmentIndex": $0.attachmentIndex,
+                    "role": $0.role,
+                    "width": $0.width,
+                    "height": $0.height,
+                    "duration": $0.duration,
                     "contentType": $0.contentType,
                     "sizeBytes": $0.sizeBytes,
-                    "sha256": $0.sha256,
                     "mediaFormat": $0.mediaFormat,
                     "isAnimated": $0.isAnimated
                 ] as [String: Any]
@@ -1116,7 +1120,7 @@ actor RealtimeSocketService {
         let payload = try await emitPayloadAck(
             event: "chat:mediaRefreshUploadTargets",
             [
-                "contractVersion": 2,
+                "contractVersion": 3,
                 "roomID": roomID,
                 "uploadID": uploadID,
                 "clientMutationID": clientMutationID
@@ -1139,7 +1143,7 @@ actor RealtimeSocketService {
         ackTimeout: Double = 15
     ) async throws -> ChatMediaProcessingSnapshot {
         let body: [String: Any] = [
-            "contractVersion": 2,
+            "contractVersion": 3,
             "roomID": roomID,
             "uploadID": uploadID,
             "clientMutationID": clientMutationID,
@@ -2150,9 +2154,18 @@ actor RealtimeSocketService {
         }
         return try await withCheckedThrowingContinuation { continuation in
             socket.emitWithAck(event, body).timingOut(after: timeout) { items in
+                if (items.first as? String) == SocketAckStatus.noAck.rawValue {
+                    continuation.resume(throwing: Self.makeSocketError(code: NSURLErrorTimedOut,
+                        message: failureMessage, serverErrorCode: "ack_timeout"))
+                    return
+                }
                 guard let payload = items.first as? [String: Any],
                       payload["ok"] as? Bool == true else {
                     let code = (items.first as? [String: Any])?["error"] as? String ?? "unknown"
+                    if event == "chat:mediaFinalize", code == "media_upload_incomplete" {
+                        continuation.resume(throwing: ChatMediaUploadError.uploadIncomplete)
+                        return
+                    }
                     continuation.resume(
                         throwing: Self.makeSocketError(
                             code: -1,
@@ -2204,8 +2217,7 @@ actor RealtimeSocketService {
                   let signedURL = URL(string: rawURL),
                   let requiredHeaders = entry["requiredHeaders"] as? [String: String],
                   let contentType = entry["contentType"] as? String,
-                  let sizeBytes = int64(entry["sizeBytes"]),
-                  let sha256 = entry["sha256"] as? String else {
+                  let sizeBytes = int64(entry["sizeBytes"]) else {
                 throw makeSocketError(code: -1, message: "미디어 업로드 대상 응답이 올바르지 않습니다.")
             }
             return ChatMediaUploadTarget(
@@ -2216,7 +2228,7 @@ actor RealtimeSocketService {
                 requiredHeaders: requiredHeaders,
                 contentType: contentType,
                 sizeBytes: sizeBytes,
-                sha256: sha256
+                sha256: ""
             )
         }
         return ChatMediaUploadReservation(

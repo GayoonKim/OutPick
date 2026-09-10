@@ -71,7 +71,7 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     }
 
     /// 비디오 썸네일 생성(JPEG Data)
-    private static func makeVideoThumbnailData(url: URL) async throws -> Data? {
+    static func makeVideoThumbnailData(url: URL) async throws -> Data? {
         try await withCheckedThrowingContinuation { continuation in
             let asset = AVAsset(url: url)
             let generator = AVAssetImageGenerator(asset: asset)
@@ -98,6 +98,23 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
     }
 
     // MARK: - Image processing (기존 API)
+
+    static func makeChatVideoThumbnailFile(url: URL) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            let generator = AVAssetImageGenerator(asset: AVAsset(url: url))
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceAfter = .zero
+            generator.requestedTimeToleranceBefore = .zero
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: .zero)]) { _, image, _, result, error in
+                guard result == .succeeded, let image else {
+                    continuation.resume(throwing: error ?? MediaError.failedToCreateImageData)
+                    return
+                }
+                do { continuation.resume(returning: try ChatImageTransportSourceNormalizer.makeThumbnailFile(image)) }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
 
     func makePair(
         from result: PHPickerResult,

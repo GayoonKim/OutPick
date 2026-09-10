@@ -1,5 +1,9 @@
 # OutPick Data Schema Index
 
+- 직접 업로드 계약3(미배포): MediaUploads의 targets는 attachmentID/attachmentIndex/sourceIndex/role/path/sizeBytes/contentType, descriptors는 클라이언트 표시 정보를 포함한다. 최종 bucket 직접 PUT 후 ready 메시지·seq·index·delivery job을 transaction으로 생성한다. cleanupAfter/cleanupStatus로 늦은 미완료 업로드를 정리한다. 로컬 outbox preparationVersion은 구자료 재준비 구분이며 signed URL/headers는 영속화하지 않는다. CHAT의 최신 직접 업로드와 상세 설계 참조.
+
+- 2026-09-10 미디어 병렬 전송 로컬 변경: 기존 GRDB outbox JSON의 selectionSources/pendingChunk 소유권, cleanup 원장, 서버 `chatMediaReservationReceipts`와 9일 TTL은 `entrypoints/{DATA,FIREBASE}.md` 및 `tasks/chat-media-bounded-parallel-upload/design.md`를 따른다. 새 SQLite migration 없이 기존 payload를 확장하며 서버 TTL은 미배포다.
+
 ## 목적과 읽기 순서
 
 이 문서는 데이터 계약의 상위 인덱스다. 필드 전체를 중복 기록하지 않고 변경 목적에 맞는 source of truth로 연결한다.

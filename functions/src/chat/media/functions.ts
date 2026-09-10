@@ -1,7 +1,7 @@
 /* eslint-disable require-jsdoc, max-len */
 import {CloudTasksClient} from "@google-cloud/tasks";
 import {GoogleAuth} from "google-auth-library";
-import {FieldValue, Timestamp} from "firebase-admin/firestore";
+import {FieldValue, Timestamp, type Firestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 import type {Request, Response} from "express";
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
@@ -16,11 +16,13 @@ import {
 } from "./contracts.js";
 import {
   claimMediaUploadForExecution,
+  completeSynchronousImageExecution,
   reconcileStaleMediaUpload,
   recordMediaExecutionName,
   settleMediaDispatchFailure,
 } from "./orchestrationService.js";
 import {publishCompletedMediaUpload} from "./readyService.js";
+import {cleanupDirectUpload} from "./directUploadCleanup.js";
 import {chatMediaServiceAccountEmailForEnvironment} from "./runtime.js";
 
 const RECONCILE_LIMIT = 100;
@@ -170,6 +172,23 @@ export const reconcileChatMediaObjectCleanup = onSchedule(
     ),
   },
   async () => {
+    const direct = await db.collectionGroup("MediaUploads")
+      .where("contractVersion", "==", 3)
+      .where("cleanupStatus", "==", "pending")
+      .where("cleanupAfter", "<=", Timestamp.now())
+      .orderBy("cleanupAfter").limit(RECONCILE_LIMIT).get();
+    for (const document of direct.docs) {
+      await cleanupDirectUpload({firestore: db, ref: document.ref, nowMillis: Date.now(),
+        remove: async (bucket, path) => {
+          const file = getStorage().bucket(bucket).file(path);
+          try {
+            const [metadata] = await file.getMetadata();
+            await file.delete({ifGenerationMatch: metadata.generation});
+          } catch (error) {
+            if (Number((error as {code?: number}).code) !== 404) throw error;
+          }
+        }});
+    }
     const snapshot = await db.collectionGroup("MediaUploads")
       .where("contractVersion", "==", 2)
       .where("cleanupStatus", "in", ["pending", "failed"])
@@ -201,6 +220,7 @@ export const reconcileChatMediaObjectCleanup = onSchedule(
 );
 
 type DispatcherDependencies = {
+  firestore: Firestore;
   nowMillis: () => number;
   projectID: () => string;
   startExecution: (input: {
@@ -209,6 +229,11 @@ type DispatcherDependencies = {
     uploadPath: string;
     leaseToken: string;
   }) => Promise<string>;
+  completeImageExecution: (input: {
+    uploadPath: string;
+    leaseToken: string;
+    slotID: string;
+  }) => Promise<void>;
 };
 
 export function createMediaDispatcherHandler(
@@ -226,10 +251,11 @@ export function createMediaDispatcherHandler(
       response.status(400).json({ok: false, error: "invalid_request"});
       return;
     }
-    const uploadRef = db.doc(uploadPath);
+    const firestore = dependencies.firestore;
+    const uploadRef = firestore.doc(uploadPath);
     const projectID = dependencies.projectID();
     const claim = await claimMediaUploadForExecution({
-      firestore: db,
+      firestore,
       uploadRef,
       projectID,
       nowMillis: dependencies.nowMillis(),
@@ -250,19 +276,23 @@ export function createMediaDispatcherHandler(
         leaseToken: claim.leaseToken,
       });
       const recorded = await recordMediaExecutionName({
-        firestore: db,
+        firestore,
         uploadRef,
         leaseToken: claim.leaseToken,
         executionName,
       });
-      response.status(200).json({ok: recorded, claimed: true, executionName});
+      if (claim.kind === "images") {
+        // 다음 Task가 실행되기 전에 성공 확정과 slot 반환 transaction을 완료한다.
+        await dependencies.completeImageExecution({uploadPath, leaseToken: claim.leaseToken, slotID: claim.slotID});
+      }
+      response.status(200).json({ok: claim.kind === "images" || recorded, claimed: true, executionName});
     } catch (error) {
       console.error("[dispatchChatMediaProcessing] Cloud Run Job start failed", {
         uploadPath,
         error: error instanceof Error ? error.message : String(error),
       });
       await settleMediaDispatchFailure({
-        firestore: db,
+        firestore,
         uploadRef,
         leaseToken: claim.leaseToken,
         nowMillis: dependencies.nowMillis(),
@@ -319,9 +349,15 @@ async function enqueueDispatcherTask(input: {
 
 function runtimeDispatcherDependencies(): DispatcherDependencies {
   return {
+    firestore: db,
     nowMillis: () => Date.now(),
     projectID: projectID,
     startExecution: startChatMediaExecution,
+    completeImageExecution: async ({uploadPath, leaseToken, slotID}) => {
+      await completeSynchronousImageExecution({
+        firestore: db, uploadRef: db.doc(uploadPath), leaseToken, slotID, nowMillis: Date.now(),
+      });
+    },
   };
 }
 

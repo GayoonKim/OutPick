@@ -57,7 +57,7 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
     struct Item: Codable, Equatable, Sendable {
         private enum CodingKeys: String, CodingKey {
             case index, originalFilePath, thumbFilePath, originalWidth, originalHeight
-            case bytesOriginal, sha256, contentType, mediaFormat, isAnimated
+            case bytesOriginal, sha256, contentType, mediaFormat, isAnimated, preparationVersion
         }
         let index: Int
         let originalFilePath: String
@@ -69,6 +69,7 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
         let contentType: String
         let mediaFormat: String
         let isAnimated: Bool
+        let preparationVersion: Int
 
         init(
             index: Int,
@@ -80,7 +81,8 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
             sha256: String,
             contentType: String = "image/jpeg",
             mediaFormat: String = "jpeg",
-            isAnimated: Bool = false
+            isAnimated: Bool = false,
+            preparationVersion: Int = 3
         ) {
             self.index = index
             self.originalFilePath = originalFilePath
@@ -92,6 +94,7 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
             self.contentType = contentType
             self.mediaFormat = mediaFormat
             self.isAnimated = isAnimated
+            self.preparationVersion = preparationVersion
         }
 
         init(from decoder: Decoder) throws {
@@ -106,6 +109,7 @@ struct ChatOutgoingOutboxImagePayload: Codable, Equatable, Sendable {
             contentType = try values.decodeIfPresent(String.self, forKey: .contentType) ?? "image/jpeg"
             mediaFormat = try values.decodeIfPresent(String.self, forKey: .mediaFormat) ?? "jpeg"
             isAnimated = try values.decodeIfPresent(Bool.self, forKey: .isAnimated) ?? false
+            preparationVersion = try values.decodeIfPresent(Int.self, forKey: .preparationVersion) ?? 0
         }
     }
 
@@ -122,6 +126,7 @@ struct ChatOutgoingOutboxVideoPayload: Codable, Equatable, Sendable {
     let sizeBytes: Int64
     let approxBitrateMbps: Double
     let preset: String
+    var preparationVersion: Int? = nil
 }
 
 struct ChatOutgoingOutboxUploadedImagesPayload: Codable, Equatable, Sendable {

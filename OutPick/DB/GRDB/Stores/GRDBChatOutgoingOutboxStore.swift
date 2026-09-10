@@ -9,6 +9,12 @@ final class GRDBChatOutgoingOutboxStore: ChatOutgoingOutboxPersisting {
 
     func saveOutgoingOutboxRecord(_ record: ChatOutgoingOutboxRecord) async throws {
         try await database.dbPool.write { db in
+            // Socket 확정 뒤 늦은 status/error 저장이 outbox를 되살리지 못하게 한다.
+            guard try Int.fetchOne(db, sql: "SELECT 1 FROM chatMessage WHERE roomID = ? AND id = ? AND seq > 0",
+                arguments: [record.roomID, record.messageID]) == nil else { return }
+            if let existing = try Row.fetchOne(db, sql: "SELECT processingStatus FROM chatOutgoingOutbox WHERE messageID = ?",
+                arguments: [record.messageID]), existing["processingStatus"] as String? == "ready",
+               record.processingStatus != "ready" || record.stage == .failed { return }
             try db.execute(sql: """
                 INSERT OR REPLACE INTO chatOutgoingOutbox
                 (messageID, roomID, kind, stage, createdAt, updatedAt, localPayloadJSON, uploadedPayloadJSON, lastError,

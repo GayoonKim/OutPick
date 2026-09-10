@@ -28,14 +28,16 @@ enum ChatMediaSelectionChunker {
             ProcessedImage(
                 index: index,
                 originalFileURL: image.originalFileURL,
-                thumbData: image.thumbData,
+                thumbData: image.thumbFileURL == nil ? image.thumbData : Data(),
                 originalWidth: image.originalWidth,
                 originalHeight: image.originalHeight,
                 bytesOriginal: image.bytesOriginal,
                 sha256: image.sha256,
                 contentType: image.contentType,
                 mediaFormat: image.mediaFormat,
-                isAnimated: image.isAnimated
+                isAnimated: image.isAnimated,
+                thumbFileURL: image.thumbFileURL,
+                preparationVersion: image.preparationVersion
             )
         }
     }

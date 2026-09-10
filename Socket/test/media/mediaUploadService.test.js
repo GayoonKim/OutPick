@@ -252,6 +252,49 @@ test("완료된 media preflight는 sender/kind/count가 일치할 때만 duplica
   }).error, "media_message_conflict");
 });
 
+test("finalize는 제한 병렬로 한 번씩 조회하고 누락은 재개 가능하게 반환한다", async () => {
+  const memory = createMemoryDB();
+  const metadata = new Map();
+  let active = 0;
+  let peak = 0;
+  let calls = 0;
+  const service = createMediaUploadService({
+    db: memory.db, admin, clock: {nowMillis: () => 1000},
+    quarantineBucketName: "quarantine-bucket", metadataConcurrency: 2,
+    deleteQuarantineObject: async () => {},
+    logger: {info() {}},
+    loadQuarantineObject: async (path) => {
+      calls++;
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return metadata.get(path) || null;
+    },
+    ...signedUploadDependencies()
+  });
+  const input = {roomID: "room", uploadID: "upload", clientMutationID: "mutation",
+    senderUID: "user", moderationPrincipalID: "principal", kind: "images",
+    contract: {attachmentCount: 3, expectedPathCount: 3}, sources: sourceDescriptors("images", 3)};
+  const reserved = await service.preflightV2(input);
+  for (const target of reserved.uploads.slice(0, 2)) metadata.set(target.path, {
+    generation: "7", sizeBytes: target.sizeBytes, contentType: target.contentType,
+    metadata: {attachmentID: target.attachmentID, sha256: target.sha256}
+  });
+  calls = 0; peak = 0;
+  const incomplete = await service.finalizeV2(input);
+  assert.equal(incomplete.error, "media_upload_incomplete");
+  assert.equal(calls, 3);
+  assert.equal(peak, 2);
+  assert.equal(memory.values.get("Rooms/room/MediaUploads/upload").processingStatus, "uploading");
+  const missing = await service.refreshUploadTargetsV2(input);
+  assert.equal(missing.uploads.length, 1);
+  const target = missing.uploads[0];
+  metadata.set(target.path, {generation: "8", sizeBytes: target.sizeBytes,
+    contentType: target.contentType, metadata: {attachmentID: target.attachmentID, sha256: target.sha256}});
+  assert.equal((await service.finalizeV2(input)).processingStatus, "queued");
+  assert.deepEqual(memory.values.get("Rooms/room/MediaUploads/upload").sourceManifest.map((x) => x.attachmentID), reserved.attachmentIDs);
+});
+
 function createMemoryDB() {
   const values = new Map();
   const writes = [];
@@ -297,7 +340,23 @@ function createMemoryDB() {
   return { db, values, writes };
 }
 
-test("v2 preflight는 attachment당 source 하나와 principal 동시 slot을 멱등 예약한다", async () => {
+test("예약 전 cancel은 참여자에 한해 늦은 preflight를 차단한다", async () => {
+  const memory = createMemoryDB();
+  const service = createMediaUploadService({db: memory.db, admin,
+    clock: {nowMillis: () => 1000}, quarantineBucketName: "quarantine", ...signedUploadDependencies()});
+  const input = {roomID: "room", uploadID: "late", clientMutationID: "mutation",
+    senderUID: "user", moderationPrincipalID: "principal"};
+  assert.equal((await service.cancelV2(input)).ok, false);
+  assert.equal(memory.values.has("Rooms/room/MediaUploads/late"), false);
+  memory.values.set("Rooms/room/members/user", {});
+  assert.equal((await service.cancelV2(input)).processingStatus, "canceled");
+  const late = await service.preflightV2({...input, kind: "images",
+    contract: {attachmentCount: 1, expectedPathCount: 1}, sources: sourceDescriptors("images", 1)});
+  assert.equal(late.ok, false);
+  assert.equal(memory.values.get("Rooms/room/MediaUploads/late").processingStatus, "canceled");
+});
+
+test("v2 preflight는 사용자 동시 제한 없이 source와 요청 identity를 멱등 예약한다", async () => {
   const memory = createMemoryDB();
   const service = createMediaUploadService({
     db: memory.db,
@@ -339,7 +398,8 @@ test("v2 preflight는 attachment당 source 하나와 principal 동시 slot을 �
     ok: false, error: "media_client_mutation_conflict"
   });
   assert.equal(second.ok, true);
-  assert.deepEqual(limited, { ok: false, error: "active_upload_limit" });
+  assert.equal(limited.ok, true);
+  assert.equal([...memory.values.keys()].some((key) => key.startsWith("chatMediaPrincipalUploadSlots/")), false);
   const reservation = memory.values.get("Rooms/room/MediaUploads/upload-a");
   assert.equal(reservation.contractVersion, 2);
   assert.equal(reservation.processingStatus, "uploading");
@@ -350,12 +410,14 @@ test("v2 preflight는 attachment당 source 하나와 principal 동시 slot을 �
 test("v2 finalize는 exact generation/size/MIME manifest만 queued로 전환한다", async () => {
   const memory = createMemoryDB();
   const metadata = new Map();
+  let lookupCount = 0;
   const service = createMediaUploadService({
     db: memory.db,
     admin,
     clock: { nowMillis: () => 1_000 },
     quarantineBucketName: "quarantine-bucket",
     loadQuarantineObject: async (path) => {
+      lookupCount++;
       const value = metadata.get(path);
       if (!value) throw Object.assign(new Error("not found"), {code: 404});
       return value;
@@ -383,6 +445,7 @@ test("v2 finalize는 exact generation/size/MIME manifest만 queued로 전환한�
       sha256: SOURCE_SHA256
     }
   });
+  lookupCount = 0;
   const result = await service.finalizeV2({
     roomID: "room",
     uploadID: "upload",
@@ -402,6 +465,7 @@ test("v2 finalize는 exact generation/size/MIME manifest만 queued로 전환한�
   assert.equal(result.messageID, null);
   assert.equal(result.seq, null);
   assert.equal(duplicate.duplicate, true);
+  assert.equal(lookupCount, 1);
   assert.equal(memory.values.get("Rooms/room/MediaUploads/upload").processingStatus, "queued");
 });
 
@@ -486,7 +550,7 @@ test("v2 cancel은 terminal을 먼저 기록하고 source와 principal slot을 �
   const slot = memory.values.get(reservation.principalSlotID);
   assert.equal(slot, undefined);
   const slotValue = memory.values.get(`chatMediaPrincipalUploadSlots/${reservation.principalSlotID}`);
-  assert.equal(slotValue.ownerUploadPath, null);
+  assert.equal(slotValue, undefined);
 });
 
 test("worker 결과 기록 뒤 cancel은 source 삭제 후 orphan ready cleanup을 pending으로 남긴다", async () => {

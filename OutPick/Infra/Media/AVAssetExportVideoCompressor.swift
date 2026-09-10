@@ -74,18 +74,25 @@ enum AVAssetExportVideoCompressor {
         exporter.outputURL = outURL
         exporter.outputFileType = outputType
         exporter.shouldOptimizeForNetworkUse = true
+        exporter.metadata = []
+        exporter.metadataItemFilter = AVMetadataItemFilter.forSharing()
         exporter.fileLengthLimit = maxChatSourceBytes
 
-        // export 실행
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            exporter.exportAsynchronously {
+        var keepOutput = false
+        defer { if !keepOutput { try? fm.removeItem(at: outURL) } }
+        let control = ChatVideoExportControl(exporter)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            control.start(continuation: continuation) {
                 // exporter의 상태/에러 접근은 메인 스레드에서만
                 DispatchQueue.main.async {
                     switch exporter.status {
                     case .completed:
                         continuation.resume(returning: ())
 
-                    case .failed, .cancelled:
+                    case .cancelled:
+                        continuation.resume(throwing: CancellationError())
+                    case .failed:
                         continuation.resume(throwing: ExportError.failedToExport(underlying: exporter.error))
 
                     default:
@@ -94,7 +101,11 @@ enum AVAssetExportVideoCompressor {
                     }
                 }
             }
+            }
+        } onCancel: {
+            control.cancel()
         }
+        try Task.checkCancellation()
 
         let outputBytes = Int64(
             (try? fm.attributesOfItem(atPath: outURL.path)[.size] as? NSNumber)?.int64Value ?? 0
@@ -103,6 +114,27 @@ enum AVAssetExportVideoCompressor {
             try? fm.removeItem(at: outURL)
             throw MediaError.sourceTooLarge
         }
+        keepOutput = true
         return outURL
+    }
+}
+
+/// callback SDK의 start/cancel 순서를 직렬화한다. 취소 요청만으로 실행 자원을 먼저 반환하지 않는다.
+private final class ChatVideoExportControl: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "outpick.media-export-control")
+    private let exporter: AVAssetExportSession
+    private var canceled = false
+    init(_ exporter: AVAssetExportSession) { self.exporter = exporter }
+    func start(continuation: CheckedContinuation<Void, Error>, completion: @escaping @Sendable () -> Void) {
+        queue.async {
+            if self.canceled { continuation.resume(throwing: CancellationError()) }
+            else { self.exporter.exportAsynchronously(completionHandler: completion) }
+        }
+    }
+    func cancel() {
+        queue.async {
+            self.canceled = true
+            self.exporter.cancelExport()
+        }
     }
 }

@@ -44,6 +44,7 @@ export async function publishCompletedMediaUpload(input: {
   firestore: Firestore;
   uploadRef: DocumentReference;
   nowMillis: number;
+  expectedLeaseToken?: string;
 }): Promise<ReadyResult> {
   return input.firestore.runTransaction(async (transaction) => {
     const upload = await transaction.get(input.uploadRef);
@@ -77,6 +78,9 @@ export async function publishCompletedMediaUpload(input: {
         reason: "already_ready",
         seq: Number(data.seq),
       };
+    }
+    if (input.expectedLeaseToken !== undefined && data.leaseToken !== input.expectedLeaseToken) {
+      return {...base, published: false, duplicate: false, reason: "stale_execution", seq: null};
     }
     if (data.processingStatus !== "processing" ||
         typeof data.leaseToken !== "string" || !data.leaseToken ||
