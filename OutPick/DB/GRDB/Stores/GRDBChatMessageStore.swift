@@ -12,6 +12,9 @@ final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
         guard !messages.isEmpty else { return }
         try await database.dbPool.write { db in
             for message in messages {
+                if message.seq <= 0,
+                   try Int.fetchOne(db, sql: "SELECT 1 FROM chatMessage WHERE roomID = ? AND id = ? AND seq > 0",
+                       arguments: [message.roomID, message.ID]) != nil { continue }
                 guard let record = ChatMessageRecordMapper.record(from: message) else { continue }
                 try record.insert(db, onConflict: .replace)
                 try db.execute(
@@ -65,6 +68,16 @@ final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
                 message.attachments = self.stableFailedOutgoingAttachments(from: row, fallback: message.attachments)
                 return message
             }
+        }
+    }
+
+    func deleteUnconfirmedMessage(id messageID: String, inRoom roomID: String) async throws {
+        try await database.dbPool.write { db in
+            guard try Int.fetchOne(db, sql: "SELECT 1 FROM chatMessage WHERE roomID = ? AND id = ? AND seq > 0",
+                arguments: [roomID, messageID]) == nil else { return }
+            try ChatMediaIndexSQL.deleteProjections(messageID: messageID, roomID: roomID, in: db)
+            try db.execute(sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?", arguments: [roomID, messageID])
+            try db.execute(sql: "DELETE FROM chatMessage WHERE roomID = ? AND id = ?", arguments: [roomID, messageID])
         }
     }
 

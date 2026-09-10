@@ -47,7 +47,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    private let chatRoomViewModel: ChatRoomViewModel
+    let chatRoomViewModel: ChatRoomViewModel
 
     var roomRoleSession: ChatRoomRoleSession? {
         chatRoomViewModel.roomRoleSession
@@ -90,9 +90,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }()
 
     typealias PendingImageUploadState = ChatPendingMediaUploadState
-    private let pendingMediaUploadStore = ChatPendingMediaUploadStore()
+    let pendingMediaUploadStore = ChatPendingMediaUploadStore()
     let mediaUploadUseCase: ChatMediaUploadUseCaseProtocol
-    private let outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
+    let outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
+    let mediaSelectionUseCase: ChatMediaSelectionUseCase
+    var mediaSelectionTasks: [String: Task<Void, Never>] = [:]
+    var mediaSessionStopped = false
+    var mediaConfirmationsInFlight: Set<String> = []
+    var mediaNetworkFailed = false
+    var mediaRetryIDs: Set<String> = []
+    private var mediaRestartIDs: Set<String> = []
+    var mediaFailedSelectionIDs: Set<String> = []
+    var mediaDeletingSelectionIDs: Set<String> = []
     
     // MARK: - Managers (의존성 주입)
     private let attachmentImageLoader: ChatAttachmentImageLoading
@@ -105,6 +114,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     weak var router: ChatRoomRouting?
 
     init(
+        mediaSelectionUseCase: ChatMediaSelectionUseCase,
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
         outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
@@ -116,6 +126,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         profileSyncManager: ChatProfileSyncManaging,
         viewModel: ChatRoomViewModel
     ) {
+        self.mediaSelectionUseCase = mediaSelectionUseCase
         self.mediaUploadUseCase = mediaUploadUseCase
         self.outgoingOutboxUseCase = outgoingOutboxUseCase
         self.attachmentImageLoader = attachmentImageLoader
@@ -333,7 +344,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var lastContainerViewOriginY: Double = 0
 
     @MainActor
-    private var isParticipantPreviewMode: Bool {
+    var isParticipantPreviewMode: Bool {
         guard let room else { return false }
         return chatRoomViewModel.isCurrentUserParticipant(in: room) == false
     }
@@ -378,6 +389,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        if mediaSessionStopped {
+            mediaSessionStopped = false
+            if let room { Task { [weak self] in await self?.restoreMediaSession(room: room) } }
+        }
         guard isParticipantPreviewMode == false else {
             refreshRoomAccessIfNeeded()
             return
@@ -422,6 +437,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
+        // 방 내부 사진 보기·정보 화면에 가려져도 전송은 유지한다.
+        // 실제 경로 이탈은 viewDidDisappear의 route 판정에서 중단한다.
         profileSyncManager.reset()
         removeReadMarkerIfNeeded()
         
@@ -446,6 +463,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
 
         if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
+            stopMediaSelectionSession()
             onRouteRemoved?(self)
         }
     }
@@ -1101,6 +1119,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     func finishRouteLifecycleForCoordinator() {
         _ = routeLifecycleState.finishForReplacement()
+        stopMediaSelectionSession()
         latestJumpTask?.cancel()
         latestJumpTask = nil
         clearRealtimePreviewCard()
@@ -1113,9 +1132,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // 수신 메시지를 저장 및 UI 반영
     @MainActor
-    private func handleIncomingMessage(_ message: ChatMessage) async {
+    func handleIncomingMessage(_ message: ChatMessage) async {
         guard self.room != nil else { return }
         if message.roomID != chatRoomViewModel.roomID { return }
+        guard !mediaConfirmationsInFlight.contains(message.ID) else { return }
+        let isPendingMedia = pendingMediaUploadStore.uploadState(for: message.ID) != nil
+        if isPendingMedia { mediaConfirmationsInFlight.insert(message.ID) }
+        defer { if isPendingMedia { mediaConfirmationsInFlight.remove(message.ID) } }
         let admittedMessage: ChatMessage
         do {
             admittedMessage = try await chatRoomViewModel.sanitizeForAdmission(message)
@@ -1134,8 +1157,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
 
         if pendingMediaUploadStore.uploadState(for: message.ID) != nil {
+            if let local = stagedMessageForOutbox(messageID: message.ID) {
+                for attachment in message.attachments {
+                    if let old = local.attachments.first(where: { $0.index == attachment.index }) {
+                        await attachmentImageLoader.preserveLocalPreview(from: old.pathThumb, for: attachment.thumbResourcePath)
+                    }
+                }
+            }
             pendingMediaUploadStore.completeImageUpload(for: message.ID)
             pendingMediaUploadStore.completeVideoUpload(for: message.ID)
+            #if DEBUG
+            print("[MediaQA] event=image_pending_cleared messageID=\(message.ID) uptime=\(ProcessInfo.processInfo.systemUptime) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) source=socket")
+            #endif
             await outgoingOutboxUseCase.completeServerConfirmedMessage(message)
         }
 
@@ -1152,7 +1185,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
             let hasImages = message.hasDisplayableImages
             let hasVideos = message.hasDisplayableVideos
-            if hasImages || hasVideos {
+            if (hasImages || hasVideos) && !isPendingMedia {
                 await withTaskGroup(of: Void.self) { group in
                     group.addTask { [weak self] in
                         guard let self else { return }
@@ -1177,14 +1210,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 }
             }
             scheduleProfileCacheRefresh(for: [message])
-            addMessages([message]) { [weak self] in
-                guard let self else { return }
-                if !self.dismissRealtimePreviewIfVisible(targetSeq: message.seq),
-                   wasNearBottom {
-                    self.renderLatestMessageJump()
-                    self.scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
+            await withCheckedContinuation { (completion: CheckedContinuation<Void, Never>) in
+                addMessages([message]) { [weak self] in
+                    defer { completion.resume() }
+                    guard let self else { return }
+                    if !self.dismissRealtimePreviewIfVisible(targetSeq: message.seq),
+                       wasNearBottom {
+                        self.renderLatestMessageJump()
+                        self.scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
+                    }
+                    self.reportVisibleReadFrontier()
                 }
-                self.reportVisibleReadFrontier()
             }
         }
 
@@ -1192,6 +1228,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             try await chatRoomViewModel.persistIncomingMessage(message)
         } catch {
             print("❌ 메시지 저장 실패: \(error)")
+        }
+        if message.seq > 0 {
+            // Socket/상태 조회 어느 경로든 정상 메시지 UI 반영 후 다음 묶음을 허용한다.
+            await mediaUploadUseCase.finishImageUploadTurn(uploadID: message.ID)
         }
     }
     
@@ -2351,12 +2391,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func performLocalFailedMessageDelete(_ message: ChatMessage) {
+        guard messageWindowStore.message(for: message.ID)?.seq ?? 0 <= 0 else { return }
         guard message.isFailed || pendingMediaUploadStore.uploadState(for: message.ID) == .expired else { return }
+        mediaDeletingSelectionIDs.insert(message.ID)
+        let selectionTask = mediaSelectionTasks[message.ID]
+        selectionTask?.cancel()
+        let uploadTask = pendingMediaUploadStore.cancelTask(for: message.ID)
         pendingMediaUploadStore.completeImageUpload(for: message.ID)
         pendingMediaUploadStore.completeVideoUpload(for: message.ID)
         removeMessageFromWindow(messageID: message.ID)
         Task { [weak self] in
             guard let self else { return }
+            defer { self.mediaDeletingSelectionIDs.remove(message.ID) }
+            await selectionTask?.value
+            await uploadTask?.value
+            if let selection = try? await self.mediaSelectionUseCase.selection(message.ID) {
+                try? await self.mediaSelectionUseCase.deleteSelection(selection.selectionID)
+                return
+            }
             await self.outgoingOutboxUseCase.deleteLocalFailedMessage(message)
         }
     }
@@ -2500,6 +2552,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
+    func finishStagedMediaPresentation() async {
+        await withCheckedContinuation { (completion: CheckedContinuation<Void, Never>) in
+            dataSource.apply(dataSource.snapshot(), animatingDifferences: false) {
+                completion.resume()
+            }
+        }
+    }
+
+    @MainActor
     func stagePendingImageMessage(
         room: ChatRoom,
         roomID: String,
@@ -2522,7 +2583,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return false
         }
 
-        addMessages([pendingMessage], updateType: .newer)
+        if stagedMessageForOutbox(messageID: messageID) == nil {
+            addMessages([pendingMessage], updateType: .newer)
+        } else {
+            _ = messageWindowStore.updateMessage(id: messageID) { $0.attachments = pendingMessage.attachments }
+        }
         reconfigureMessageItem(messageID: messageID)
         chatMessageCollectionView.scrollToBottom()
         return true
@@ -2530,11 +2595,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func setPendingImageUploadState(_ state: PendingImageUploadState, for messageID: String) {
+        if pendingMediaUploadStore.isServerReady(messageID), state.presentationState == .failure { return }
+        guard pendingMediaUploadStore.imageUploadState(for: messageID) != nil,
+              (messageWindowStore.message(for: messageID)?.seq ?? 0) == 0 else { return }
         let previousPresentation = pendingMediaUploadStore.uploadState(for: messageID)?.presentationState
         pendingMediaUploadStore.setImageUploadState(state, for: messageID)
         _ = messageWindowStore.updateMessage(id: messageID) { message in
             message.isFailed = (state == .failed)
         }
+        if updateVisibleRecoveryIfPossible(messageID: messageID) { return }
         guard previousPresentation != state.presentationState else { return }
         reconfigureMessageItem(messageID: messageID)
     }
@@ -2580,6 +2649,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     func markOutgoingMessageFailed(_ message: ChatMessage, error: Error?) async {
+        guard (messageWindowStore.message(for: message.ID)?.seq ?? 0) == 0 else { return }
         await outgoingOutboxUseCase.markFailed(message: message, error: error)
     }
 
@@ -2612,11 +2682,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func setPendingVideoUploadState(_ state: PendingImageUploadState, for messageID: String) {
+        if pendingMediaUploadStore.isServerReady(messageID), state.presentationState == .failure { return }
+        guard pendingMediaUploadStore.videoUploadState(for: messageID) != nil,
+              (messageWindowStore.message(for: messageID)?.seq ?? 0) == 0 else { return }
         let previousPresentation = pendingMediaUploadStore.uploadState(for: messageID)?.presentationState
         pendingMediaUploadStore.setVideoUploadState(state, for: messageID)
         _ = messageWindowStore.updateMessage(id: messageID) { message in
             message.isFailed = (state == .failed)
         }
+        if updateVisibleRecoveryIfPossible(messageID: messageID) { return }
         guard previousPresentation != state.presentationState else { return }
         reconfigureMessageItem(messageID: messageID)
     }
@@ -2680,6 +2754,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         didRestoreMediaOutbox = true
         Task { [weak self] in
             guard let self else { return }
+            self.mediaSessionStopped = false
+            await self.restoreMediaSelections(room: room)
             let records = await self.outgoingOutboxUseCase.pendingMediaRecords(roomID: room.id)
             for record in records {
                 guard let retry = await self.outgoingOutboxUseCase.retryPayload(
@@ -2838,22 +2914,26 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func resumeStatusMonitoring(
+    func resumeStatusMonitoring(
         roomID: String,
         messageID: String,
         clientMutationID: String,
         isVideo: Bool,
         snapshot: ChatMediaProcessingSnapshot
     ) {
+        if isVideo { setPendingVideoUploadState(.waitingForTurn, for: messageID) }
+        else { setPendingImageUploadState(.waitingForTurn, for: messageID) }
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.monitorMediaProcessing(
+            await self.performQueuedMediaContinuation(messageID: messageID, isVideo: isVideo) {
+                await self.monitorMediaProcessing(
                 roomID: roomID,
                 messageID: messageID,
                 clientMutationID: clientMutationID,
                 isVideo: isVideo,
                 initial: snapshot
-            )
+                )
+            }
             await MainActor.run {
                 if isVideo {
                     self.pendingMediaUploadStore.finishVideoUploadTask(for: messageID)
@@ -2870,9 +2950,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func scheduleUploadedImageFinalize(room: ChatRoom, messageID: String, attachments: [Attachment]) {
+        setPendingImageUploadState(.waitingForTurn, for: messageID)
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.finalizeUploadedImageMessage(room: room, messageID: messageID, attachments: attachments)
+            await self.performQueuedMediaContinuation(messageID: messageID, isVideo: false) {
+                await self.finalizeUploadedImageMessage(room: room, messageID: messageID, attachments: attachments)
+            }
             await MainActor.run {
                 self.pendingMediaUploadStore.finishImageUploadTask(for: messageID)
             }
@@ -2884,9 +2967,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func scheduleUploadedVideoFinalize(roomID: String, messageID: String, payload: VideoMetaPayload) {
+        setPendingVideoUploadState(.waitingForTurn, for: messageID)
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.finalizeUploadedVideoMessage(roomID: roomID, messageID: messageID, payload: payload)
+            await self.performQueuedMediaContinuation(messageID: messageID, isVideo: true) {
+                await self.finalizeUploadedVideoMessage(roomID: roomID, messageID: messageID, payload: payload)
+            }
             await MainActor.run {
                 self.pendingMediaUploadStore.finishVideoUploadTask(for: messageID)
             }
@@ -2903,6 +2989,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func markMessageSendFailed(messageID: String) {
+        guard messageWindowStore.message(for: messageID)?.seq ?? 0 <= 0 else { return }
         _ = messageWindowStore.updateMessage(id: messageID) { message in
             message.isFailed = true
         }
@@ -2936,10 +3023,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func finishPendingImageUpload(messageID: String) {
+        #if DEBUG
+        let hadPendingState = pendingMediaUploadStore.imageUploadState(for: messageID) != nil
+        #endif
         pendingMediaUploadStore.completeImageUpload(for: messageID)
         if !updateVisibleRecoveryIfPossible(messageID: messageID) {
             reconfigureMessageItem(messageID: messageID)
         }
+        #if DEBUG
+        if hadPendingState {
+            print("[MediaQA] event=image_pending_cleared messageID=\(messageID) uptime=\(ProcessInfo.processInfo.systemUptime) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)")
+        }
+        #endif
     }
 
     @MainActor
@@ -3005,11 +3100,22 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     private func performPendingMediaUploadRetry(for messageID: String) {
         guard isParticipantPreviewMode == false else { return }
-        guard let payload = pendingMediaUploadStore.mediaRetryPayload(for: messageID) else {
-            retryOutgoingOutboxMessage(for: messageID)
-            return
+        guard mediaRetryIDs.insert(messageID).inserted else { return }
+        Task { [weak self] in
+            guard let self, let room = self.room else { return }
+            defer { self.mediaRetryIDs.remove(messageID) }
+            if let selection = try? await self.mediaSelectionUseCase.selection(messageID) {
+                self.retryMediaSelection(selection, room: room)
+                return
+            }
+            guard await self.canRestartMedia(messageID: messageID, roomID: room.id) else { return }
+            guard let payload = self.pendingMediaUploadStore.mediaRetryPayload(for: messageID) else {
+                self.retryOutgoingOutboxMessage(for: messageID)
+                return
+            }
+            self.mediaNetworkFailed = false
+            self.scheduleRetryPayload(payload)
         }
-        scheduleRetryPayload(payload)
     }
 
     @MainActor
@@ -3099,27 +3205,41 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         oldMessageID: String,
         pairs: [ProcessedImage]
     ) {
+        guard mediaRestartIDs.insert(oldMessageID).inserted else { return }
         let newMessageID = UUID().uuidString
         guard stagePendingImageMessage(
             room: room,
             roomID: room.id,
             messageID: newMessageID,
             pairs: pairs
-        ), let newMessage = stagedMessageForOutbox(messageID: newMessageID) else { return }
+        ), let newMessage = stagedMessageForOutbox(messageID: newMessageID) else {
+            mediaRestartIDs.remove(oldMessageID)
+            return
+        }
         let oldMessage = stagedMessageForOutbox(messageID: oldMessageID)
         Task { [weak self] in
             guard let self else { return }
+            defer { self.mediaRestartIDs.remove(oldMessageID) }
             await self.stageOutgoingImageOutbox(message: newMessage, pairs: pairs)
+            guard case .uploadImages(_, _, let preservedPairs) = await self.outgoingOutboxUseCase.retryPayload(messageID: newMessageID, room: room) else {
+                self.setPendingImageUploadState(.failed, for: newMessageID)
+                return
+            }
             if let oldMessage {
                 await self.outgoingOutboxUseCase.deleteLocalFailedMessage(oldMessage)
             }
             await MainActor.run {
                 self.pendingMediaUploadStore.completeImageUpload(for: oldMessageID)
                 self.removeMessageFromWindow(messageID: oldMessageID)
+                _ = self.stagePendingImageMessage(room: room, roomID: room.id, messageID: newMessageID, pairs: preservedPairs)
+                guard !self.mediaSessionStopped else {
+                    self.setPendingImageUploadState(.failed, for: newMessageID)
+                    return
+                }
                 self.schedulePendingImageUpload(
                     roomID: room.id,
                     messageID: newMessageID,
-                    pairs: pairs
+                    pairs: preservedPairs
                 )
             }
         }
@@ -3131,37 +3251,60 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         oldMessageID: String,
         prepared: PreparedVideo
     ) {
+        guard mediaRestartIDs.insert(oldMessageID).inserted else { return }
         let newMessageID = UUID().uuidString
         guard stagePendingVideoMessage(
             roomID: roomID,
             messageID: newMessageID,
             prepared: prepared
-        ), let newMessage = stagedMessageForOutbox(messageID: newMessageID) else { return }
+        ), let newMessage = stagedMessageForOutbox(messageID: newMessageID) else {
+            mediaRestartIDs.remove(oldMessageID)
+            return
+        }
         let oldMessage = stagedMessageForOutbox(messageID: oldMessageID)
         Task { [weak self] in
             guard let self else { return }
+            defer { self.mediaRestartIDs.remove(oldMessageID) }
             await self.stageOutgoingVideoOutbox(message: newMessage, prepared: prepared)
+            guard let room = self.room,
+                  case .uploadVideo(_, _, let preservedVideo) = await self.outgoingOutboxUseCase.retryPayload(messageID: newMessageID, room: room) else {
+                self.setPendingVideoUploadState(.failed, for: newMessageID)
+                return
+            }
             if let oldMessage {
                 await self.outgoingOutboxUseCase.deleteLocalFailedMessage(oldMessage)
             }
             await MainActor.run {
                 self.pendingMediaUploadStore.completeVideoUpload(for: oldMessageID)
                 self.removeMessageFromWindow(messageID: oldMessageID)
+                _ = self.stagePendingVideoMessage(roomID: roomID, messageID: newMessageID, prepared: preservedVideo)
+                guard !self.mediaSessionStopped else {
+                    self.setPendingVideoUploadState(.failed, for: newMessageID)
+                    return
+                }
                 self.schedulePendingVideoUpload(
                     roomID: roomID,
                     messageID: newMessageID,
-                    prepared: prepared
+                    prepared: preservedVideo
                 )
             }
         }
     }
 
     private func pendingRecoveryState(for messageID: String) -> ChatMessageCell.MediaUploadRecoveryState? {
-        guard let state = pendingMediaUploadStore.uploadState(for: messageID) else { return nil }
-        switch state.presentationState {
-        case .silent:
-            return nil
-        case .failure:
+        guard let state = pendingMediaUploadStore.uploadState(for: messageID) else {
+            guard let message = messageWindowStore.message(for: messageID), message.isFailed,
+                  !message.attachments.isEmpty else { return nil }
+            return .failed
+        }
+        switch state {
+        case .waitingForTurn:
+            return .waiting(messageWindowStore.message(for: messageID)?.attachments.count ?? 0)
+        case .uploading(let fraction):
+            return .uploading(fraction)
+        case .waitingForSlot, .queued, .processing:
+            return .processing
+        case .failed, .expired:
             return .failed
         }
     }
@@ -3205,7 +3348,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func removeMessageFromWindow(messageID: String) {
+    func removeMessageFromWindow(messageID: String) {
         let mutation = messageWindowStore.removeMessage(id: messageID)
         applyWindowSnapshot(mutation.items, animatingDifferences: true)
     }
@@ -4188,9 +4331,16 @@ extension ChatViewController {
                 if name == UIApplication.didBecomeActiveNotification {
                     Task { @MainActor [weak self] in
                         self?.refreshRoomAccessIfNeeded(force: true)
+                        if let self, self.mediaSessionStopped, self.viewIfLoaded?.window != nil {
+                            self.mediaSessionStopped = false
+                            if let room = self.room { await self.restoreMediaSession(room: room) }
+                        }
                     }
                 } else {
                     self?.flushLastReadSeq(trigger: name.rawValue)
+                    if name == UIApplication.didEnterBackgroundNotification {
+                        Task { @MainActor [weak self] in self?.stopMediaSelectionSession() }
+                    }
                 }
             }
             appLifecycleObservers.append(observer)

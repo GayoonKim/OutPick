@@ -17,6 +17,7 @@ protocol ChatAttachmentImageLoading {
     func storeOutgoingPreview(data: Data, forKey key: String) async
     func cachedOutgoingPreview(forKey key: String) async -> UIImage?
     func removeCachedImage(for path: String) async
+    func preserveLocalPreview(from localPath: String, for remotePath: String) async
 }
 
 extension ChatAttachmentImageLoading {
@@ -25,4 +26,5 @@ extension ChatAttachmentImageLoading {
     }
 
     func removeCachedImage(for path: String) async {}
+    func preserveLocalPreview(from localPath: String, for remotePath: String) async {}
 }

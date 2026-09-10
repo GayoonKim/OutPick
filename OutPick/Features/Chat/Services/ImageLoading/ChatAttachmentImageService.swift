@@ -133,6 +133,24 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         await pipelines.outgoingPreview.cachedImage(path: outgoingPreviewKey(for: key))
     }
 
+    func preserveLocalPreview(from localPath: String, for remotePath: String) async {
+        guard let local = loadLocalImage(from: localPath),
+              let data = local.jpegData(compressionQuality: 0.7) else { return }
+        // 서버 파일은 수정하지 않는다. 정상 버블의 작은 로컬 cache만 먼저 연결한다.
+        try? await pipelines.remote.storeImageData(data, path: remotePath)
+    }
+
+    private static func decodePreview(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1024,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
+    }
+
     func removeCachedImage(for path: String) async {
         imageDataCache.removeObject(forKey: path as NSString)
         await pipelines.remote.removeImage(path: path)
@@ -189,12 +207,14 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
                     folderName: "ChatImageCache",
                     maxSizeBytes: 350 * 1024 * 1024,
                     trimTargetBytes: 280 * 1024 * 1024
-                )
+                ),
+                decoder: { decodePreview($0) }
             ),
             outgoingPreview: ImageCachePipeline(
                 fetcher: { _, _ in throw URLError(.fileDoesNotExist) },
                 memory: ImageCacheMemoryStore(totalCostLimitBytes: 80 * 1024 * 1024),
-                disk: ImageCacheDiskStore(folderName: "ThumbCache")
+                disk: ImageCacheDiskStore(folderName: "ThumbCache"),
+                decoder: { decodePreview($0) }
             )
         )
     }

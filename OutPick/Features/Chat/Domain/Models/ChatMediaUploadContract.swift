@@ -22,6 +22,11 @@ struct ChatMediaSourceDescriptor: Codable, Equatable, Sendable {
     let sha256: String
     let mediaFormat: String
     let isAnimated: Bool
+    let role: String
+    let attachmentIndex: Int
+    let width: Int
+    let height: Int
+    let duration: Double
 
     init(
         index: Int,
@@ -30,7 +35,12 @@ struct ChatMediaSourceDescriptor: Codable, Equatable, Sendable {
         sizeBytes: Int64,
         sha256: String,
         mediaFormat: String,
-        isAnimated: Bool
+        isAnimated: Bool,
+        role: String = "display",
+        attachmentIndex: Int? = nil,
+        width: Int = 0,
+        height: Int = 0,
+        duration: Double = 0
     ) {
         self.index = index
         self.fileURL = fileURL
@@ -39,6 +49,11 @@ struct ChatMediaSourceDescriptor: Codable, Equatable, Sendable {
         self.sha256 = sha256
         self.mediaFormat = mediaFormat
         self.isAnimated = isAnimated
+        self.role = role
+        self.attachmentIndex = attachmentIndex ?? index
+        self.width = width
+        self.height = height
+        self.duration = duration
     }
 }
 

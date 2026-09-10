@@ -361,6 +361,7 @@ final class ImageCachePipeline {
     private static let sharedLoadLimiter = ImageCacheAsyncLimiter(6)
 
     private let fetcher: Fetcher
+    private let decoder: @Sendable (Data) -> UIImage?
     private let memory: ImageCacheMemoryStore
     private let disk: ImageCacheDiskStore
     private let inflight: ImageCacheInFlightRegistry
@@ -375,9 +376,11 @@ final class ImageCachePipeline {
         disk: ImageCacheDiskStore = ImageCacheDiskStore(),
         inflight: ImageCacheInFlightRegistry = ImageCacheInFlightRegistry(),
         prefetchRegistry: ImageCachePrefetchRegistry = ImageCachePrefetchRegistry(),
-        loadLimiter: ImageCacheAsyncLimiter = ImageCachePipeline.sharedLoadLimiter
+        loadLimiter: ImageCacheAsyncLimiter = ImageCachePipeline.sharedLoadLimiter,
+        decoder: @escaping @Sendable (Data) -> UIImage? = { UIImage(data: $0) }
     ) {
         self.fetcher = fetcher
+        self.decoder = decoder
         self.memory = memory
         self.disk = disk
         self.inflight = inflight
@@ -394,7 +397,7 @@ final class ImageCachePipeline {
             return cached
         }
         if let data = await disk.read(forKey: key),
-           let diskImage = UIImage(data: data) {
+           let diskImage = decoder(data) {
             memory.set(diskImage, forKey: key)
             return diskImage
         }
@@ -426,7 +429,7 @@ final class ImageCachePipeline {
         }
 
         if let data = await disk.read(forKey: key),
-           let diskImage = UIImage(data: data) {
+           let diskImage = decoder(data) {
             memory.set(diskImage, forKey: key)
             LookbookImageLoadDebugLog.log(
                 "cache hit(disk) \(pathDetails) bytes=\(data.count)"
@@ -451,7 +454,7 @@ final class ImageCachePipeline {
                 )
 
                 let decodeStartedAt = CFAbsoluteTimeGetCurrent()
-                guard let image = UIImage(data: downloaded) else {
+                guard let image = decoder(downloaded) else {
                     throw ImageCachePipelineError.invalidImageData
                 }
                 let decodeElapsed = LookbookImageLoadDebugLog.milliseconds(
@@ -487,7 +490,7 @@ final class ImageCachePipeline {
 
     func storeImageData(_ data: Data, path: String) async throws {
         let key = canonicalKey(for: path)
-        guard let image = UIImage(data: data) else {
+        guard let image = decoder(data) else {
             throw ImageCachePipelineError.invalidImageData
         }
 

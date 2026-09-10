@@ -6,12 +6,17 @@ import UniformTypeIdentifiers
 
 enum ChatImageTransportSourceNormalizer {
     static let maxSourceBytes = 15 * 1024 * 1024
-    static let maxLongEdge = 4_096
-    private static let fallbackLongEdges = [4_096, 3_584, 3_072, 2_560, 2_048, 1_536, 1_280, 1_024, 768, 512]
+    static let maxThumbnailBytes = 4 * 1024 * 1024
+    private static let mainQualities = [0.92, 0.80, 0.70]
 
     static func prepare(_ result: PHPickerResult, index: Int) async throws -> ProcessedImage {
         let sourceURL = try await loadOwnedFile(from: result.itemProvider)
         defer { try? FileManager.default.removeItem(at: sourceURL) }
+        return try prepare(sourceURL: sourceURL, index: index)
+    }
+
+    static func prepare(sourceURL: URL, index: Int) throws -> ProcessedImage {
+        try Task.checkCancellation()
         guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
               let sourceType = CGImageSourceGetType(source) else {
             throw MediaError.failedToConvertImage
@@ -31,26 +36,30 @@ enum ChatImageTransportSourceNormalizer {
     ) throws -> ProcessedImage {
         let size = pixelSize(source)
         let bytes = fileBytes(sourceURL)
-        guard bytes > 0, bytes <= maxSourceBytes,
-              max(size.width, size.height) <= maxLongEdge else {
+        guard bytes > 0, bytes <= maxSourceBytes else {
             throw MediaError.sourceTooLarge
         }
         let outputURL = try outputURL(extension: "gif")
-        try FileManager.default.copyItem(at: sourceURL, to: outputURL)
-        guard let thumb = ImageThumbnailDataMaker.makeData(from: source) else {
+        try ChatGIFMetadataStripper.stripped(Data(contentsOf: sourceURL)).write(to: outputURL, options: .atomic)
+        guard let image = normalizedSRGBImage(source: source, maxPixel: max(size.width, size.height)) else {
+            try? FileManager.default.removeItem(at: outputURL)
             throw MediaError.failedToCreateImageData
         }
+        let thumbURL: URL
+        do { thumbURL = try makeThumbnailFile(image) }
+        catch { try? FileManager.default.removeItem(at: outputURL); throw error }
         return ProcessedImage(
             index: index,
             originalFileURL: outputURL,
-            thumbData: thumb,
+            thumbData: Data(),
             originalWidth: size.width,
             originalHeight: size.height,
-            bytesOriginal: bytes,
+            bytesOriginal: fileBytes(outputURL),
             sha256: sha256(outputURL),
             contentType: "image/gif",
             mediaFormat: "gif",
-            isAnimated: CGImageSourceGetCount(source) > 1
+            isAnimated: CGImageSourceGetCount(source) > 1,
+            thumbFileURL: thumbURL
         )
     }
 
@@ -61,8 +70,12 @@ enum ChatImageTransportSourceNormalizer {
     ) throws -> ProcessedImage {
         let outputType = preservesPNG ? UTType.png.identifier : UTType.jpeg.identifier
         let fileExtension = preservesPNG ? "png" : "jpg"
-        for maxPixel in fallbackLongEdges {
-            guard let image = normalizedSRGBImage(source: source, maxPixel: maxPixel) else { continue }
+        let size = pixelSize(source)
+        guard let image = normalizedSRGBImage(source: source, maxPixel: max(size.width, size.height)) else {
+            throw MediaError.failedToConvertImage
+        }
+        for quality in preservesPNG ? [1.0] : mainQualities {
+            try Task.checkCancellation()
             let outputURL = try outputURL(extension: fileExtension)
             guard let destination = CGImageDestinationCreateWithURL(
                 outputURL as CFURL,
@@ -71,7 +84,7 @@ enum ChatImageTransportSourceNormalizer {
                 nil
             ) else { continue }
             let properties: [CFString: Any] = preservesPNG ? [:] : [
-                kCGImageDestinationLossyCompressionQuality: 0.92
+                kCGImageDestinationLossyCompressionQuality: quality
             ]
             CGImageDestinationAddImage(destination, image, properties as CFDictionary)
             guard CGImageDestinationFinalize(destination) else {
@@ -83,25 +96,53 @@ enum ChatImageTransportSourceNormalizer {
                 try? FileManager.default.removeItem(at: outputURL)
                 continue
             }
-            guard let normalizedSource = CGImageSourceCreateWithURL(outputURL as CFURL, nil),
-                  let thumb = ImageThumbnailDataMaker.makeData(from: normalizedSource) else {
+            let thumbURL: URL
+            do { thumbURL = try makeThumbnailFile(image) }
+            catch {
                 try? FileManager.default.removeItem(at: outputURL)
-                continue
+                throw error
             }
             return ProcessedImage(
                 index: index,
                 originalFileURL: outputURL,
-                thumbData: thumb,
+                thumbData: Data(),
                 originalWidth: image.width,
                 originalHeight: image.height,
                 bytesOriginal: bytes,
                 sha256: sha256(outputURL),
                 contentType: preservesPNG ? "image/png" : "image/jpeg",
                 mediaFormat: preservesPNG ? "png" : "jpeg",
-                isAnimated: false
+                isAnimated: false,
+                thumbFileURL: thumbURL
             )
         }
         throw MediaError.sourceTooLarge
+    }
+
+    /// 저장 해상도는 유지하고 JPEG 품질만 고정한다. 투명 영역은 검정으로 합성한다.
+    static func makeThumbnailFile(_ image: CGImage) throws -> URL {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height,
+                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+            throw MediaError.failedToCreateImageData
+        }
+        let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(rect)
+        context.draw(image, in: rect)
+        let url = try outputURL(extension: "jpg")
+        var keep = false
+        defer { if !keep { try? FileManager.default.removeItem(at: url) } }
+        guard let opaque = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw MediaError.failedToCreateImageData
+        }
+        CGImageDestinationAddImage(destination, opaque, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+        guard CGImageDestinationFinalize(destination), fileBytes(url) > 0,
+              fileBytes(url) <= maxThumbnailBytes else { throw MediaError.sourceTooLarge }
+        keep = true
+        return url
     }
 
     private static func normalizedSRGBImage(source: CGImageSource, maxPixel: Int) -> CGImage? {

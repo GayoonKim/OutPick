@@ -8,6 +8,7 @@
 import Foundation
 
 enum ChatPendingMediaUploadState: Equatable {
+    case waitingForTurn
     case waitingForSlot
     case uploading(Double)
     case queued
@@ -17,8 +18,8 @@ enum ChatPendingMediaUploadState: Equatable {
 
     var presentationState: ChatPendingMediaPresentationState {
         switch self {
-        case .waitingForSlot, .uploading, .queued, .processing:
-            return .silent
+        case .waitingForTurn, .waitingForSlot, .uploading, .queued, .processing:
+            return .inProgress
         case .failed, .expired:
             return .failure
         }
@@ -26,7 +27,7 @@ enum ChatPendingMediaUploadState: Equatable {
 }
 
 enum ChatPendingMediaPresentationState: Equatable {
-    case silent
+    case inProgress
     case failure
 }
 
@@ -46,6 +47,10 @@ enum ChatPendingMediaRetryPayload {
 
 @MainActor
 final class ChatPendingMediaUploadStore {
+    private var serverReadyIDs: Set<String> = []
+
+    func markServerReady(for messageID: String) { serverReadyIDs.insert(messageID) }
+    func isServerReady(_ messageID: String) -> Bool { serverReadyIDs.contains(messageID) }
     private struct PendingImageUploadRecord {
         let room: ChatRoom
         let roomID: String
@@ -85,7 +90,7 @@ final class ChatPendingMediaUploadStore {
             roomID: roomID,
             messageID: messageID,
             pairs: pairs,
-            state: .uploading(0),
+            state: .waitingForTurn,
             task: nil,
             uploadedAttachments: nil
         )
@@ -132,6 +137,13 @@ final class ChatPendingMediaUploadStore {
 
     func completeImageUpload(for messageID: String) {
         imageUploads.removeValue(forKey: messageID)
+        serverReadyIDs.remove(messageID)
+    }
+
+    func cancelTask(for messageID: String) -> Task<Void, Never>? {
+        let task = imageUploads[messageID]?.task ?? videoUploads[messageID]?.task
+        task?.cancel()
+        return task
     }
 
     func setUploadedImageAttachments(_ attachments: [Attachment], for messageID: String) {
@@ -232,6 +244,8 @@ final class ChatPendingMediaUploadStore {
         }
     }
 
+    var activeMessageIDs: [String] { Array(imageUploads.keys) + Array(videoUploads.keys) }
+
     func removeAll() {
         imageUploads.removeAll()
         videoUploads.removeAll()
@@ -268,7 +282,7 @@ final class ChatPendingMediaUploadStore {
             roomID: roomID,
             messageID: messageID,
             prepared: prepared,
-            state: .uploading(0),
+            state: .waitingForTurn,
             task: nil,
             uploadedPayload: nil
         )
@@ -320,6 +334,7 @@ final class ChatPendingMediaUploadStore {
 
     func completeVideoUpload(for messageID: String) {
         videoUploads.removeValue(forKey: messageID)
+        serverReadyIDs.remove(messageID)
     }
 
     func setUploadedVideoPayload(_ payload: VideoMetaPayload, for messageID: String) {

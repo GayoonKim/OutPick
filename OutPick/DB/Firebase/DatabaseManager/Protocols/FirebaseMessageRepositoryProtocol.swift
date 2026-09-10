@@ -9,6 +9,7 @@ import Foundation
 
 /// 메시지 관련 데이터베이스 작업을 위한 프로토콜
 protocol FirebaseMessageRepositoryProtocol {
+    func fetchConfirmedMessage(roomID: String, messageID: String) async throws -> ChatMessage?
     func fetchMessageDeletionRevision(roomID: String) async throws -> Int64
     func fetchDeletionDeltas(roomID: String, afterRevision: Int64, limit: Int) async throws -> [ChatDeletionDelta]
     func fetchDeletionDeltas(roomID: String, messageIDs: [String]) async throws -> [ChatDeletionDelta]
@@ -36,6 +37,10 @@ protocol FirebaseMessageRepositoryProtocol {
 }
 
 extension FirebaseMessageRepositoryProtocol {
+    func fetchConfirmedMessage(roomID: String, messageID: String) async throws -> ChatMessage? {
+        throw ChatMediaUploadError.invalidUploadContract
+    }
+
     func fetchMessageDeletionRevision(roomID: String) async throws -> Int64 {
         throw ChatDeletionSyncError.invalidHead
     }
