@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 
 import {runCloudMediaJob} from "./cloudJob.js";
+import {imageConcurrency} from "./boundedMap.js";
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -10,6 +11,7 @@ export function startImageProcessingService(
 ): void {
   const port = positiveInteger(environment.PORT, "PORT");
   const readyBucket = requiredValue(environment.CHAT_MEDIA_READY_BUCKET, "CHAT_MEDIA_READY_BUCKET");
+  const concurrency = imageConcurrency(environment.CHAT_MEDIA_IMAGE_CONCURRENCY);
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && (request.url === "/" || request.url === "/healthz")) {
       sendJSON(response, 200, {ok: true});
@@ -28,7 +30,7 @@ export function startImageProcessingService(
         return;
       }
       const executionName = `service/${randomUUID()}`;
-      await runCloudMediaJob({uploadPath, leaseToken, kind: "images", readyBucket});
+      await runCloudMediaJob({uploadPath, leaseToken, kind: "images", readyBucket, imageConcurrency: concurrency});
       sendJSON(response, 200, {ok: true, executionName});
     } catch (error) {
       process.stderr.write(`${JSON.stringify({

@@ -15,6 +15,30 @@ import {
   processingSlotIDs,
   type ChatMediaKind,
 } from "./contracts.js";
+import {publishCompletedMediaUpload} from "./readyService.js";
+
+export async function completeSynchronousImageExecution(input: {
+  firestore: Firestore;
+  uploadRef: DocumentReference;
+  leaseToken: string;
+  slotID: string;
+  nowMillis: number;
+}): Promise<void> {
+  const startedAt = Date.now();
+  const result = await publishCompletedMediaUpload({
+    firestore: input.firestore,
+    uploadRef: input.uploadRef,
+    nowMillis: input.nowMillis,
+    expectedLeaseToken: input.leaseToken,
+  });
+  const slot = await input.firestore.collection("chatMediaProcessingSlots").doc(input.slotID).get();
+  if (slot.data()?.leaseToken === input.leaseToken) {
+    // 성공/취소 확정 없이 slot이 남아 있으면 정상 완료로 ACK하지 않는다.
+    throw new Error("image_completion_slot_not_released");
+  }
+  console.info(JSON.stringify({event: "media_dispatch_completion", uploadID: input.uploadRef.id,
+    published: result.published, reason: result.reason, durationMs: Date.now() - startedAt}));
+}
 
 type ClaimResult =
   | {claimed: true; leaseToken: string; slotID: string; kind: ChatMediaKind}

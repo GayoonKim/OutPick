@@ -15,6 +15,7 @@ import { registerRoomHandlers } from "../handlers/roomHandlers.js";
 import { createLookbookShareHandler } from "../lookbookShare/lookbookShareHandler.js";
 import { createDeletionDeliveryWatcher } from "../deletion/deletionDeliveryWatcher.js";
 import { createMediaUploadService } from "../media/mediaUploadService.js";
+import { createDirectMediaUploadService } from "../media/directMediaUploadService.js";
 import { createMediaDeliveryWatcher } from "../media/mediaDeliveryWatcher.js";
 import { createRoleEventDeliveryWatcher } from "../roles/roleEventDeliveryWatcher.js";
 import { createMessageDeliverySingleFlight } from "../messages/messageDeliverySingleFlight.js";
@@ -62,7 +63,12 @@ export function createProductionDependencies({
     db,
     admin,
     clock,
+    directService: createDirectMediaUploadService({db, admin, clock, logger,
+      bucket: env.CHAT_MEDIA_READY_BUCKET ? admin.storage().bucket(env.CHAT_MEDIA_READY_BUCKET) : null,
+      metadataConcurrency: Number(env.CHAT_MEDIA_METADATA_CONCURRENCY || 4)}),
     quarantineBucketName,
+    metadataConcurrency: Number(env.CHAT_MEDIA_METADATA_CONCURRENCY || 1),
+    logger,
     loadQuarantineObject: quarantineBucket
       ? async (path) => {
         const [metadata] = await quarantineBucket.file(path).getMetadata();

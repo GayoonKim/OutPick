@@ -22,6 +22,7 @@ import {
 } from "./contracts.js";
 import {processImage, type ImageProcessingResult} from "./imageProcessor.js";
 import {processVideo, type VideoProcessingResult} from "./videoProcessor.js";
+import {boundedMap} from "./boundedMap.js";
 
 const AUTOMATIC_ATTEMPTS = 3;
 const TERMINAL_RETENTION_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
@@ -33,6 +34,7 @@ export interface CloudJobEnvironment {
   readonly leaseToken: string;
   readonly kind: CloudJobKind;
   readonly readyBucket: string;
+  readonly imageConcurrency?: number;
 }
 
 interface SourceManifestEntry {
@@ -107,6 +109,11 @@ export async function runCloudMediaJob(
   const snapshot = await uploadRef.get();
   const reservation = validateReservation(snapshot.data(), environment);
   const workingDirectory = await mkdtemp(path.join(tmpdir(), "chat-media-job-"));
+  const writtenObjects: Array<{path: string; generation: string}> = [];
+  const cpuStarted = process.cpuUsage();
+  let peakRSSBytes = process.memoryUsage().rss;
+  const memorySampler = setInterval(() => { peakRSSBytes = Math.max(peakRSSBytes, process.memoryUsage().rss); }, 50);
+  memorySampler.unref();
   const allReadyPaths = reservation.sourceManifest.flatMap((source) => [
     readyObjectPath(
       reservation.roomID, reservation.uploadID, source.attachmentID, "display",
@@ -116,30 +123,39 @@ export async function runCloudMediaJob(
     ),
   ]);
   try {
-    const normalizedManifest: NormalizedManifestEntry[] = [];
-    const technicalValidationResult: Record<string, unknown>[] = [];
-    for (const [index, source] of reservation.sourceManifest.entries()) {
+    const concurrency = reservation.kind === "images" ? environment.imageConcurrency ?? 1 : 1;
+    const startedAt = Date.now();
+    const results = await boundedMap(reservation.sourceManifest, concurrency, async (source, index) => {
       const attachmentDirectory = path.join(workingDirectory, String(index));
+      const stageStartedAt = Date.now();
+      let stageAt = stageStartedAt;
+      const timings: Record<string, number> = {};
+      const mark = (stage: string): void => { const now = Date.now(); timings[stage] = now - stageAt; stageAt = now; };
+      try {
+      await assertLease(dependencies.firestore, environment);
       const inputPath = path.join(attachmentDirectory, "source");
       const outputDirectory = path.join(attachmentDirectory, "output");
       await mkdir(attachmentDirectory, {recursive: true});
       await dependencies.storage.bucket(reservation.quarantineBucket)
-        .file(source.path)
+        .file(source.path, {generation: source.generation})
         .download({destination: inputPath, validation: "crc32c"});
+      mark("downloadMs");
       if (await sha256File(inputPath) !== source.sha256) {
         throw new MediaProcessingError("invalidInput", "업로드 source SHA-256이 예약과 다릅니다.");
       }
+      mark("hashMs");
       const result = reservation.kind === "images" ?
         await processImage(inputPath, outputDirectory, source.contentType) :
         await processVideo(inputPath, outputDirectory);
+      mark("transformMs");
       const displayPath = readyObjectPath(
         reservation.roomID, reservation.uploadID, source.attachmentID, "display",
       );
       const thumbnailPath = readyObjectPath(
         reservation.roomID, reservation.uploadID, source.attachmentID, "thumbnail",
       );
-      const [display, thumbnail] = await Promise.all([
-        uploadResult({
+      const [display, thumbnail] = await boundedMap([
+        {
           storage: dependencies.storage,
           bucketName: environment.readyBucket,
           localPath: result.normalizedPath,
@@ -147,8 +163,8 @@ export async function runCloudMediaJob(
           contentType: resultContentType(result),
           environment,
           source,
-        }),
-        uploadResult({
+        },
+        {
           storage: dependencies.storage,
           bucketName: environment.readyBucket,
           localPath: result.thumbnailPath,
@@ -156,9 +172,13 @@ export async function runCloudMediaJob(
           contentType: "image/jpeg",
           environment,
           source,
-        }),
-      ]);
-      normalizedManifest.push({
+        },
+      ], 2, async (input) => {
+        return uploadResult({...input, firestore: dependencies.firestore,
+          onStored: (objectPath, generation) => { writtenObjects.push({path: objectPath, generation}); }});
+      });
+      mark("storeMs");
+      const manifest: NormalizedManifestEntry = {
         attachmentID: source.attachmentID,
         displayBucket: environment.readyBucket,
         displayPath,
@@ -170,16 +190,24 @@ export async function runCloudMediaJob(
         thumbnailGeneration: thumbnail.generation,
         thumbnailBytes: thumbnail.sizeBytes,
         thumbnailContentType: "image/jpeg",
-      });
-      technicalValidationResult.push(technicalResult(source.attachmentID, result));
-    }
+      };
+      console.info(JSON.stringify({event: "media_worker_attachment", uploadID: reservation.uploadID,
+        index, concurrency, ...timings, durationMs: Date.now() - stageStartedAt, rssBytes: process.memoryUsage().rss}));
+      return {manifest, technical: technicalResult(source.attachmentID, result)};
+      } finally {
+        await rm(attachmentDirectory, {recursive: true, force: true});
+      }
+    });
     await recordWorkerCompletion({
       firestore: dependencies.firestore,
       uploadRef,
       environment,
-      normalizedManifest,
-      technicalValidationResult,
+      normalizedManifest: results.map((result) => result.manifest),
+      technicalValidationResult: results.map((result) => result.technical),
     });
+    console.info(JSON.stringify({event: "media_worker_completed", uploadID: reservation.uploadID,
+      concurrency, count: results.length, durationMs: Date.now() - startedAt, peakRSSBytes,
+      cpuMicroseconds: process.cpuUsage(cpuStarted)}));
   } catch (error) {
     const classified = classifyUnexpectedProcessingError(error);
     const terminal = await settleWorkerFailure({
@@ -198,11 +226,31 @@ export async function runCloudMediaJob(
         readyBucket: environment.readyBucket,
         readyPaths: allReadyPaths,
       });
+    } else {
+      // 취소/lease 교체 후 늦게 완료된 저장은 이 실행이 생성한 generation만 정리한다.
+      const current = await uploadRef.get();
+      if (current.data()?.processingStatus !== "ready") {
+        await boundedMap(writtenObjects, 2, async (object) => {
+          try {
+            await dependencies.storage.bucket(environment.readyBucket)
+              .file(object.path, {generation: object.generation})
+              .delete({ignoreNotFound: true, ifGenerationMatch: object.generation});
+          } catch (error) {
+            if (Number((error as {code?: number}).code) !== 412) throw error;
+          }
+        });
+      }
     }
     throw classified;
   } finally {
+    clearInterval(memorySampler);
     await rm(workingDirectory, {recursive: true, force: true});
   }
+}
+
+async function assertLease(firestore: Firestore, environment: CloudJobEnvironment): Promise<void> {
+  const snapshot = await firestore.doc(environment.uploadPath).get();
+  validateReservation(snapshot.data(), environment);
 }
 
 function runtimeDependencies(): CloudJobDependencies {
@@ -261,6 +309,8 @@ export async function sha256File(filePath: string): Promise<string> {
 }
 
 async function uploadResult(input: {
+  firestore: Firestore;
+  onStored: (path: string, generation: string) => void;
   storage: Storage;
   bucketName: string;
   localPath: string;
@@ -270,10 +320,19 @@ async function uploadResult(input: {
   source: SourceManifestEntry;
 }): Promise<{generation: string; sizeBytes: number}> {
   const bucket = input.storage.bucket(input.bucketName);
+  let previousGeneration: string | number = 0;
+  try {
+    const [previous] = await bucket.file(input.objectPath).getMetadata();
+    previousGeneration = String(previous.generation);
+  } catch (error) {
+    if (Number((error as {code?: number}).code) !== 404) throw error;
+  }
+  await assertLease(input.firestore, input.environment);
   const [file] = await bucket.upload(input.localPath, {
     destination: input.objectPath,
     resumable: true,
     validation: "crc32c",
+    preconditionOpts: {ifGenerationMatch: previousGeneration},
     metadata: {
       contentType: input.contentType,
       cacheControl: "private, max-age=0, no-store",
@@ -285,7 +344,8 @@ async function uploadResult(input: {
       },
     },
   });
-  const [metadata] = await file.getMetadata();
+  // 업로드 응답에 들어 있는 generation을 사용한다. 최신 경로를 재조회하지 않는다.
+  const metadata = file.metadata;
   const generation = String(metadata.generation ?? "");
   const sizeBytes = Number(metadata.size);
   if (!generation || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
@@ -293,6 +353,7 @@ async function uploadResult(input: {
       retryable: true,
     });
   }
+  input.onStored(input.objectPath, generation);
   return {generation, sizeBytes};
 }
 

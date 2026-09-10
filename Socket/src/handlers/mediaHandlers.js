@@ -68,7 +68,8 @@ export function registerMediaHandlers({
       const mediaKind = normalizeMediaKind(kind);
       if (!mediaKind) return callback?.({ ok: false, error: "invalid_media_kind" });
       const isV2 = Number(contractVersion) === 2;
-      if (isV2 && !isValidClientMutationID(String(clientMutationID || ""))) {
+      const isDirect = Number(contractVersion) === 3;
+      if ((isV2 || isDirect) && !isValidClientMutationID(String(clientMutationID || ""))) {
         return callback?.({ ok: false, error: "invalid_client_mutation_id" });
       }
       const contract = (isV2 ? validateMediaUploadContractV2 : validateMediaUploadContract)(
@@ -79,7 +80,7 @@ export function registerMediaHandlers({
       if (!contract.ok) return callback?.({ ok: false, error: contract.error });
 
       const senderUID = normalizeUID(socket.userUID);
-      const access = await authorizeSocketRoom({
+      const access = isDirect ? {ok: true} : await authorizeSocketRoom({
         socket,
         roomID,
         senderUID,
@@ -93,7 +94,11 @@ export function registerMediaHandlers({
         return callback?.({ ok: false, error: "rate_limited" });
       }
 
-      const result = isV2
+      const result = isDirect
+        ? await mediaUploadService.preflightDirect({roomID: String(roomID), uploadID: String(effectiveUploadID),
+          clientMutationID: String(clientMutationID), senderUID, moderationPrincipalID: socket.moderationPrincipalID,
+          kind: mediaKind, contract, sources})
+        : isV2
         ? await mediaUploadService.preflightV2({
           roomID: String(roomID),
           uploadID: String(effectiveUploadID),
@@ -488,7 +493,7 @@ export function registerMediaHandlers({
 
   socket.on("chat:mediaFinalize", async (data, callback) => {
     if (rejectMissingCapability(socket, "createUGC", callback)) return;
-    if (Number(data?.contractVersion) === 2) {
+    if ([2, 3].includes(Number(data?.contractVersion))) {
       try {
         const roomID = String(data?.roomID || "");
         const uploadID = String(data?.uploadID || data?.messageID || "");
@@ -501,7 +506,7 @@ export function registerMediaHandlers({
           return callback?.({ ok: false, error: "invalid_request" });
         }
         const senderUID = normalizeUID(socket.userUID);
-        const access = await authorizeSocketRoom({
+        const access = Number(data?.contractVersion) === 3 ? {ok: true} : await authorizeSocketRoom({
           socket,
           roomID,
           senderUID,
@@ -518,7 +523,9 @@ export function registerMediaHandlers({
         )) {
           return callback?.({ ok: false, error: "rate_limited" });
         }
-        const result = await mediaUploadService.finalizeV2({
+        const finalize = Number(data?.contractVersion) === 3
+          ? mediaUploadService.finalizeDirect : mediaUploadService.finalizeV2;
+        const result = await finalize({
           roomID,
           uploadID,
           clientMutationID,

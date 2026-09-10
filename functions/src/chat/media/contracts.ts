@@ -20,8 +20,14 @@ export function processingSlotIDs(
   projectID: string,
   kind: ChatMediaKind
 ): string[] {
-  const production = projectID === "outpick-664ae";
-  const count = kind === "images" ? (production ? 4 : 1) : 1;
+  // 프로젝트별 자원 확대는 배포 환경 설정으로 조절하며 초기 전체 실행량은 1이다.
+  const key = kind === "images" ?
+    "CHAT_MEDIA_IMAGE_EXECUTION_LIMIT" : "CHAT_MEDIA_VIDEO_EXECUTION_LIMIT";
+  const configured = Number(process.env[key] ?? "1");
+  if (!Number.isInteger(configured) || configured < 1 || configured > 100) {
+    throw new Error(`Invalid ${key} for ${projectID}`);
+  }
+  const count = configured;
   const prefix = kind === "images" ? "image" : "video";
   return Array.from({length: count}, (_, index) => `${prefix}-${index}`);
 }
