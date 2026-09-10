@@ -1,5 +1,25 @@
 # OutPick Entrypoints
 
+- 다음 최우선 작업은 `tasks/active.md`의 미디어 버블 이미지 깜빡임 제거다. 이번 변경에는 구현하지 않았다. 직접 업로드는 Development 배포/3장·70장 전송 확인 완료, Production 미배포다. 아래 단계별 과거 미배포·병렬 묶음 기술은 최신 CHAT/FIREBASE 계약을 우선한다.
+
+- 실제 직접 업로드 QA의 동시 초기화 회귀: `ChatMediaForegroundUploadService.swift`에서 URLSession 최초 접근/작업 생성을 stateQueue로 직렬화한다. `ChatMediaForegroundUploaderTests.swift`가 URLProtocol fake로 동시 첫 업로드 30개의 완료를 검증한다.
+
+- 최신 직접 업로드 구현(미배포): `ChatImageTransportSourceNormalizer`/`ChatGIFMetadataStripper` → 파일 기반 `ProcessedImage`/`PreparedVideo` → `ChatMediaUploadUseCase` 첨부당 display/thumbnail → `RealtimeSocketService` 계약3 → `Socket/src/media/directMediaUploadService.js` 최종 경로 signed PUT·metadata 확인·메시지 원자 확정. `functions/src/chat/media/directUploadCleanup.ts` 취소/만료 정리. 상세 구현·QA는 CHAT와 `tasks/chat-media-bounded-parallel-upload/direct-upload-detailed-design.md` 참조.
+
+- 최신 순차 묶음 전송: CHAT의 「최신: 묶음 순차 전송」. `ChatViewController+MediaSelection` 최종버블 선표시 → Container FIFO1 → UploadUseCase 묶음내 PUT4 → VC 메시지 UI 반영/실패후 반환. `ChatMediaBatchProgress` 합산진행률, PendingStore/Cell/ProgressView 고정원형+장수. [승인 설계](tasks/chat-media-bounded-parallel-upload/design.md).
+
+- 원본 확보 중복콜백 크래시: `ChatMediaSourceAcquisition.swift` 최초callback gate, `OutPickTests/ChatMediaSourceAcquisitionTests.swift` 오류→취소/중복성공/동시콜백 회귀. CHAT 진입점과 서버pipeline QA 보고서 최신항목 참조.
+
+- 사진 선택 후 버블 없음 진단: CHAT의 원본 확보 DEBUG 항목. `ChatViewController+MediaSelection.swift` → `ChatMediaSelectionUseCase.swift` → `ChatMediaSourceAcquisition.swift`에서 대기열/원장/파일 provider/복사 단계와 오류 domain·code만 기록한다.
+
+- 정상 이미지 처리 후30초재시도 제거: FIREBASE의 dispatcher 완료 barrier 항목. `functions/src/chat/media/{functions,orchestrationService,readyService}.ts`가 worker 완료→ready/slot반환→Task응답 순서를 연결한다. 상세 QA/설계는 `tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md`.
+
+- 미디어 finalize 통합·서버 제한 병렬: `tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md`. 앱 복구 계약은 CHAT, Socket/worker 설정·측정은 FIREBASE, 자동 회귀는 TESTS 진입점 참조. 실측 최적값 미확정.
+
+- 미디어 전송 진행 표시: `OutPick/Features/Chat/Views/ChatMediaUploadProgressView.swift` → `ChatMessageCell.applyMediaUploadRecoveryState` → `ChatViewController.pendingRecoveryState`/`updateVisibleRecoveryIfPossible`. 원본 확보 후 사진 덮개·원형 진행, 서버 확인 중 회전, 성공 제거, 실패 회전 제거/기존 복구 버튼. 상태·재사용·렌더링 테스트 `OutPickTests/ChatMediaUploadProgressViewTests.swift`.
+
+- 실제 미디어 전송 QA·방 내부 사진 보기 취소 결함: `docs/ai/tasks/chat-media-bounded-parallel-upload/qa/iphone14-live-transmission.md` → `ChatViewController.viewDidDisappear`/`finishRouteLifecycleForCoordinator`, `ChatRoomRouteLifecycleStateTests`. 최초70장 전송은 실패이며 사용자 최초 성공 답변은 정정됐다. 최신 수정·재검증 상태는 task progress 최상단을 따른다.
+
 ## 목적
 
 기능 수정이나 새 기능 추가 시 AI 에이전트가 어디부터 봐야 하는지 빠르게 확인하기 위한 인덱스 문서다.
@@ -7,6 +27,10 @@
 루트 문서는 공통 진입점과 세부 문서 링크만 유지한다. 기능별 상세 진입점은 필요한 문서만 추가로 읽는다.
 
 ## 공통 진입점
+
+- iPhone 14 미디어 성능 QA: `OutPickTests/ChatMediaDevicePerformanceTests.swift` → `docs/ai/tasks/chat-media-bounded-parallel-upload/qa/iphone14-performance.md`. synthetic17회는 참고 자료이며 현재 `ChatMediaPipelineLimits.imagePreparation=4`는 실제 전송·스크롤 비교 후보다. 사용자가 실제 picker로 전송하고 Instruments Animation Hitches + Activity Monitor로 기록한다. ‘미디어 QA 방’ 실제 사진3장 ready/첨부3 확정 확인,70장 및2/4비교 진행 상태는 task progress 최상단. 영상은 후속, XCUITest 조작은 미검증.
+
+- 미디어 제한 병렬 전송(2026-09-10 로컬 구현): `ChatViewController+MediaSelection.swift` → `ChatMediaSelectionUseCase`/`ChatMediaSelectionRepository` → `ChatMediaUploadTurnQueue`/`ChatMediaUploadUseCase` → `ChatOutgoingOutboxUseCase`. 전체 원본 확보 barrier, 준비·업로드 제한, queued 직후 실행권 반환, 중단 후 대표 실패 복원은 `entrypoints/CHAT.md`와 `tasks/chat-media-bounded-parallel-upload/`를 따른다. 서버 배포·실기기 QA는 별도다.
 
 - 방별 자동 승계 50초 제한·부분 성공·실패 방 재처리: `functions/src/chat/moderation/{roomSuccessionPolicy,roomSuccessionJobs,roomMembershipSweep,roomMembershipSweepFunctions}.ts` → `firestore-tests/room-succession-deadline.emulator.test.mjs`; 상세는 `entrypoints/FIREBASE.md`와 `DATA_SCHEMA.md`
 - 부모 승계 작업 장애 격리: `roomSuccessionJobs.ts`의 `parentFailurePatch/drainFailedParentRooms/terminalRoom`과 `roomMembershipSweepFunctions.ts` 예약 → 동일 deadline Emulator suite의 부모 실패·claim 경쟁·watchdog·replay 회귀. 실패한 부모의 진단은 자식 성공과 독립 보존한다.

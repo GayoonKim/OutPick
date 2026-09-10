@@ -1,5 +1,28 @@
 # Firebase Entrypoints
 
+- 2026-09-10 Development 직접 업로드 배포: Socket `outpick-socket-development-direct-0910` traffic100%/readyz200, 최종 버킷 `outpick-test-chat-media`, metadata4. 기존 `reconcileChatMediaObjectCleanup` ACTIVE, 복합 인덱스 `CICAgJjm4YQK` READY, ready Storage Rules 반영. Socket의 최종 버킷 objectUser 권한은 사용자 별도 명시 승인 후 추가했다. rollback 리비전 `outpick-socket-development-finalize-0910b`. Production은 미배포이며 새 iOS contract3을 운영 서버보다 먼저 배포하면 안 된다.
+
+- 신규 직접 업로드 contractVersion 3: Socket `src/media/directMediaUploadService.js`에서 최종 버킷 signed PUT·메타데이터 확인·권한 재확인·메시지/ready/delivery job 원자 확정. `CHAT_MEDIA_READY_BUCKET`과 최종 버킷 서명/객체 접근 권한 설정이 배포 전제다. `CHAT_MEDIA_METADATA_CONCURRENCY`는 1...30, 신규 기본 4. 신규 경로는 worker를 호출하지 않는다. 아래 worker 경로는 기존 contractVersion 2 처리용이다.
+- 미확정 직접 업로드 정리: `functions/src/chat/media/directUploadCleanup.ts`를 기존 `reconcileChatMediaObjectCleanup`에서 호출한다. 예약 manifest와 generation으로 삭제를 제한하고 ready/기존 메시지는 보호한다. `firestore.indexes.json`의 contractVersion/cleanupStatus/cleanupAfter 인덱스와 `storage.rules`의 mediaContractVersion 3 read gate 반영이 필요하다. 로컬 구현만 완료했으며 배포 전 실제 signed PUT·read gate·지연 정리 검증은 남아 있다.
+
+- 이미지 완료→다음Task 경계: `functions/src/chat/media/functions.ts#createMediaDispatcherHandler`가 이미지 worker 응답 후 `orchestrationService.ts#completeSynchronousImageExecution`을 await한다. `readyService.ts#publishCompletedMediaUpload(expectedLeaseToken)`이 ready/메시지/seq/slot반환을 한 트랜잭션으로 완료한다. 기존 Firestore 완료 이벤트는 멱등 복구·정리 유지, video Job은 기존 비동기 시작 유지. `media_dispatch_completion` 로그와 `readyService.test.ts`/`dispatcher.test.ts` 참조. 일반 성공 경로의 slot반환 전429/30초대기 방지이며 genuine capacity/장애 backoff 설정은 변경하지 않는다.
+
+- 서버 경로 최적화: Socket `mediaUploadService.finalizeV2` + `media/boundedMap.js`; production DI의 `CHAT_MEDIA_METADATA_CONCURRENCY`(1...8, 기본1). 정상 finalize는 객체당1회 조회로 검증/manifest 공유. worker `cloudJob.ts` + `boundedMap.ts` + `httpService.ts`의 `CHAT_MEDIA_IMAGE_CONCURRENCY`(1...4, 기본1), video1 유지. 사진별 source generation·조건부 저장·stale 객체 정리·진행 중 작업 drain. `media_finalize_metadata`, `media_worker_attachment`, `media_worker_completed` 로그로 단계별 시간/CPU/RSS 확인. 실제 비교 전 최적값 미확정. 상세 `tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md`.
+
+## 2026-09-10 미디어 병렬 전송 Development QA 반영
+
+- 사용자 승인으로 `outpick-test` Socket `outpick-socket-development-media-parallel-0910`100%, `dispatchChatMediaProcessing`1개, receipt expiresAt TTL ACTIVE/인덱스 제외, 이미지 Service min0/max1 반영. Production은 아래 로컬 미배포 상태를 유지한다.
+- 함수 재배포 후 기존 Task 계정의 dispatcher 한정 invoker1건을 복구·확인했다. 기존 Socket env/runtime 계정 유지. 실제 ‘미디어 QA 방’ 사진3장 전송 ready/동일 Message 첨부3 확정을 확인했다. 상세 증거·70장 측정 상태는 해당 task progress 최상단.
+
+## 미디어 병렬 전송 변경 — 로컬 구현, 미배포
+
+- `Socket/src/media/mediaUploadService.js`: 신규 v2 reservation의 사용자 2 image/1 video slot 점유 제거. manifest·membership·sender/principal·clientMutationID 검증 유지. 기존 reservation의 principal slot 반환만 rollout 호환으로 유지한다.
+- `chatMediaReservationReceipts/{sha256([principalID, kind, clientMutationID])}`는 같은 mutation의 다른 uploadID 재예약을 차단한다. uploadPath와 expiresAt만 저장하며 TTL은 예약 최대 24시간 + 처리 최대 6시간 + terminal 7일을 포함하는 9일이다. 기존 terminal MediaUploads의 7일 계약과 구분한다. `firestore.indexes.json`에 receipt expiresAt TTL 추가; 공개 읽기 권한은 추가하지 않는다.
+- 예약 응답 유실 시 missing reservation을 곧바로 재시도하지 않는다. `cancelV2`가 room member 확인 후 canceled tombstone을 생성해 늦은 preflight를 차단한다. 이미 같은 sender의 Messages가 있으면 ready를 반환한다.
+- `functions/src/chat/media/contracts.ts`: 전체 execution slot 기본값 image1/video1, `CHAT_MEDIA_IMAGE_EXECUTION_LIMIT`/`CHAT_MEDIA_VIDEO_EXECUTION_LIMIT` 정수 1...100 설정. 사용자 제한과 전체 worker 처리량 제한을 분리한다.
+- 배포 시 별도 확인: image Cloud Run **Service** min0/max1, video **Job** 전체 execution1. Functions slot 환경 변수, Task dispatch와 Service max instances를 함께 조정한다. Job parallelism만으로 전체 execution 수를 제한할 수 없다. 코드 수정만으로 live Cloud Run/Functions/TTL 설정이 반영되지 않는다.
+- 회귀: `Socket/test/media/mediaUploadService.test.js`, `functions/src/chat/media/contracts.test.ts`; 상세 작업/QA는 `tasks/chat-media-bounded-parallel-upload/`.
+
 ## 목적과 source of truth
 
 Firebase 변경 시 Functions, Firestore, Storage의 실제 경계를 찾기 위한 인덱스다.

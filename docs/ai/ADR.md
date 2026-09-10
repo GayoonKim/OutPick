@@ -1,5 +1,17 @@
 # OutPick ADR
 
+- 2026-09-10 최신 사용자 확정: 최종 미디어는 iOS에서 원해상도 본 파일/썸네일로 생성하고 최종 경로에 직접 업로드한다. 서버 내용 재검사·재가공·파일 복사·SHA-256 재계산을 제거하고 업로드 완료/현재 전송 권한/취소·멱등성만 확정 경계에서 확인한다. Socket 계약3이 메시지 확정을 소유하고 worker는 신규 경로에서 제외한다. 실제 기존 실패 자료만 재준비하며 운영 데이터·리소스 임의 삭제 없음. [상세 설계](tasks/chat-media-bounded-parallel-upload/direct-upload-detailed-design.md).
+
+- 2026-09-10 사용자 승인으로 미디어 묶음을 공용 FIFO에서 순차 처리한다. 최종 버블을 선택 순서대로 먼저 표시하고, ready 및 정상 메시지 UI 반영 또는 일반실패 표시 이후 실행권을 반환한다. 묶음 내부 PUT/서버 처리는 제한 병렬이다. 완료 순서 예측 가능성을 위해 묶음 병렬의 처리량 이점을 포기한다. 대기 버블은 고정원형과장수로 처리중 회전과 구분한다. 실제 네트워크 장애/이탈 정책은 유지한다. [최신 설계](tasks/chat-media-bounded-parallel-upload/design.md).
+
+- 2026-09-10 이미지 dispatcher의 성공 ACK는 worker 종료만이 아니라 ready/슬롯반환 트랜잭션 완료 뒤에 보낸다. 실제70장 QA에서 슬롯 반환 전에 다음 Task가429를 받아30초 대기한 근거에 따른 결정이다. 기존 Firestore 완료 이벤트를 같은 멱등 publisher의 복구·정리 경로로 유지하고 expected lease로 stale 실행을 차단한다. Cloud Tasks의 진짜 장애 재시도는 유지하며 video Job 실행 방식은 변경하지 않는다. [근거와 검증](tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md).
+
+- 2026-09-10 미디어 서버 지연 개선: 정상 PUT 후 완료 확인을 finalize로 통합하고 누락 응답에만 refresh 재개를 사용한다. 서버 검증 항목은 유지하며 조회 결과를 manifest에 재사용한다. metadata와 worker 사진 처리 폭은 독립 설정·기본1로 두고 실제 동일 사진 QA로 선택한다. 순서 보존·첫 실패 drain·generation/lease 보호·사진별 임시 파일 정리를 병렬화의 전제로 둔다. [설계/검증](tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md).
+
+- 2026-09-10 실제 미디어 QA 후 이탈 경계 보정: 방 내부 사진 보기·정보 화면은 전송을 유지하고, 실제 채팅방 route 종료·앱 백그라운드에서 중단한다. `viewWillDisappear`의 포괄 취소를 기존 route 종료 판정으로 옮겨 방 내부 화면이 실패를 유발하는 결함을 해소한다. [보정 설계](tasks/chat-media-bounded-parallel-upload/design.md), [실제 전송 근거](tasks/chat-media-bounded-parallel-upload/qa/iphone14-live-transmission.md).
+
+- 2026-09-10 미디어 제한 병렬 전송 결정: [최종 설계와 대안](tasks/chat-media-bounded-parallel-upload/design.md). async/await 작업 수명·actor FIFO·제한 TaskGroup·기존 Combine UI·GRDB 소유권·queued 차례 반환·서버 사용자 제한 제거의 이유를 기록했다. 실기기 성능/운영 부하 결과에 따라 초기 상한을 재검토한다.
+
 ## 목적
 
 중요한 기술 결정과 그 이유를 기록한다.

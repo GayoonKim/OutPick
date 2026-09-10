@@ -1,5 +1,13 @@
 # Data Entrypoints
 
+## 미디어 선택·실패 복구 데이터
+
+- `ChatMediaSelection.swift`/`ChatMediaSelectionRepository.swift`: 기존 `chatOutgoingOutbox.localPayloadJSON`에 `selectionID`, room/sender, 원본 index/path/type, `pendingChunk(messageID, indices)`를 기록한다. 신규 SQLite table/migration은 없다. 원본은 Application Support/ChatMediaSelections에 저장하고 backup에서 제외한다.
+- child payload 저장 → parent 원본 소비 → 업로드 시작 순서다. 중간 종료는 child outbox를 확인해 이미 보존한 원본을 중복 분할하지 않는다. 삭제 전 빈 source 원장을 저장해 파일 삭제 뒤 DB 삭제 실패로 버블이 부활하지 않게 한다.
+- `ChatOutgoingOutboxUseCase`: reserve 송신 전에 attempt identity를 저장한다. local 실패와 server processingStatus를 분리하고 `media_cleanup_pending`은 사용자 버블 없는 cleanup 재시도 원장이다.
+- `GRDBChatMessageStore`/`GRDBChatOutgoingOutboxStore`: seq>0 확정에 대한 실패 overwrite/outbox 부활 차단, `deleteUnconfirmedMessage` 원자적 조건부 삭제. 공개 메시지 삭제용 `hardDeleteMessage` 계약은 유지한다.
+- 서버 reservation receipt/TTL은 `entrypoints/FIREBASE.md` 참조. 로컬 구현만 반영됐으며 원격 배포 상태는 해당 작업 progress를 확인한다.
+
 ## 목적
 
 OutPick의 로컬 DB, Firestore schema, Repository data boundary를 수정할 때 어디부터 봐야 하는지 빠르게 확인하기 위한 문서다.

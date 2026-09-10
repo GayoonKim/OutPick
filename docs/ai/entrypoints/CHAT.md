@@ -1,5 +1,55 @@
 # Chat Entrypoints
 
+- 2026-09-10 최종 상태: 신규 contract 3 직접 업로드 Development 배포 및 iPhone 14 사진 3장/70장 완료 확인. 70장은 30/30/10 순서로 seq 8/9/10 확정, 선택→최종 표시46.872초, 서버 metadata 합계692ms. 저장 공간 부족으로 발생한 Firestore 종료 후 사용자가 공간을 확보하고 전송 중 조작/완료 후 재입장 확인 완료를 보고했다. 이미지→플레이스홀더 깜빡임은 `tasks/active.md`의 다음 작업으로 분리했다. 영상 실전 QA/4대30 비교/Production 배포는 미수행.
+- PR 리뷰 추가 경합 보완: foreground uploader는 취소와 continuation 등록을 같은 stateQueue에서 순서화하고, 등록 전 취소도 기록한다. 완료 delegate보다 먼저 취소돼도 continuation을 한 번 종료한다. `ChatMediaForegroundUploaderTests`의 취소 선행 회귀를 참조한다.
+
+- 직접 업로드 실제 QA 완료 누락 수정: `ChatMediaForegroundUploadService.swift`의 lazy URLSession 최초 접근과 task 생성은 stateQueue 안에서 수행한다. 동시 최초 접근으로 복수 세션/taskIdentifier 충돌 시 pending continuation이 덮어써지는 문제를 방지한다. `ChatMediaForegroundUploaderTests.swift`에서 URLProtocol fake 응답으로 동시 업로드 30개 완료를 확인한다.
+
+## 최신: 최종 경로 직접 업로드 계약3 (로컬 구현, 배포 전)
+
+- 사진 본 파일/썸네일 원해상도 유지. JPEG 본 파일 품질0.92→0.80→0.70/15MiB, 썸네일0.70고정/4MiB. PNG 투명도·GIF frame/loop 보존. `ChatGIFMetadataStripper`가 픽셀 블록 변경 없이 설명 메타데이터 제거. 영상 MP4 준비에 metadata 제거를 적용하고 전송 영상 프레임 해상도로 썸네일을 생성한다.
+- `ProcessedImage.thumbFileURL`, `PreparedVideo.thumbnailFileURL`은 파일 기반이며 큰 Data 배열 보관을 피한다. outbox `preparationVersion`으로 실제 기존 실패 자료만 재준비한다. 구자료가 이미 축소됐다면 원래 픽셀을 복원하지 않는다.
+- DTO index는 파일순서, attachmentIndex는 사진순서, role은display/thumbnail. 30장=60파일. `ChatMediaBatchProgress` 바이트 가중 합산. 본 파일 합계150MiB 분할 유지.
+- `createProductionDependencies`에서 `CHAT_MEDIA_READY_BUCKET`을 direct service에 주입. `directMediaUploadService`가 계약3 예약·metadata 조회·Firestore ready projection 소유. 다운로드/내용 검사/재가공/복사/worker queue는 신규 경로에서 호출하지 않는다. 실제 기존 계약2 예약 복구는 기존 status/cancel/refresh 경로로 라우팅한다.
+- `storage.rules`는 계약2/3 readyAttachmentIDs 읽기만 허용하며 SDK 직접 쓰기 deny 유지. signed PUT은 generation0 생성 전용. cancel 즉시 generation 조건 삭제 시도, 늦은 PUT은 `directUploadCleanup`과 기존 cleanup scheduler가 재정리. 인덱스: contractVersion/cleanupStatus/cleanupAfter.
+- `ChatAttachmentImageService`가 `ImageCachePipeline`에 채팅 전용1024px decoder를 주입한다. 다른 기능의 기본 decoder/thumbnail 설정은 유지. 성공 시 로컬 preview를 원격 cache key에 연결하고 원격 prefetch 완료를 FIFO 반환 조건에서 제외한다.
+- 실제70장/원본확보지연/4vs30은 미검증. PUT과 metadata 조회 수를 독립 비교한다. Development 전환에 Socket ready bucket 설정·쓰기 IAM, Storage rules, cleanup 함수·인덱스를 함께 맞춰야 한다.
+
+## 최신: 묶음 순차 전송
+
+- 기존 업로드완료 자료의 확정 재시도와 복원 상태 모니터링도 `performQueuedMediaContinuation` → `beginProcessingBatch`로 동일 FIFO를 통과한다. 이 경로도 대기 표시 후 실행하고 UI 반영/실패 처리 뒤 차례를 반환한다.
+
+- 실행 순서는 Task 도착 순서에 의존하지 않는다. `finishStagedMediaPresentation`으로 최종 snapshot 완료를 기다리고 `registerProcessingBatches` → FIFO의 `register(uploadIDs:)`로 선택 순서 전체를 원자적으로 등록한다. 실행 전 자료 누락/중단 시 등록된 차례도 release로 제거한다.
+
+- `ChatViewController+MediaSelection.processMediaSelection`은 선택 순서대로 최종 버블과 outbox를 모두 준비한 뒤 committed ID 순서로 스케줄한다. 기존 preparedTurns는 제거했다. 전체 원본 확보 전 무표시와 중단 원본 복원은 유지한다.
+- `ChatContainer`의 공용 actor FIFO1 → `ChatMediaUploadUseCase`의 image/video enqueue는 접수 후에도 실행권을 유지한다. 일반 실패 UI 처리 이후 VC가 반환하고, 성공은 `handleIncomingMessage`가 diffable snapshot completion과 메시지 저장 시도 후 반환한다. 동일 메시지 Socket/조회 중복 admission은 in-flight 집합으로 차단한다. 수동 재시도는 기존 예약 뒤 FIFO로 들어간다.
+- 묶음 내부 PUT은 `ChatMediaPipelineLimits.filesPerBatch=4`, bounded TaskGroup으로 진행하며 오류 때 자식 작업 종료 후 finalize/누락조회로 복구한다. `ChatMediaBatchProgress`가 파일별 진행률을 lock으로 합산한다. 서버 Development worker4는 별도 설정이며 이번 변경으로 서버 API/데이터 계약은 바뀌지 않는다.
+- `ChatPendingMediaUploadState.waitingForTurn` → `ChatMessageCell.MediaUploadRecoveryState.waiting(count)` → `ChatMediaUploadProgressView.showWaiting`은 고정 원형과 장수를 표시한다. 처리 시작 후 진행 원호/서버대기 회전, 성공 제거, 실패 복구 버튼이다. 아래 묶음4·queued 반환 설명은 이전 이력이다.
+
+- 원본 provider 중복 콜백 방어: `ChatMediaSourceAcquisition`의 `AcquisitionCancellation.claimCompletion()`이 lock으로 최초콜백만 파일복사/continuation에 진입시킨다. 오류→취소·중복성공·동시콜백은 `ChatMediaSourceAcquisitionTests`가 주입한 provider로 검증한다. 70장확보81.859초 지연 원인은 별도 미확정이며 이 수정은 중복완료 크래시만 해결한다.
+
+- 원본 확보 실패 진단(DEBUG): `ChatViewController+MediaSelection`의 selection_turn_acquired/failed·original_acquisition_failed, `ChatMediaSelectionUseCase`의 acquisition_ledger_saved/directory_ready, `ChatMediaSourceAcquisition`의 source_load_started/failed·source_copy_completed/failed로 버블 이전 무응답 단계를 구분한다. 사용자 안내 정책은 유지하며 오류 전문·파일 경로·사진 내용은 출력하지 않는다. 실제 QA 재현 전까지 원인 확정 금지.
+
+- 실제 QA 시각: DEBUG의 `ChatViewController+MediaSelection`은 선택 접수/전체 원본 확보/묶음 준비의 selectionID·messageID·uptime을 기록하고, `finishPendingImageUpload`는 pending 제거 후 uptime/thermal을 기록한다. 서버 시계 차이 없이 기기 내 전체 경로를 비교한다. 실제 화면 프레임이 표시된 시각과는 구분하며 내용·경로·사용자ID는 기록하지 않는다.
+
+- finalize 통합: `ChatMediaUploadUseCase`가 정상 PUT 후 finalize를 직접 호출한다. `RealtimeSocketService.emitPayloadAck`는 finalize의 `media_upload_incomplete`만 도메인 오류로 변환하며, 이때만 기존 refresh API로 누락 업로드를 재개한다. 정상 경로의 별도 완료 조회 없음. ACK 유실은 같은 identity로 finalize 재확인. DI/Coordinator 변경 없음.
+
+- 전송 표시: `Views/ChatMediaUploadProgressView.swift`의 반투명 사진 덮개·고대비 원형 표시를 `ChatMessageCell`이 사진 영역에 겹친다. VC는 업로드 진행률과 queued/processing 대기를 매핑하며, 보이는 셀만 갱신해 이미지 셀 재구성을 피한다. 업로드100%도 성공이 아니며 서버 확정 후 제거한다. 실패는 덮개와 기존 복구 버튼, 회전 없음. `ChatPendingMediaPresentationState.inProgress`는 진행 중의 coarse 구분이며 실제 진행률은 원래 상태에서 읽는다.
+
+## 미디어 제한 병렬 전송 — 2026-09-10 로컬 구현
+
+- 실제 QA에서 방 내부 사진 보기에도 취소되는 결함을 확인했다. `ChatViewController`는 `viewWillDisappear`만으로 전송을 멈추지 않고, `viewDidDisappear`의 `ChatRoomRouteLifecycleState` 실제 경로 종료 판정 또는 `finishRouteLifecycleForCoordinator`에서 중단한다. 앱 didEnterBackground 중단은 유지. 경계 테스트는 `ChatRoomRouteLifecycleStateTests`, 실제 근거는 `tasks/chat-media-bounded-parallel-upload/qa/iphone14-live-transmission.md`.
+- 실제 전송 QA: `Domain/Models/ChatMediaSelection.swift`의 이미지 준비는 현재4로 설정한 비교 후보이며2와 실제 전송·스크롤 조건에서 비교 후 확정한다. 아래 초기값2와 구분한다. 합성 변환 수치만으로 제한을 확정하지 않는다. 결과·Development 반영 기록은 `tasks/chat-media-bounded-parallel-upload/progress.md` 최상단을 따른다.
+- 조립: `ChatContainer.swift`에서 공용 `ChatMediaPipelineLimits`, selection repository/use case, upload FIFO를 생성하고 `ChatCoordinator`를 통해 VC에 주입한다. 기존 MVVM-C/Repository/UseCase/Combine UI 연결을 유지한다.
+- 사용자 흐름: `Controllers/ChatViewController+MediaSelection.swift` → `Domain/UseCases/ChatMediaSelectionUseCase.swift`. 전체 선택 원본을 앱 소유 파일로 확보하기 전 버블/진행률/실패 안내 없음. 이후 이미지 선택 순서와 30장/150MiB 상한으로 완성 묶음만 표시한다. 정상 전송에는 대표 버블이 없다.
+- 준비: `Infra/Media/ChatMediaSourceAcquisition.swift`는 provider callback 내부에서 파일을 복사하고 Progress 취소를 연결한다. 제한 TaskGroup과 `ChatImageTransportSourceNormalizer`/ImageIO, `AVAssetExportVideoCompressor`를 사용한다. 원본 확보 4, 이미지 준비 2, 영상 준비 1, 이미지 업로드 4묶음, 영상 업로드 1개가 초기값이다. 이미지 준비 완료 대기는 업로드 4 + 추가 2로 제한하며 현재 구성 중인 묶음/변환 작업은 별도다. 영상 준비는 순차다. 실기기 최적 수치로 검증된 값이 아니다.
+- 실행권: `ChatMediaUploadTurnQueue` actor의 FIFO/중복 ID/취소/멱등 release. `ChatMediaUploadUseCase`는 server queued 접수 직후 업로드 실행권을 반환한다. 서버 processing terminal까지 기다리지 않는다. 같은 선택의 파일 PUT은 묶음 안에서 순차다.
+- 실패: 짧은 transport 재시도 후 모든 미완료 묶음을 같은 실패 UI로 표시하며 기존 선택은 연결 복구/추가 선택만으로 재전송하지 않는다. 남은 이미지 준비는 계속한다. 화면 이탈/백그라운드는 준비도 중단한다.
+- 복원: `Repositories/ChatMediaSelectionRepository.swift`는 GRDB outbox JSON에 원본/선택/미완료 child 소유권을 저장한다. 실행 중 대표 버블 노출을 막고, 중단된 원본만 대표 실패 버블로 복원한다. 수동 retry는 FIFO 뒤에 들어가 최종 묶음을 만든다. 원본 보관 7일, 전체 확보 실패는 부분 파일/빈 원장 정리.
+- 성공 수렴: Socket 수신과 ready 상태의 `FirebaseMessageRepository.fetchConfirmedMessage(.server)`가 같은 VC 수신 경로를 사용한다. 통신 오류를 서버 terminal 실패로 단정하지 않는다. GRDB message/outbox 저장은 seq>0 성공을 stale 로컬 실패로 덮어쓸 수 없다. 실패 삭제는 `deleteUnconfirmedMessage`의 DB transaction으로 확정 메시지를 보존한다.
+- retry/delete: 기존 server identity 확인 → ready 복구/queued·processing 관찰/terminal 실패만 새 identity. 새 outbox 파일 복사를 확인한 뒤 이전 파일을 정리한다. 응답 유실 예약은 cancel fence 확인 후 새 identity를 허용한다. 삭제 cleanup 의도는 네트워크보다 먼저 저장한다.
+- QA/실제 결과: `docs/ai/tasks/chat-media-bounded-parallel-upload/{design,plan,progress,qa-checklist}.md`, `entrypoints/TESTS.md`.
+
 ## 목적
 
 Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인덱스 진입점을 빠르게 찾기 위한 문서다.

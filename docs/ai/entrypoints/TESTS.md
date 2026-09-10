@@ -1,5 +1,35 @@
 # Test Entrypoints
 
+- 2026-09-10 머지 전 최종 실행: 미디어 Swift 회귀62/62(시뮬레이터), Storage 규칙5/5(로컬 Firestore/Storage Emulator), Socket113/113, Functions262/262, worker22/22 통과. Storage suite는 계약2/3 각각 확정 전 읽기 차단·SDK write 차단·확정/비노출 읽기를 검증한다. 성능 synthetic 테스트는 환경 변수 opt-in이며 이번 회귀에 실행하지 않았다.
+
+- 미디어 PR 최종 검증: Socket 전체113/113, Functions 전체262/262, worker22/22. iPhone 기존 직접 업로드52개+파일 준비4개(중복 포함), 실제3장/70장 전송 확인. PR 리뷰에서 uploader 등록 전 취소 회귀를 추가했으며 최종 Swift 실행 결과는 PR 설명을 참조한다. Animation Hitches는 저장/export 미완료로 성능 지표에 사용하지 않는다.
+
+- `OutPickTests/ChatMediaForegroundUploaderTests.swift`: 실제 URLSession 업로더의 동시 최초 업로드 30개가 모두 완료되는지 URLProtocol fake로 검증. Development 실전 QA에서 발견한 lazy 세션 초기화/taskIdentifier 충돌 회귀.
+
+- 직접 업로드: `OutPickTests/ChatDirectMediaPreparationTests.swift`는 원해상도 본 파일/썸네일, GIF 메타데이터 제거, 바이트 진행률을 검증한다. `ChatMediaUploadUseCaseTests.filesInsideBatchRunAtMostFourAtOnceBeforeFinalize`는9장18파일 PUT4 회귀다.
+- 서버 계약3: `Socket/test/media/directMediaUploadService.test.js`의30장60파일·누락썸네일·중복seq·강퇴/제재/취소·tombstone·metadata 불일치. `functions/src/chat/media/directUploadCleanup.test.ts`의만료전금지·manifest범위·재정리·ready보호. 실제 signed PUT/Storage rule QA는 Development 전환 때 확인한다.
+
+- 선택 순서 사전등록: `ChatMediaUploadTurnQueueTests.registeredSelectionOrderWinsOverTaskArrivalOrder`는 마지막10장 Task가 먼저 도착해도 등록된30/30/10 순서를 지키는지 확인한다. `removingUnstartedRegisteredBatchDoesNotBlockFollowingBatch`는 실행 전 제거한 등록 항목이 뒤를 막지 않는지 검증한다.
+
+- 순차 묶음 회귀: `ChatMediaUploadUseCaseTests.nextBatchAndManualRetryWaitForExplicitTerminalRelease`는 queued/일반실패 이후 명시 반환 전 다음 예약 금지와 재시도 맨뒤를 확인한다. `filesInsideBatchRunAtMostFourAtOnceBeforeFinalize`는 gate uploader로 동시4 상한과 전체PUT 후finalize를 확인한다. `ChatMediaUploadProgressViewTests.testWaitingReplacesSpinnerWithStaticCountAndResetsOnReuse`는 회전제거·장수·전송전환·reuse 검증이다. 기존 TurnQueue 취소/FIFO, SelectionUseCase70장30/30/10·부분정리, PendingStore 상태 및 SourceAcquisition중복콜백도 함께 실행한다.
+
+- 사진 원본 provider callback 경합: `OutPickTests/ChatMediaSourceAcquisitionTests.swift`는 실제 acquire경로에 파일provider callback을 주입해 오류뒤취소/중복성공뒤오류/동시16오류가 continuation을중복완료하지않고첫결과를보존하는지검증한다. 기존 `ChatMediaSelectionUseCaseTests`의 전체확보/실패부분정리도함께확인한다.
+
+- 이미지 dispatcher 완료 barrier: `functions/src/chat/media/dispatcher.test.ts`는 실제 handler에서 완료 gate 이전 HTTP응답이 없음을 확인한다. `readyService.test.ts`는 publish/slot반환 후 즉시 next claim, Firestore 이벤트 선행 멱등성, manifest 누락, stale lease, 취소를 검증한다. fake Firestore 기반이며 실제 Cloud Tasks 연속70장 QA로429가 없어졌는지 별도 확인한다.
+
+- finalize/worker 병렬 회귀: `Socket/test/media/mediaUploadService.test.js`, `tools/chat-media-processing-worker/src/{boundedMap,cloudJob.parallel}.test.ts`, `OutPickTests/ChatMediaUploadUseCaseTests.swift`. 누락 재개·조회 수·순서/동시성·실패 drain·generation·변환 중 취소를 확인하며 성능 최적값은 실제 Development QA로 별도 결정한다.
+
+## 미디어 제한 병렬 전송 회귀
+
+- 정상 앱 전제 QA: `OutPickUITests/ChatMediaDevelopmentSmokeUITests.swift`가 실제 Development 세션의 main 화면과 실패 화면 부재·screenshot을 확인한다. `ChatMediaDevicePerformanceTests`도 실제 main 진입을 매 회차 선행 조건으로 확인한다. Debug 인증 구성 + 명령별 컴파일 최적화를 사용하며 fake UI와 Release entitlements override 조합을 사용하지 않는다.
+
+- 실기기 성능 QA: `OutPickTests/ChatMediaDevicePerformanceTests.swift`. 정상 Development-Debug 인증 구성에 명령별 `SWIFT_OPTIMIZATION_LEVEL=-O`, `GCC_OPTIMIZATION_LEVEL=s`를 적용하고 `OUTPICK_MEDIA_DEVICE_BENCHMARK=1`로 opt-in한다. `testRealMainScreenBeforeMediaQA`는 실제 main 진입·캡처, `testImagePreparationSweep`은 준비 폭 1/2/3/4와 JSON·전후 화면을 기록한다. synthetic 준비 단계이며 전송 E2E/실제 사용자 사진 결과로 해석하지 않는다. 상세 실행·근거는 해당 task QA 문서.
+
+- `ChatMediaSelectionUseCaseTests`: 전체 확보 barrier/부분 파일 정리, 70→30/30/10, 준비 실패 제외·원래 순서 보존, parent-child 중간 종료 복원·계정 격리.
+- `ChatMediaUploadTurnQueueTests`: 제한 실행·FIFO·waiting 취소·중복 ID/중복 release. `ChatMediaUploadUseCaseTests`: queued 직후 turn 반환, 같은 identity transport/예약 복구·cancel/ready 경합·복원 조회.
+- `ChatOutgoingOutboxUseCaseTests`: 미확정 identity 보존, 실제 terminal 실패 세션 종료, 7일 보관. `GRDBChatMessageStoreTests`/`GRDBChatOutgoingOutboxStoreTests`: 성공 이후 stale 실패/조건부 삭제/outbox 부활 차단.
+- Socket/Functions는 `entrypoints/FIREBASE.md`의 테스트를 포함해 로컬 회귀 실행. 이번 실행 결과와 미실행 UI·실기기·서버 E2E는 `tasks/chat-media-bounded-parallel-upload/progress.md`/`qa-checklist.md`를 따른다.
+
 ## 공통
 
 - moderator delegation 최종 리뷰 회귀: `RoomRoleEventPayloadTests`의 Codable 분리 unread 순번 보존·legacy fallback·role event 제외, `ChatRoomRoleSessionTests`의 취소된 콜백 무시·구독 generation 격리·foreground 재확인 경계를 검증한다.
