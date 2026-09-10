@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {Timestamp, type Firestore} from "firebase-admin/firestore";
 import {publishCompletedMediaUpload} from "./readyService.js";
+import {claimMediaUploadForExecution, completeSynchronousImageExecution} from "./orchestrationService.js";
 
 function memoryFirestore(initial: Record<string, Record<string, unknown>>) {
   const values = new Map(Object.entries(initial));
@@ -10,6 +11,7 @@ function memoryFirestore(initial: Record<string, Record<string, unknown>>) {
     path,
     id: path.split("/").at(-1),
     collection: (name: string) => collection(`${path}/${name}`),
+    get: async () => snapshot({path}),
   });
   const collection = (path: string): Record<string, unknown> => ({
     doc: (id: string) => reference(`${path}/${id}`),
@@ -135,6 +137,63 @@ test("worker 완료는 message/seq/index/preview/delivery/ready와 slot 반환�
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.seq, 5);
   assert.equal(memory.values.get("Rooms/room")?.seq, 5);
+});
+
+test("동기 이미지 완료 반환 직후 다음 묶음은 대기 없이 같은 slot을 획득한다", async () => {
+  const {memory, uploadPath} = fixture();
+  await completeSynchronousImageExecution({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000});
+  const nextPath = "Rooms/room/MediaUploads/next";
+  memory.values.set(nextPath, {contractVersion: 2, kind: "images", processingStatus: "queued",
+    processingAttempt: 0, processingDeadlineAt: Timestamp.fromMillis(100_000)});
+  const next = await claimMediaUploadForExecution({firestore: memory.firestore,
+    uploadRef: memory.reference(nextPath) as never, projectID: "outpick-test", nowMillis: 10_000, leaseToken: "next"});
+  assert.equal(next.claimed, true);
+  const replay = await publishCompletedMediaUpload({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_001});
+  assert.equal(replay.duplicate, true);
+  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
+  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "next");
+});
+
+test("Firestore 완료 이벤트가 먼저 성공해도 dispatcher 완료는 중복 메시지를 만들지 않는다", async () => {
+  const {memory, uploadPath} = fixture();
+  await publishCompletedMediaUpload({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_000});
+  await completeSynchronousImageExecution({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_001});
+  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
+  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, null);
+});
+
+test("현재 실행의 manifest가 없으면 slot을 유지한 채 정상 완료하지 않는다", async () => {
+  const {memory, uploadPath} = fixture();
+  memory.values.set(uploadPath, {...memory.values.get(uploadPath), normalizedManifest: []});
+  await assert.rejects(completeSynchronousImageExecution({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000}),
+  /image_completion_slot_not_released/);
+  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "lease");
+  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
+});
+
+test("오래된 dispatcher는 새 lease의 manifest를 확정하거나 slot을 반환하지 않는다", async () => {
+  const {memory, uploadPath} = fixture();
+  const result = await publishCompletedMediaUpload({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_000, expectedLeaseToken: "old"});
+  assert.equal(result.reason, "stale_execution");
+  assert.equal(memory.values.get(uploadPath)?.processingStatus, "processing");
+  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "lease");
+  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
+});
+
+test("취소가 먼저 확정되면 동기 완료가 메시지나 slot을 부활시키지 않는다", async () => {
+  const {memory, uploadPath} = fixture();
+  memory.values.set(uploadPath, {...memory.values.get(uploadPath), processingStatus: "canceled", leaseToken: null, processingSlotID: null});
+  memory.values.set("chatMediaProcessingSlots/image-0", {leaseToken: null});
+  await completeSynchronousImageExecution({firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000});
+  assert.equal(memory.values.get(uploadPath)?.processingStatus, "canceled");
+  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
 });
 
 test("animated GIF의 검증된 format과 animation metadata를 message와 media index에 보존한다", async () => {

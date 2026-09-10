@@ -5,13 +5,30 @@ import {
   processingSlotIDs,
 } from "./contracts.js";
 
-test("환경과 kind별 고정 execution slot 수를 유지한다", () => {
+test("출시 전 환경과 kind별 execution 기본 상한은 1이다", () => {
   assert.deepEqual(processingSlotIDs("outpick-test", "images"), ["image-0"]);
   assert.deepEqual(processingSlotIDs("outpick-test", "video"), ["video-0"]);
   assert.deepEqual(processingSlotIDs("outpick-664ae", "images"), [
-    "image-0", "image-1", "image-2", "image-3",
+    "image-0",
   ]);
   assert.deepEqual(processingSlotIDs("outpick-664ae", "video"), ["video-0"]);
+});
+
+test("execution 상한은 kind별 운영 설정으로 조절한다", () => {
+  const key = "CHAT_MEDIA_IMAGE_EXECUTION_LIMIT";
+  const previous = process.env[key];
+  try {
+    process.env[key] = "3";
+    assert.deepEqual(processingSlotIDs("outpick-test", "images"),
+      ["image-0", "image-1", "image-2"]);
+    process.env[key] = "0";
+    assert.throws(() => processingSlotIDs("outpick-test", "images"));
+    process.env[key] = "1.5";
+    assert.throws(() => processingSlotIDs("outpick-test", "images"));
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
 });
 
 test("media task ID는 upload path와 dispatch generation에 결정적이다", () => {

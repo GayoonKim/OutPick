@@ -133,11 +133,13 @@ describe("chat media storage boundary", () => {
     await assertFails(imageReference(other, "readable").getDownloadURL());
   });
 
-  test("v2 ready 객체는 계정·message 상태만으로 읽고 비노출 이후 거부한다", async () => {
+  for (const version of [2, 3]) {
+  test(`v${version} ready 객체는 확정 전 읽기·SDK 쓰기를 거부하고 비노출 이후 읽기를 거부한다`, async () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await uploadJpeg(readyReference(context, "ready-message"));
     });
     const sender = testEnvironment.authenticatedContext(senderUID);
+    await assertFails(uploadJpeg(readyReference(sender, "ready-message")));
     await assertFails(readyReference(sender, "ready-message").getDownloadURL());
 
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
@@ -145,7 +147,7 @@ describe("chat media storage boundary", () => {
         context.firestore(), "Rooms", roomID, "Messages", "ready-message",
       ), {
         ID: "ready-message",
-        mediaContractVersion: 2,
+        mediaContractVersion: version,
         readyAttachmentIDs: ["attachment-1"],
         moderationVisibilityState: "visible",
         isDeleted: false,
@@ -165,4 +167,5 @@ describe("chat media storage boundary", () => {
     });
     await assertFails(readyReference(sender, "ready-message").getDownloadURL());
   });
+  }
 });
