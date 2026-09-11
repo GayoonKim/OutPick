@@ -49,8 +49,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let photoLibrarySaver: PhotoLibrarySaving
     private let onClose: (() -> Void)?
     private let onReport: ((SimpleImageViewerVC) -> Void)?
-    private let thumbnailMaxBytes = 12 * 1024 * 1024
-    private let originalMaxBytes = 60 * 1024 * 1024
+    private let thumbnailMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
+    private let originalMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
     private let swipeDownDismissTranslationThreshold: CGFloat = 120
     private let swipeDownDismissVelocityThreshold: CGFloat = 900
     private let swipeDownVerticalDominanceRatio: CGFloat = 1.5
@@ -61,16 +61,16 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private var pageLoadTasks: [Int: Task<Void, Never>] = [:]
     private var pageLoadRoles: [Int: PageLoadRole] = [:]
     private var lastReportedPage: Int = -1
-    private var pageControl: UIPageControl!
-    private var closeButton: UIButton!
     private var didSetInitialOffset = false
-
-    private var topBar: UIView!
-    private var bottomBar: UIView!
-    private var isChromeVisible = false
-    private var didInitializeChromeTransforms = false
-    private var saveButton: UIButton!
-    private var reportButton: UIButton?
+    private var chrome: ImageViewerChromeView!
+    private var isChromeVisible = true
+    private var isSaving = false
+    private var viewerClosed = false
+    private var requestIDs: [Int: UUID] = [:]
+    private var loadedPages: Set<Int> = []
+    private var failedPages: Set<Int> = []
+    private let statusButton = UIButton(type: .system)
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     private var pageCount: Int {
         pages.count
@@ -124,7 +124,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         scrollView.delegate = self
         scrollView.isPagingEnabled = true
         scrollView.showsHorizontalScrollIndicator = false
@@ -200,16 +200,17 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         }
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        if !didInitializeChromeTransforms {
-            didInitializeChromeTransforms = true
-            topBar.transform = CGAffineTransform(translationX: 0, y: -topBar.bounds.height)
-            bottomBar.transform = CGAffineTransform(translationX: 0, y: bottomBar.bounds.height)
-            topBar.alpha = 0
-            bottomBar.alpha = 0
-            isChromeVisible = false
-        }
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        let index = currentIndex()
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: { _ in
+            self.view.layoutIfNeeded()
+            self.scrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.scrollView.bounds.width, y: 0), animated: false)
+        })
+    }
+
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+        hideChrome(animated: true)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -221,6 +222,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         super.viewDidDisappear(animated)
         imageViews.forEach { $0.stopAnimating() }
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            viewerClosed = true
             cancelAllPageLoadTasks()
         }
     }
@@ -229,7 +231,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         guard scrollView === self.scrollView, pageCount > 0 else { return }
         let page = Int(round(scrollView.contentOffset.x / max(1, scrollView.bounds.width)))
         let clamped = min(max(0, page), pageCount - 1)
-        pageControl.currentPage = clamped
+        renderChrome(index: clamped)
+        renderLoadStatus(index: clamped)
 
         if clamped != lastReportedPage {
             for (i, zsv) in pageZoomScrolls.enumerated() where i != clamped {
@@ -253,8 +256,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let v = touch.view else { return true }
         if v is UIControl { return false }
-        if (topBar != nil && v.isDescendant(of: topBar)) { return false }
-        if (bottomBar != nil && v.isDescendant(of: bottomBar)) { return false }
+        if chrome != nil && v.isDescendant(of: chrome) { return false }
         return true
     }
 
@@ -299,6 +301,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func closeViewer() {
+        viewerClosed = true
+        cancelAllPageLoadTasks()
         if let onClose {
             onClose()
             return
@@ -329,91 +333,50 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         zsv.zoom(to: rect, animated: true)
     }
 
-    private func showChrome(animated: Bool) {
-        isChromeVisible = true
-        let animations = {
-            self.topBar.transform = .identity
-            self.bottomBar.transform = .identity
-            self.topBar.alpha = 1
-            self.bottomBar.alpha = 1
-        }
-        if animated {
-            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
-                animations()
-            }
-        } else {
-            animations()
+    private func showChrome(animated: Bool) { setChromeVisible(true, animated: animated) }
+    private func hideChrome(animated: Bool) { setChromeVisible(false, animated: animated) }
+
+    private func setChromeVisible(_ visible: Bool, animated: Bool) {
+        isChromeVisible = visible
+        chrome.isUserInteractionEnabled = visible
+        chrome.accessibilityElementsHidden = !visible
+        UIView.animate(withDuration: animated && !UIAccessibility.isReduceMotionEnabled ? 0.22 : 0, delay: 0, options: [.beginFromCurrentState, .curveEaseInOut]) {
+            self.chrome.alpha = visible ? 1 : 0
         }
     }
 
-    private func hideChrome(animated: Bool) {
-        isChromeVisible = false
-        let animations = {
-            self.topBar.transform = CGAffineTransform(translationX: 0, y: -self.topBar.bounds.height)
-            self.bottomBar.transform = CGAffineTransform(translationX: 0, y: self.bottomBar.bounds.height)
-            self.topBar.alpha = 0
-            self.bottomBar.alpha = 0
-        }
-        if animated {
-            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseIn]) {
-                animations()
-            }
-        } else {
-            animations()
-        }
+    private func renderChrome(index: Int? = nil) {
+        chrome?.render(index: index ?? currentIndex(), count: pageCount, saving: isSaving)
     }
 
     @objc private func saveTapped() {
-        let idx = currentIndex()
-
-        if idx < imageViews.count, let image = imageViews[idx].image {
-            saveImageToLibrary(image)
-            return
-        }
-
-        guard idx < pages.count else {
-            showToast("저장 실패")
-            return
-        }
-        let page = pages[idx]
+        guard !isSaving, !viewerClosed, pages.indices.contains(currentIndex()) else { return }
+        let index = currentIndex()
+        let page = pages[index]
+        let displayed = currentImage(at: index)
+        isSaving = true
+        renderChrome()
         Task { [weak self] in
             guard let self else { return }
-            if let original = await self.loadOriginalNetwork(for: page) {
-                await MainActor.run {
-                    self.saveImageToLibrary(original)
-                }
-                return
+            var image = displayed
+            if image == nil { image = await self.loadOriginalNetwork(for: page) }
+            if image == nil { image = await self.loadThumbnail(for: page) }
+            var result = "저장 실패"
+            if let image {
+                do {
+                    try await self.photoLibrarySaver.saveImage(image)
+                    result = "저장 완료"
+                } catch { }
             }
-            if let thumbnail = await self.loadThumbnail(for: page) {
-                await MainActor.run {
-                    self.saveImageToLibrary(thumbnail)
-                }
-                return
-            }
-            await MainActor.run {
-                self.showToast("저장 실패")
-            }
+            self.isSaving = false
+            guard !self.viewerClosed else { return }
+            self.renderChrome()
+            self.showToast(result)
         }
     }
 
     @objc private func reportTapped() {
         onReport?(self)
-    }
-
-    private func saveImageToLibrary(_ image: UIImage) {
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await self.photoLibrarySaver.saveImage(image)
-                await MainActor.run {
-                    self.showToast("저장 완료")
-                }
-            } catch {
-                await MainActor.run {
-                    self.showToast("저장 실패")
-                }
-            }
-        }
     }
 
     private func showToast(_ text: String) {
@@ -428,7 +391,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         view.addSubview(label)
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -12)
+            label.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -76)
         ])
         label.alpha = 0
         UIView.animate(withDuration: 0.18, animations: { label.alpha = 1 }) { _ in
@@ -441,82 +404,51 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func setupChromeUI() {
-        topBar = UIView()
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-        topBar.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-        view.addSubview(topBar)
-
-        bottomBar = UIView()
-        bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        bottomBar.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-        view.addSubview(bottomBar)
-
+        chrome = ImageViewerChromeView(hasReport: onReport != nil)
+        chrome.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chrome)
         NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 56),
-
-            bottomBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
+            chrome.topAnchor.constraint(equalTo: view.topAnchor), chrome.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            chrome.leadingAnchor.constraint(equalTo: view.leadingAnchor), chrome.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
-
-        pageControl = UIPageControl()
-        pageControl.numberOfPages = pageCount
-        pageControl.currentPage = max(0, min(startIndex, max(0, pageCount - 1)))
-        pageControl.translatesAutoresizingMaskIntoConstraints = false
-        bottomBar.addSubview(pageControl)
+        chrome.closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        chrome.saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        chrome.reportButton.addTarget(self, action: #selector(reportTapped), for: .touchUpInside)
+        renderChrome(index: max(0, min(startIndex, pageCount - 1)))
+        statusButton.translatesAutoresizingMaskIntoConstraints = false
+        statusButton.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
+        statusButton.tintColor = OutPickTheme.ColorToken.textPrimary
+        statusButton.backgroundColor = OutPickTheme.ColorToken.backgroundBase.withAlphaComponent(0.85)
+        statusButton.addTarget(self, action: #selector(retryCurrentPage), for: .touchUpInside)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.color = OutPickTheme.ColorToken.accent
+        view.addSubview(statusButton)
+        view.addSubview(spinner)
         NSLayoutConstraint.activate([
-            pageControl.centerXAnchor.constraint(equalTo: bottomBar.centerXAnchor),
-            pageControl.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor)
+            statusButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            statusButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -80),
+            statusButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            statusButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor), spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+        statusButton.isHidden = true
+    }
 
-        saveButton = UIButton(type: .system)
-        saveButton.setImage(UIImage(systemName: "square.and.arrow.down"), for: .normal)
-        saveButton.tintColor = .white
-        saveButton.translatesAutoresizingMaskIntoConstraints = false
-        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
-        bottomBar.addSubview(saveButton)
-        NSLayoutConstraint.activate([
-            saveButton.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 16),
-            saveButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-            saveButton.widthAnchor.constraint(equalToConstant: 28),
-            saveButton.heightAnchor.constraint(equalToConstant: 28)
-        ])
+    private func renderLoadStatus(index: Int? = nil) {
+        guard isViewLoaded, chrome != nil, !viewerClosed else { return }
+        let index = index ?? currentIndex()
+        let loading = requestIDs[index] != nil
+        statusButton.isHidden = !failedPages.contains(index) && !(loading && currentImage(at: index) != nil)
+        statusButton.isEnabled = failedPages.contains(index)
+        statusButton.setTitle(failedPages.contains(index) ? "불러오지 못했어요 · 다시 시도" : "불러오는 중…", for: .normal)
+        if loading && currentImage(at: index) == nil { spinner.startAnimating() } else { spinner.stopAnimating() }
+    }
 
-        if onReport != nil {
-            let reportButton = UIButton(type: .system)
-            reportButton.setTitle("신고", for: .normal)
-            reportButton.setTitleColor(.white, for: .normal)
-            reportButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
-            reportButton.titleLabel?.adjustsFontForContentSizeCategory = true
-            reportButton.accessibilityLabel = "이 메시지 신고"
-            reportButton.translatesAutoresizingMaskIntoConstraints = false
-            reportButton.addTarget(self, action: #selector(reportTapped), for: .touchUpInside)
-            bottomBar.addSubview(reportButton)
-            NSLayoutConstraint.activate([
-                reportButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
-                reportButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
-                reportButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-                reportButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-            ])
-            self.reportButton = reportButton
-        }
-
-        closeButton = UIButton(type: .system)
-        closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        closeButton.tintColor = .white
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        topBar.addSubview(closeButton)
-        NSLayoutConstraint.activate([
-            closeButton.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -16),
-            closeButton.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 36),
-            closeButton.heightAnchor.constraint(equalToConstant: 36)
-        ])
+    @objc private func retryCurrentPage() {
+        let index = currentIndex()
+        guard pages.indices.contains(index) else { return }
+        cancelPageLoadTask(for: index)
+        startProgressiveLoad(for: index, page: pages[index], role: .demand)
     }
 
     private func setupGestures() {
@@ -557,11 +489,11 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         if pageLoadRoles[current] != .demand {
             cancelPageLoadTask(for: current)
         }
-        if pageLoadTasks[current] == nil {
+        if pageLoadTasks[current] == nil && !loadedPages.contains(current) && !failedPages.contains(current) {
             startProgressiveLoad(for: current, page: pages[current], role: .demand)
         }
 
-        for i in lower...upper where i != current && pageLoadTasks[i] == nil {
+        for i in lower...upper where i != current && pageLoadTasks[i] == nil && !loadedPages.contains(i) && !failedPages.contains(i) {
             startProgressiveLoad(for: i, page: pages[i], role: .warmup)
         }
     }
@@ -571,48 +503,39 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         page: ProgressivePage,
         role: PageLoadRole
     ) {
-        let taskPriority: TaskPriority = role == .demand ? .userInitiated : .utility
-        let task = Task(priority: taskPriority) { [weak self] in
+        let requestID = UUID()
+        requestIDs[index] = requestID
+        failedPages.remove(index)
+        let task = Task(priority: role == .demand ? .userInitiated : .utility) { [weak self] in
             guard let self else { return }
-            if Task.isCancelled { return }
-
-            if let originalCached = await self.loadOriginalCached(for: page) {
-                self.setImage(originalCached, at: index)
-                self.clearPageLoadTask(for: index)
-                return
-            }
-
-            if role == .demand {
-                if Task.isCancelled { return }
-                if self.shouldResolveThumbnail(for: index, page: page),
-                   let thumbnail = await self.loadThumbnail(for: page) {
+            func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == requestID }
+            var original = await self.loadOriginalCached(for: page)
+            guard isCurrent() else { return }
+            if original == nil {
+                if self.shouldResolveThumbnail(for: index, page: page), let thumbnail = await self.loadThumbnail(for: page) {
+                    guard isCurrent() else { return }
                     self.setImage(thumbnail, at: index)
                 }
-
-                if Task.isCancelled { return }
-                if let original = await self.loadOriginalNetwork(for: page) {
-                    self.setImage(original, at: index)
-                }
+                guard isCurrent() else { return }
+                if role == .warmup { try? await Task.sleep(nanoseconds: 150_000_000) }
+                guard isCurrent() else { return }
+                original = await self.loadOriginalNetwork(for: page)
+            }
+            guard isCurrent() else { return }
+            if let original { self.setImage(original, at: index) }
+            let hasOriginalPath = !(page.originalPath ?? "").isEmpty
+            if original != nil || (!hasOriginalPath && self.currentImage(at: index) != nil) {
+                self.loadedPages.insert(index)
             } else {
-                if Task.isCancelled { return }
-                if self.shouldResolveThumbnail(for: index, page: page),
-                   let thumbnail = await self.loadThumbnail(for: page) {
-                    self.setImage(thumbnail, at: index)
-                }
-
-                if Task.isCancelled { return }
-                try? await Task.sleep(nanoseconds: 150_000_000)
-                if Task.isCancelled { return }
-                if let original = await self.loadOriginalNetwork(for: page) {
-                    self.setImage(original, at: index)
-                }
+                self.failedPages.insert(index)
             }
-
+            self.requestIDs[index] = nil
             self.clearPageLoadTask(for: index)
+            self.renderLoadStatus()
         }
-
         pageLoadTasks[index] = task
         pageLoadRoles[index] = role
+        renderLoadStatus()
     }
 
     private func loadOriginalCached(
@@ -728,6 +651,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func setImage(_ image: UIImage, at index: Int) {
         guard index >= 0, index < imageViews.count else { return }
         imageViews[index].image = image
+        renderLoadStatus()
         updateAnimatedPlayback(activeIndex: currentIndex())
     }
 
@@ -755,12 +679,14 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func cancelPageLoadTask(for index: Int) {
+        requestIDs[index] = nil
         pageLoadTasks[index]?.cancel()
         pageLoadTasks[index] = nil
         pageLoadRoles[index] = nil
     }
 
     private func cancelAllPageLoadTasks() {
+        requestIDs.removeAll()
         pageLoadTasks.values.forEach { $0.cancel() }
         pageLoadTasks.removeAll()
         pageLoadRoles.removeAll()

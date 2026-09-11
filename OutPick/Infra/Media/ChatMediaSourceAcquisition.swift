@@ -15,7 +15,8 @@ enum ChatMediaSourceAcquisition {
     static func acquire(index: Int, directory: URL, isVideo: Bool,
         loadFile: (@escaping @Sendable (URL?, Error?) -> Void) -> Progress) async throws -> ChatMediaSelection.Source {
         #if DEBUG
-        print("[MediaQA] event=source_load_started selectionID=\(directory.lastPathComponent) index=\(index)")
+        let requestStarted = ProcessInfo.processInfo.systemUptime
+        print("[MediaQA] event=source_load_started selectionID=\(directory.lastPathComponent) index=\(index) uptime=\(requestStarted) mainThread=\(Thread.isMainThread)")
         #endif
         try Task.checkCancellation()
         let cancellation = AcquisitionCancellation()
@@ -25,10 +26,14 @@ enum ChatMediaSourceAcquisition {
             let progress = loadFile { url, error in
                 // 오류 뒤 취소 콜백이 다시 와도 파일 처리와 continuation 완료는 한 번만 수행한다.
                 guard cancellation.claimCompletion() else { return }
+                #if DEBUG
+                let providerReturned = ProcessInfo.processInfo.systemUptime
+                print("[MediaQA] event=source_provider_returned selectionID=\(directory.lastPathComponent) index=\(index) uptime=\(providerReturned) providerMs=\((providerReturned - requestStarted) * 1000) mainThread=\(Thread.isMainThread)")
+                #endif
                 guard let url, error == nil else {
                     #if DEBUG
                     let failure = (error ?? MediaError.failedToConvertImage) as NSError
-                    print("[MediaQA] event=source_load_failed selectionID=\(directory.lastPathComponent) index=\(index) domain=\(failure.domain) code=\(failure.code)")
+                    print("[MediaQA] event=source_load_failed selectionID=\(directory.lastPathComponent) index=\(index) domain=\(failure.domain) code=\(failure.code) uptime=\(ProcessInfo.processInfo.systemUptime)")
                     #endif
                     continuation.resume(throwing: error ?? MediaError.failedToConvertImage)
                     return
@@ -36,22 +41,33 @@ enum ChatMediaSourceAcquisition {
                 do {
                     let destination = directory.appendingPathComponent(String(index))
                         .appendingPathExtension(url.pathExtension.isEmpty ? "dat" : url.pathExtension)
+                    #if DEBUG
+                    let copyStarted = ProcessInfo.processInfo.systemUptime
+                    #endif
                     try FileManager.default.copyItem(at: url, to: destination)
                     #if DEBUG
-                    print("[MediaQA] event=source_copy_completed selectionID=\(directory.lastPathComponent) index=\(index)")
+                    let copyEnded = ProcessInfo.processInfo.systemUptime
+                    let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+                    print("[MediaQA] event=source_copy_completed selectionID=\(directory.lastPathComponent) index=\(index) uptime=\(copyEnded) copyMs=\((copyEnded - copyStarted) * 1000) totalMs=\((copyEnded - requestStarted) * 1000) bytes=\(bytes) format=\(url.pathExtension.lowercased())")
                     #endif
                     continuation.resume(returning: .init(index: index, path: destination.path, isVideo: isVideo))
                 } catch {
                     #if DEBUG
                     let failure = error as NSError
-                    print("[MediaQA] event=source_copy_failed selectionID=\(directory.lastPathComponent) index=\(index) domain=\(failure.domain) code=\(failure.code)")
+                    print("[MediaQA] event=source_copy_failed selectionID=\(directory.lastPathComponent) index=\(index) domain=\(failure.domain) code=\(failure.code) uptime=\(ProcessInfo.processInfo.systemUptime)")
                     #endif
                     continuation.resume(throwing: error)
                 }
             }
             cancellation.install(progress)
+            #if DEBUG
+            print("[MediaQA] event=source_request_registered selectionID=\(directory.lastPathComponent) index=\(index) uptime=\(ProcessInfo.processInfo.systemUptime)")
+            #endif
             }
         } onCancel: {
+            #if DEBUG
+            print("[MediaQA] event=source_cancel_requested selectionID=\(directory.lastPathComponent) index=\(index) uptime=\(ProcessInfo.processInfo.systemUptime)")
+            #endif
             cancellation.cancel()
         }
         try Task.checkCancellation()

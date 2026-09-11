@@ -15,7 +15,7 @@ extension ChatViewController {
             do {
                 try await self.mediaSelectionUseCase.beginSelection(id)
                 #if DEBUG
-                print("[MediaQA] event=selection_turn_acquired selectionID=\(id)")
+                print("[MediaQA] event=selection_turn_acquired selectionID=\(id) uptime=\(ProcessInfo.processInfo.systemUptime)")
                 #endif
                 do {
                     let selection = try await self.mediaSelectionUseCase.acquire(results, roomID: room.id, senderUID: sender, id: id)
@@ -74,15 +74,22 @@ extension ChatViewController {
                 case .failedVideo(let source):
                     try await self.mediaSelectionUseCase.preserveFailedVideo(source, id: id, roomID: room.id,
                         senderUID: self.chatRoomViewModel.currentUserUID)
+                case .failedImages(let sources):
+                    try await self.mediaSelectionUseCase.preserveFailedImages(sources, id: id, roomID: room.id,
+                        senderUID: self.chatRoomViewModel.currentUserUID)
                 }
             }, onCommitted: { id in
                 committedIDs.append(id)
             })
             if rejected > 0, !mediaSessionStopped {
-                AlertManager.showAlertNoHandler(title: "일부 이미지를 제외했어요",
-                    message: "지원하지 않거나 제한을 초과한 \(rejected)장은 제외했습니다.", viewController: self)
+                AlertManager.showAlertNoHandler(title: "사진을 전송하지 못했어요",
+                    message: "전송하지 못한 사진은 실패 메시지에서 다시 시도하거나 삭제할 수 있어요.", viewController: self)
             }
         } catch {
+            #if DEBUG
+            let failure = error as NSError
+            print("[MediaQA] event=selection_prepare_failed selectionID=\(selection.selectionID) domain=\(failure.domain) code=\(failure.code)")
+            #endif
             // 확보 완료 선택은 durable 원본을 남겨 다음 진입의 대표 실패 버블로 복원한다.
         }
         // 최종 묶음을 선택 순서대로 모두 표시·보존한 다음 FIFO에 넣는다.
@@ -117,7 +124,12 @@ extension ChatViewController {
         }
     }
 
-    func stopMediaSelectionSession() {
+    func stopMediaSelectionSession(reason: String = #function) {
+        #if DEBUG
+        for id in mediaSelectionTasks.keys {
+            print("[MediaQA] event=selection_stop_requested selectionID=\(id) reason=\(reason) uptime=\(ProcessInfo.processInfo.systemUptime)")
+        }
+        #endif
         mediaSessionStopped = true
         mediaSelectionTasks.values.forEach { $0.cancel() }
         pendingMediaUploadStore.cancelAllTasks()
@@ -207,7 +219,6 @@ extension ChatViewController {
         mediaSessionStopped = false
         mediaNetworkFailed = false
         mediaFailedSelectionIDs.remove(selection.selectionID)
-        removeMessageFromWindow(messageID: selection.selectionID)
         mediaSelectionTasks[selection.selectionID] = Task { [weak self] in
             guard let self else { return }
             do {
@@ -215,8 +226,10 @@ extension ChatViewController {
                 await self.processMediaSelection(selection, room: room)
                 await self.mediaSelectionUseCase.endSelection(selection.selectionID)
             } catch { }
+            self.removeMessageFromWindow(messageID: selection.selectionID)
             self.mediaSelectionTasks.removeValue(forKey: selection.selectionID)
             if !self.mediaSessionStopped { await self.restoreMediaSelections(room: room) }
         }
+        reconfigureMessageItem(messageID: selection.selectionID)
     }
 }

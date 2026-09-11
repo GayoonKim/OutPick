@@ -55,12 +55,35 @@ function fixture() {
   return {service, args, documents, objects, fill, setNow: n => {now = n;}, metrics: () => ({calls, peak})};
 }
 
-test("30장은 60개 role이며 본 파일만150MiB 합산한다", () => {
+test("30장은 60개 role이며 본 파일만300MB 합산한다", () => {
   assert.equal(validateDirectSources("images", {attachmentCount: 30}, sources(30)).ok, true);
-  const files = sources(30).map(f => ({...f, sizeBytes: f.role === "display" ? 5 * 1024 ** 2 : 4 * 1024 ** 2}));
+  const files = sources(30).map(f => ({...f, sizeBytes: f.role === "display" ? 10_000_000 : 300_000_000}));
   assert.equal(validateDirectSources("images", {attachmentCount: 30}, files).ok, true);
   files[1].role = "display";
   assert.equal(validateDirectSources("images", {attachmentCount: 30}, files).ok, false);
+});
+
+test("사진 본 파일과 썸네일은 각각300MB 경계이며 합산은 본 파일만 검사한다", () => {
+  for (const role of ["display", "thumbnail"]) {
+    const files = sources(1).map(f => ({...f, sizeBytes: 300_000_000}));
+    assert.equal(validateDirectSources("images", {attachmentCount: 1}, files).ok, true);
+    files.find(f => f.role === role).sizeBytes++;
+    assert.equal(validateDirectSources("images", {attachmentCount: 1}, files).ok, false);
+  }
+  const files = sources(2).map(f => ({...f, sizeBytes: f.role === "display" ? 150_000_000 : 300_000_000}));
+  assert.equal(validateDirectSources("images", {attachmentCount: 2}, files).ok, true);
+  files[2].sizeBytes++;
+  assert.equal(validateDirectSources("images", {attachmentCount: 2}, files).error, "media_aggregate_too_large");
+});
+
+test("영상은 기존350MiB 본 파일과4MiB 썸네일 제한을 유지한다", () => {
+  const files = sources(1);
+  files[0].contentType = "video/mp4";
+  files[0].sizeBytes = 350 * 1024 ** 2;
+  files[1].sizeBytes = 4 * 1024 ** 2;
+  assert.equal(validateDirectSources("video", {attachmentCount: 1}, files).ok, true);
+  files[1].sizeBytes++;
+  assert.equal(validateDirectSources("video", {attachmentCount: 1}, files).ok, false);
 });
 
 test("누락 썸네일만 복구하고 두 finalize는 하나의 메시지·seq만 생성한다", async () => {

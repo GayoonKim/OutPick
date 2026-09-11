@@ -81,7 +81,7 @@ final class ChatRoomSettingViewModel {
     private let avatarImageManager: AvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let isModeratorDelegationEnabled: Bool
-    private let mediaThumbMaxBytes = 12 * 1024 * 1024
+    private let mediaThumbMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
     private let avatarPrefetchMaxBytes = 3 * 1024 * 1024
 
     private var participantsIsLoadingStorage: Bool

@@ -1,5 +1,11 @@
 # Test Entrypoints
 
+- 공용 확대 화면: `OutPickTests/ImageViewerStateTests.swift`의 제어 가능한 loader/saver로 local-only·저장 중복/실패 복구·페이지 이동 중 저장 대상·실패 미리보기 보존·재시도/닫힘 후 늦은 응답 차단 검증. 컨트롤 렌더링 attachment 포함. 기존 `ImageViewerPagePolicyTests`로 GIF/페이지 계약 회귀. 결과는 `tasks/shared-image-viewer-editorial/implementation-plan.md`.
+
+- 사진300MB·실패 원본: `ChatMediaSelectionChunkerTests`의10진300MB/30장 경계, `ChatDirectMediaPreparationTests`의300MB 초과 조기 거부·고밀도 썸네일4MiB 초과 허용 및 영상4MiB 유지, `ChatMediaSelectionUseCaseTests`의부분 실패 원본 보존/재시도/삭제/child 저장 실패/31장실패30+1 복원. Socket `test/media/directMediaUploadService.test.js`의본/썸네일 경계·본 파일만 합산·영상 기준 유지. 실행 결과는 `tasks/chat-media-preview-continuity/photo-size-failure-recovery.md`.
+
+- `OutPickTests/ChatImagePreviewContinuityTests.swift`: 안정적 첨부 ID, 서버 확정 후 기존 이미지/레이아웃 유지·추가 로딩 금지, 로컬 로딩 성공 유지/실패 후 최신 경로 복구, 같은 ID로 재사용된 셀의 취소 요청 응답 차단, 다른 메시지 이미지 제거, 목록 초기화·재진입 로딩을 제어 가능한 loader/continuation으로 검증한다. 실행 상태와 수동 QA는 `tasks/chat-media-preview-continuity/implementation.md` 참조.
+
 - 2026-09-10 머지 전 최종 실행: 미디어 Swift 회귀62/62(시뮬레이터), Storage 규칙5/5(로컬 Firestore/Storage Emulator), Socket113/113, Functions262/262, worker22/22 통과. Storage suite는 계약2/3 각각 확정 전 읽기 차단·SDK write 차단·확정/비노출 읽기를 검증한다. 성능 synthetic 테스트는 환경 변수 opt-in이며 이번 회귀에 실행하지 않았다.
 
 - 미디어 PR 최종 검증: Socket 전체113/113, Functions 전체262/262, worker22/22. iPhone 기존 직접 업로드52개+파일 준비4개(중복 포함), 실제3장/70장 전송 확인. PR 리뷰에서 uploader 등록 전 취소 회귀를 추가했으며 최종 Swift 실행 결과는 PR 설명을 참조한다. Animation Hitches는 저장/export 미완료로 성능 지표에 사용하지 않는다.

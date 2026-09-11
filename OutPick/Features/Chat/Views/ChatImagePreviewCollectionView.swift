@@ -8,11 +8,15 @@
 import Foundation
 import UIKit
 
-struct ChatImagePreviewItem: Hashable {
+struct ChatImagePreviewItem {
     let id: String
     let displayIndex: Int
     let attachment: Attachment
     let durationText: String?
+
+    static func stableID(messageID: String, attachment: Attachment) -> String {
+        "\(messageID)#\(attachment.type.rawValue)#\(attachment.index)"
+    }
 
     var previewPaths: [String] {
         var seen = Set<String>()
@@ -40,11 +44,12 @@ class ChatImagePreviewCollectionView: UIView {
     typealias ThumbnailLoader = (ChatImagePreviewItem) async -> UIImage?
     
     private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<Section, ChatImagePreviewItem>!
+    private var dataSource: UICollectionViewDiffableDataSource<Section, String>!
     private var imagesCount = 0
     private var contentHeight: CGFloat = 0
     private var rows: [Int] = []
     private var previewItems: [ChatImagePreviewItem] = []
+    private var itemsByID: [String: ChatImagePreviewItem] = [:]
     private var renderedImagesByItemID: [String: UIImage] = [:]
     private var thumbnailLoader: ThumbnailLoader?
     
@@ -179,24 +184,16 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     private func configureDataSource() {
-        dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, item in
-            guard let self else { return nil }
+        dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, itemID in
+            guard let self, let item = self.itemsByID[itemID] else { return nil }
 
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatImagePreviewCell.reuseIdentifier, for: indexPath) as! ChatImagePreviewCell
-            let renderedImage = self.renderedImagesByItemID[item.id]
-            cell.configure(
-                with: item,
-                image: renderedImage,
-                thumbnailLoader: self.thumbnailLoader
-            ) { [weak self] image in
-                guard let self, let image else { return }
-                self.renderedImagesByItemID[item.id] = image
-            }
+            self.configure(cell, with: item)
 
             return cell
         }
 
-        var snapshot = NSDiffableDataSourceSnapshot<Section, ChatImagePreviewItem>()
+        var snapshot = NSDiffableDataSourceSnapshot<Section, String>()
         snapshot.appendSections([Section.main])
         dataSource.apply(snapshot, animatingDifferences: false)
     }
@@ -207,22 +204,50 @@ class ChatImagePreviewCollectionView: UIView {
         _ rows: [Int],
         thumbnailLoader: ThumbnailLoader?
     ) {
+        let itemIDs = items.map(\.id)
+        let validItemIDs = Set(itemIDs)
+        let structureChanged = previewItems.map(\.id) != itemIDs
+        let layoutChanged = imagesCount != items.count || contentHeight != height || self.rows != rows
+        // 삭제/초기화된 항목의 요청은 실제 셀 재사용 시점까지 남겨두지 않는다.
+        for indexPath in collectionView.indexPathsForVisibleItems {
+            guard let itemID = dataSource.itemIdentifier(for: indexPath), !validItemIDs.contains(itemID),
+                  let cell = collectionView.cellForItem(at: indexPath) as? ChatImagePreviewCell else { continue }
+            cell.resetContent()
+        }
         self.imagesCount = items.count
         self.contentHeight = height
         self.rows = rows
         self.previewItems = items
+        self.itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
         self.thumbnailLoader = thumbnailLoader
 
-        let validItemIDs = Set(items.map(\.id))
         renderedImagesByItemID = renderedImagesByItemID.filter { validItemIDs.contains($0.key) }
         
-        // 컬렉션 뷰 레이아웃 업데이트
-        collectionView.setCollectionViewLayout(configureLayout(), animated: false)
-        
-        let itemBySection = [Section.main: items]
-        dataSource.applySnapshotUsing(sectionIDs: [Section.main], itemsBySection: itemBySection, animatingDifferences: false)
-        
-        self.layoutIfNeeded()
+        if layoutChanged {
+            collectionView.setCollectionViewLayout(configureLayout(), animated: false)
+        }
+        if structureChanged {
+            var snapshot = NSDiffableDataSourceSnapshot<Section, String>()
+            snapshot.appendSections([.main])
+            snapshot.appendItems(itemIDs, toSection: .main)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+
+        // 경로와 배지는 최신화하되 동일 첨부의 이미지와 로딩은 셀에서 유지한다.
+        for indexPath in collectionView.indexPathsForVisibleItems {
+            guard let itemID = dataSource.itemIdentifier(for: indexPath),
+                  let item = itemsByID[itemID],
+                  let cell = collectionView.cellForItem(at: indexPath) as? ChatImagePreviewCell else { continue }
+            configure(cell, with: item)
+        }
+        if layoutChanged || structureChanged { layoutIfNeeded() }
+    }
+
+    private func configure(_ cell: ChatImagePreviewCell, with item: ChatImagePreviewItem) {
+        cell.configure(with: item, image: renderedImagesByItemID[item.id], thumbnailLoader: thumbnailLoader) { [weak self] image in
+            guard let self, self.itemsByID[item.id] != nil, let image else { return }
+            self.renderedImagesByItemID[item.id] = image
+        }
     }
 
     func currentImages() -> [UIImage?] {

@@ -1,5 +1,7 @@
 # OutPick Data Schema Index
 
+- 사진300MB 후속 계약(로컬 구현/서버 배포 전): contract3 `kind=images`의 display/thumbnail `sizeBytes` 각각1~300,000,000bytes, display 합계≤300,000,000bytes, attachmentCount≤30. 영상 및 legacy 계약은 기존 한도를 유지한다. `Socket/src/media/directMediaUploadService.js`와 앱 `ChatPhotoSizePolicy`가 검사한다. 실패 사진은 기존 `ChatMediaSelection` JSON(source index/path/isVideo, parent pendingChunk) 형식의 child 원장으로 보존하고 child 저장 후 parent에서 소비한다. GRDB migration 없음. 상세 `tasks/chat-media-preview-continuity/photo-size-failure-recovery.md`.
+
 - 직접 업로드 계약3(미배포): MediaUploads의 targets는 attachmentID/attachmentIndex/sourceIndex/role/path/sizeBytes/contentType, descriptors는 클라이언트 표시 정보를 포함한다. 최종 bucket 직접 PUT 후 ready 메시지·seq·index·delivery job을 transaction으로 생성한다. cleanupAfter/cleanupStatus로 늦은 미완료 업로드를 정리한다. 로컬 outbox preparationVersion은 구자료 재준비 구분이며 signed URL/headers는 영속화하지 않는다. CHAT의 최신 직접 업로드와 상세 설계 참조.
 
 - 2026-09-10 미디어 병렬 전송 로컬 변경: 기존 GRDB outbox JSON의 selectionSources/pendingChunk 소유권, cleanup 원장, 서버 `chatMediaReservationReceipts`와 9일 TTL은 `entrypoints/{DATA,FIREBASE}.md` 및 `tasks/chat-media-bounded-parallel-upload/design.md`를 따른다. 새 SQLite migration 없이 기존 payload를 확장하며 서버 TTL은 미배포다.

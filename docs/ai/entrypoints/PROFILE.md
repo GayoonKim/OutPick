@@ -1,5 +1,7 @@
 # Profile Entrypoints
 
+- 프로필 이미지 확대: `UserProfileDetailViewController` → 공용 `SimpleImageViewerVC`/`ImageViewerChromeView`. local-only initialImage도 정상 완료로 처리하며 단일 이미지 번호 숨김. 기존 호출/주입 계약 유지. `tasks/shared-image-viewer-editorial/implementation-plan.md` 참조.
+
 ## 목적
 
 새 사용자 온보딩, 계정 bootstrap, 공개 프로필 조회, avatar 업로드와 사용자 프로필 상세의 진입점을 정리한다.

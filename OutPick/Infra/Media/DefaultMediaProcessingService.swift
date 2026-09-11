@@ -110,7 +110,7 @@ final class DefaultMediaProcessingService: @unchecked Sendable, MediaProcessingS
                     continuation.resume(throwing: error ?? MediaError.failedToCreateImageData)
                     return
                 }
-                do { continuation.resume(returning: try ChatImageTransportSourceNormalizer.makeThumbnailFile(image)) }
+                do { continuation.resume(returning: try ChatImageTransportSourceNormalizer.makeThumbnailFile(image, maximumBytes: 4 * 1024 * 1024)) }
                 catch { continuation.resume(throwing: error) }
             }
         }

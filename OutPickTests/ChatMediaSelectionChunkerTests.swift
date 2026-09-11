@@ -14,13 +14,25 @@ struct ChatMediaSelectionChunkerTests {
     }
 
     @Test func chunksRespectAggregateByteLimit() {
-        let eightyMiB = 80 * 1024 * 1024
+        let eightyMiB = 160_000_000
         let chunks = ChatMediaSelectionChunker.chunks([
             makeImage(index: 0, bytes: eightyMiB),
             makeImage(index: 1, bytes: eightyMiB)
         ])
 
         #expect(chunks.map(\.count) == [1, 1])
+    }
+
+    @Test func decimalBoundaryAllowsExactly300MBAndSplitsNextImage() {
+        let chunks = ChatMediaSelectionChunker.chunks([
+            makeImage(index: 0, bytes: 150_000_000),
+            makeImage(index: 1, bytes: 150_000_000),
+            makeImage(index: 2, bytes: 1)
+        ])
+        #expect(chunks.map(\.count) == [2, 1])
+        #expect(ChatPhotoSizePolicy.acceptsFile(bytes: 300_000_000))
+        #expect(!ChatPhotoSizePolicy.acceptsFile(bytes: 300_000_001))
+        #expect(!ChatPhotoSizePolicy.acceptsFile(bytes: 0))
     }
 
     @Test(arguments: [

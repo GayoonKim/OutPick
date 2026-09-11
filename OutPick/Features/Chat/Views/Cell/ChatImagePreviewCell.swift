@@ -73,11 +73,23 @@ class ChatImagePreviewCell: UICollectionViewCell {
 
     private var representedItemID: String?
     private var loadTask: Task<Void, Never>?
+    private var loadGeneration = UUID()
+    private var latestItem: ChatImagePreviewItem?
+    private var thumbnailLoader: ThumbnailLoader?
+    private var onImageLoaded: ((UIImage?) -> Void)?
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        resetContent()
+    }
+
+    func resetContent() {
         loadTask?.cancel()
         loadTask = nil
+        loadGeneration = UUID()
+        latestItem = nil
+        thumbnailLoader = nil
+        onImageLoaded = nil
         representedItemID = nil
         imageView.image = nil
         placeholderImageView.isHidden = false
@@ -152,11 +164,20 @@ class ChatImagePreviewCell: UICollectionViewCell {
         thumbnailLoader: ThumbnailLoader?,
         onImageLoaded: ((UIImage?) -> Void)? = nil
     ) {
-        representedItemID = item.id
-        loadTask?.cancel()
-        imageView.image = image
-        placeholderImageView.isHidden = image != nil
-        loadingIndicator.stopAnimating()
+        if representedItemID != item.id {
+            resetContent()
+            representedItemID = item.id
+        }
+        latestItem = item
+        self.thumbnailLoader = thumbnailLoader
+        self.onImageLoaded = onImageLoaded
+        if let image {
+            imageView.image = image
+            loadTask?.cancel()
+            loadTask = nil
+            loadGeneration = UUID()
+        }
+        placeholderImageView.isHidden = imageView.image != nil
 
         if item.isVideo {
             videoBadgeView.isHidden = false
@@ -169,19 +190,38 @@ class ChatImagePreviewCell: UICollectionViewCell {
         }
         gifBadgeLabel.isHidden = !item.isAnimatedGIF
 
-        guard image == nil, let thumbnailLoader else { return }
+        if imageView.image != nil {
+            loadingIndicator.stopAnimating()
+            return
+        }
+        guard loadTask == nil else { return }
+        startLoadingLatestItem()
+    }
+
+    private func startLoadingLatestItem() {
+        guard let item = latestItem, let thumbnailLoader else {
+            loadingIndicator.stopAnimating()
+            return
+        }
+        let generation = UUID()
+        loadGeneration = generation
         loadingIndicator.startAnimating()
 
-        loadTask = Task { [weak self] in
+        loadTask = Task { @MainActor [weak self] in
             let loadedImage = await thumbnailLoader(item)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, self.representedItemID == item.id else { return }
-                self.imageView.image = loadedImage
-                self.placeholderImageView.isHidden = loadedImage != nil
-                self.loadingIndicator.stopAnimating()
-                onImageLoaded?(loadedImage)
+            guard !Task.isCancelled, let self,
+                  self.loadGeneration == generation,
+                  self.representedItemID == item.id else { return }
+            self.loadTask = nil
+            // 로컬 로딩 중 서버 확정이 도착했으면 실패한 경우에만 최신 경로로 복구한다.
+            if loadedImage == nil, self.latestItem?.previewPaths != item.previewPaths {
+                self.startLoadingLatestItem()
+                return
             }
+            self.imageView.image = loadedImage
+            self.placeholderImageView.isHidden = loadedImage != nil
+            self.loadingIndicator.stopAnimating()
+            self.onImageLoaded?(loadedImage)
         }
     }
     
