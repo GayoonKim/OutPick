@@ -8,6 +8,7 @@
 import Foundation
 
 final class ChatMessageManager: ChatMessageManaging {
+    func invalidateMessageCache(roomID: String) { cacheSession.invalidate(roomID: roomID) }
     private let messageRepository: FirebaseMessageRepositoryProtocol
     private let moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol
     private let messagePersistence: ChatMessagePersisting
@@ -15,6 +16,17 @@ final class ChatMessageManager: ChatMessageManaging {
     private let deletionSanitizer: ChatDeletionSyncUseCaseProtocol?
     private let currentAccountID: @Sendable () -> String
     private let profileDisplayCacheLimit = 20
+    private let pageLoader: ChatMessagePageLoader
+    private let cacheSession: ChatMessageCacheSession
+    private let accountID: String
+    private var saveQueue: ChatMessageSaveQueue?
+    private var confirmedReconciler: ChatServerConfirmedMessageReconciling?
+
+    // Container 조립 중 한 번 호출하고 이후 변경하지 않는다.
+    func configureConfirmedMessageSaving(queue: ChatMessageSaveQueue, reconciler: ChatServerConfirmedMessageReconciling) {
+        saveQueue = queue
+        confirmedReconciler = reconciler
+    }
     
     init(
         messageRepository: FirebaseMessageRepositoryProtocol = FirebaseRepositoryProvider.shared.messageRepository,
@@ -22,6 +34,7 @@ final class ChatMessageManager: ChatMessageManaging {
         messagePersistence: ChatMessagePersisting,
         profileCache: ChatProfileCachePersisting,
         deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
+        cacheSession: ChatMessageCacheSession = ChatMessageCacheSession(),
         currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
     ) {
         self.messageRepository = messageRepository
@@ -30,6 +43,33 @@ final class ChatMessageManager: ChatMessageManaging {
         self.profileCache = profileCache
         self.deletionSanitizer = deletionSanitizer
         self.currentAccountID = currentAccountID
+        self.cacheSession = cacheSession
+        self.accountID = currentAccountID()
+        self.pageLoader = ChatMessagePageLoader(local: { roomID, range in
+            try await messagePersistence.fetchMessagesAfterSeq(inRoom: roomID,
+                afterSeq: range.lower - 1, limit: Int(range.upper - range.lower + 1))
+                .filter { range.contains($0.seq) }
+        }, remote: { roomID, range in
+            try await messageRepository.fetchMessageRange(roomID: roomID, range: range)
+        })
+    }
+
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
+        let accountID = currentAccountID()
+        let scope = cacheSession.snapshot(roomID: request.roomID)
+        let result = try await pageLoader.load(request)
+        guard accountID == currentAccountID(), scope.isValid(roomID: request.roomID), !Task.isCancelled else { throw CancellationError() }
+        let sanitized = try await sanitizeForAdmission(result.messages, roomID: request.roomID)
+        guard scope.isValid(roomID: request.roomID), accountID == currentAccountID(), !Task.isCancelled else { throw CancellationError() }
+        if !result.replacedMessageIDs.isEmpty {
+            // 서버 재확인으로 해소한 ID/seq 충돌만 명시적으로 교정한다.
+            try await messagePersistence.saveAuthoritativeIdentityRepair(sanitized, accountID: accountID, session: scope)
+        }
+        // 성공한 구간은 다음 부분 재시도에서 다시 내려받지 않도록 보관한다.
+        try? await persistFetchedServerMessages(sanitized)
+        var admitted = try ChatMessageCacheGapPolicy.result(for: request, messages: sanitized)
+        admitted.replacedMessageIDs = result.replacedMessageIDs
+        return admitted
     }
 
     func loadLocalInitialWindow(
@@ -128,132 +168,61 @@ final class ChatMessageManager: ChatMessageManaging {
 
     func persistFetchedServerMessages(_ messages: [ChatMessage]) async throws {
         guard !messages.isEmpty else { return }
-        try await messagePersistence.saveChatMessages(messages)
+        if let saveQueue {
+            let reconciler = confirmedReconciler
+            for message in messages {
+                let scope = cacheSession.snapshot(roomID: message.roomID)
+                await saveQueue.enqueue(message, save: { [self] incoming in
+                    try await self.writeMessages([incoming], scope: scope)
+                }, confirm: { incoming in
+                    try await reconciler?.reconcileServerConfirmedMessages([incoming])
+                })
+            }
+            return
+        }
+        try await writeMessages(messages)
+    }
+
+    private func writeMessages(_ messages: [ChatMessage], scope: ChatMessageCacheSession? = nil) async throws {
+        try await messagePersistence.saveChatMessages(messages, accountID: accountID, session: scope ?? cacheSession)
         persistSenderDisplayCache(for: messages)
     }
 
     func loadMessagesAroundAnchor(
-        room: ChatRoom,
-        anchor: ChatMessage,
-        beforeLimit: Int,
-        afterLimit: Int
+        room: ChatRoom, anchor: ChatMessage, beforeLimit: Int, afterLimit: Int
     ) async throws -> [ChatMessage] {
-        let roomID = room.id
-        guard !roomID.isEmpty else { return [anchor] }
-
-        let normalizedBefore = max(0, beforeLimit)
-        let normalizedAfter = max(0, afterLimit)
-
-        var localOlder = try await messagePersistence.fetchOlderMessages(
-            inRoom: roomID,
-            before: anchor.ID,
-            limit: normalizedBefore
-        )
-        var localNewer = try await messagePersistence.fetchNewerMessages(
-            inRoom: roomID,
-            after: anchor.ID,
-            limit: normalizedAfter
-        )
-
-        var fetchedFromServer: [ChatMessage] = []
-
-        let olderDeficit = max(0, normalizedBefore - localOlder.count)
-        if olderDeficit > 0 {
-            let fetchedOlder = try await messageRepository.fetchOlderMessages(
-                for: room,
-                before: anchor.ID,
-                limit: olderDeficit
-            )
-            let serverOlder = try await sanitizeForAdmission(fetchedOlder, roomID: roomID)
-            if !serverOlder.isEmpty {
-                fetchedFromServer.append(contentsOf: serverOlder)
-                // older는 ASC 반환. 로컬 older 앞쪽으로 합쳐준다.
-                let localIDs = Set(localOlder.map(\.ID))
-                let missingOlder = serverOlder.filter { !localIDs.contains($0.ID) }
-                localOlder = (missingOlder + localOlder)
-            }
-        }
-
-        let newerDeficit = max(0, normalizedAfter - localNewer.count)
-        if newerDeficit > 0 {
-            let fetchedNewer = try await messageRepository.fetchMessagesAfter(
-                room: room,
-                after: anchor.ID,
-                limit: newerDeficit
-            )
-            let serverNewer = try await sanitizeForAdmission(fetchedNewer, roomID: roomID)
-            if !serverNewer.isEmpty {
-                fetchedFromServer.append(contentsOf: serverNewer)
-                let localIDs = Set(localNewer.map(\.ID))
-                let missingNewer = serverNewer.filter { !localIDs.contains($0.ID) }
-                localNewer.append(contentsOf: missingNewer)
-            }
-        }
-
-        if !fetchedFromServer.isEmpty {
-            do {
-                try await messagePersistence.saveChatMessages(fetchedFromServer)
-                persistSenderDisplayCache(for: fetchedFromServer)
-            } catch {
-                print("⚠️ fetched messages local persistence failed:", error)
-            }
-        }
-
-        var combined: [ChatMessage] = []
-        combined.reserveCapacity(localOlder.count + 1 + localNewer.count)
-        combined.append(contentsOf: localOlder)
-        combined.append(anchor)
-        combined.append(contentsOf: localNewer)
-
-        // ID 기준 중복 제거 + seq 오름차순 정렬
-        var seen = Set<String>()
-        let deduped = combined.filter { seen.insert($0.ID).inserted }
-        return deduped.sorted { lhs, rhs in
-            if lhs.seq != rhs.seq { return lhs.seq < rhs.seq }
-            return lhs.ID < rhs.ID
-        }
+        let latest = try await messageRepository.fetchLatestMessages(for: room, limit: 1).first?.seq ?? anchor.seq
+        let before = try ChatMessagePageRequest(roomID: room.id, direction: .older,
+            boundarySeq: anchor.seq, limit: max(1, min(100, beforeLimit)), upperSeq: latest)
+        let after = try ChatMessagePageRequest(roomID: room.id, direction: .newer,
+            boundarySeq: anchor.seq, limit: max(1, min(100, afterLimit)), upperSeq: max(latest, anchor.seq))
+        async let older = loadMessagePage(before)
+        async let newer = loadMessagePage(after)
+        let pages = try await (older, newer)
+        return try ChatMessageMergePolicy.merge(
+            (beforeLimit > 0 ? pages.0.contiguousMessages : []) + [anchor]
+                + (afterLimit > 0 ? pages.1.contiguousMessages : []), roomID: room.id)
     }
 
     func loadOlderMessages(room: ChatRoom, before messageID: String?) async throws -> [ChatMessage] {
-        let roomID = room.id
-        
-        // 1. GRDB에서 먼저 최대 100개
-        let local = try await messagePersistence.fetchOlderMessages(inRoom: roomID, before: messageID ?? "", limit: 100)
-        var loadedMessages = local
-        
-        // 2. 부족분은 서버에서 채우기
-        if local.count < 100 {
-            let needed = 100 - local.count
-            let fetched = try await messageRepository.fetchOlderMessages(
-                for: room,
-                before: messageID ?? "",
-                limit: needed
-            )
-            let server = try await sanitizeForAdmission(fetched, roomID: roomID)
-            
-            if !server.isEmpty {
-                try await messagePersistence.saveChatMessages(server)
-                persistSenderDisplayCache(for: server)
-                loadedMessages.append(contentsOf: server)
-            }
+        guard let messageID,
+              let anchor = try await messagePersistence.fetchMessage(id: messageID, inRoom: room.id) else {
+            throw ChatMessagePageError.invalidRequest
         }
-        
-        return loadedMessages
+        let request = try ChatMessagePageRequest(roomID: room.id, direction: .older,
+            boundarySeq: anchor.seq, upperSeq: max(Int64(room.seq), anchor.seq))
+        return try await loadMessagePage(request).contiguousMessages
     }
-    
+
     func loadNewerMessages(room: ChatRoom, after messageID: String?) async throws -> [ChatMessage] {
-        let fetched = try await messageRepository.fetchMessagesAfter(
-            room: room,
-            after: messageID ?? "",
-            limit: 100
-        )
-        let server = try await sanitizeForAdmission(fetched, roomID: room.id)
-        
-        guard !server.isEmpty else { return [] }
-        try await messagePersistence.saveChatMessages(server)
-        persistSenderDisplayCache(for: server)
-        
-        return server
+        guard let messageID,
+              let anchor = try await messagePersistence.fetchMessage(id: messageID, inRoom: room.id) else {
+            throw ChatMessagePageError.invalidRequest
+        }
+        let latest = try await messageRepository.fetchLatestMessages(for: room, limit: 1).first?.seq ?? anchor.seq
+        let request = try ChatMessagePageRequest(roomID: room.id, direction: .newer,
+            boundarySeq: anchor.seq, upperSeq: max(latest, anchor.seq))
+        return try await loadMessagePage(request).contiguousMessages
     }
 
     func loadLatestMessageWindow(
@@ -278,8 +247,7 @@ final class ChatMessageManager: ChatMessageManaging {
         let window = try ChatLatestMessageWindow.make(targetSeq: targetSeq, fetched: fetched)
         let messages = window.messages
 
-        try await messagePersistence.saveChatMessages(messages)
-        persistSenderDisplayCache(for: messages)
+        try await persistFetchedServerMessages(messages)
         return window
     }
     
@@ -303,32 +271,9 @@ final class ChatMessageManager: ChatMessageManaging {
     }
     
     func handleIncomingMessage(_ message: ChatMessage, room: ChatRoom) async throws {
-        let admitted = try await sanitizeForAdmission([message], roomID: room.id).first ?? message
-        // 메시지 저장 (재시도 로직 포함)
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                try await messagePersistence.saveChatMessages([admitted])
-                persistSenderDisplayCache(for: [admitted])
-                
-                lastError = nil
-                break
-            } catch {
-                lastError = error
-                print("⚠️ GRDB saveChatMessages 실패 (시도 \(attempt)/\(maxRetries)): \(error)")
-                if attempt < maxRetries {
-                    try? await Task.sleep(nanoseconds: UInt64(200_000_000) * UInt64(attempt))
-                }
-            }
-        }
-        
-        if let err = lastError {
-            print("❌ GRDB saveChatMessages 최종 실패: \(err)")
-            throw err
-        }
-        
+        // UI admission은 호출자가 수행했고, 최신 삭제 마커는 저장 transaction에서 적용한다.
+        // 재시도 횟수는 공통 저장 조정자가 단독 소유한다.
+        try await persistFetchedServerMessages([message])
     }
 
     func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
@@ -447,7 +392,7 @@ final class ChatMessageManager: ChatMessageManaging {
             .fetchFailedOutgoingMessages(inRoom: roomID, senderUID: senderUID)
 
         guard !failed.isEmpty else { return window }
-        try? await messagePersistence.saveChatMessages(failed)
+        try? await messagePersistence.saveChatMessages(failed, accountID: accountID, session: cacheSession)
 
         let serverIDs = Set(window.messages.map(\.ID))
         let unresolvedFailed = failed.filter { !serverIDs.contains($0.ID) }

@@ -28,6 +28,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var cancellables = Set<AnyCancellable>()
     private var initialLoadTask: Task<Void, Never>?
     private var realtimeSubscription: ChatRoomRealtimeSubscription?
+    private var pageRetryButtons: [ChatMessagePageDirection: UIButton] = [:]
     private var routeLifecycleState = ChatRoomRouteLifecycleState()
     var onRouteRemoved: ((ChatViewController) -> Void)?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
@@ -374,6 +375,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         setupAttachmentView()
         
         setupInitialMessages()
+        setupPageRetryButtons()
         
         bindKeyboardPublisher()
         bindSearchEvents()
@@ -463,6 +465,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
 
         if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
+            chatRoomViewModel.invalidateMessagePages()
             stopMediaSelectionSession(reason: "route_disappeared")
             onRouteRemoved?(self)
         }
@@ -491,6 +494,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
 
             for await event in self.chatRoomViewModel.startInitialLoadEvents(isParticipant: isParticipant) {
+                self.renderPageRetryButtons()
                 if Task.isCancelled { break }
 
                 switch event {
@@ -989,19 +993,24 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     @MainActor
     private func loadOlderMessages(before messageID: String?) async {
+        guard let messageID, let seq = messageWindowStore.message(for: messageID)?.seq, seq > 0 else { return }
         do {
-            let loadedMessages = try await chatRoomViewModel.loadOlderMessages(before: messageID)
-            appendMessagesInChunks(loadedMessages, updateType: .older)
+            let loadedMessages = try await chatRoomViewModel.loadMessagePage(direction: .older, boundarySeq: seq)
+            for id in chatRoomViewModel.consumeRepairedPageMessageIDs() { _ = messageWindowStore.removeMessage(id: id) }
+            appendMessagePage(loadedMessages, updateType: .older)
         } catch {
             print("❌ loadOlderMessages 실패:", error)
         }
+        renderPageRetryButtons()
     }
     
     @MainActor
     private func loadNewerMessagesIfNeeded(after messageID: String?) async {
+        guard let messageID, let seq = messageWindowStore.message(for: messageID)?.seq, seq > 0 else { return }
         do {
-            let result = try await chatRoomViewModel.loadNewerMessages(after: messageID)
-            appendMessagesInChunks(result.messages, updateType: .newer)
+            let messages = try await chatRoomViewModel.loadMessagePage(direction: .newer, boundarySeq: seq)
+            for id in chatRoomViewModel.consumeRepairedPageMessageIDs() { _ = messageWindowStore.removeMessage(id: id) }
+            appendMessagePage(messages, updateType: .newer)
             renderLatestMessageJump()
             DispatchQueue.main.async { [weak self] in
                 self?.reportVisibleReadFrontier()
@@ -1009,18 +1018,53 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         } catch {
             print("❌ loadNewerMessagesIfNeeded 실패:", error)
         }
+        renderPageRetryButtons()
+    }
+
+    private func setupPageRetryButtons() {
+        for direction in [ChatMessagePageDirection.older, .newer] {
+            let button = UIButton(type: .system)
+            button.setTitle(direction == .older ? "이전 메시지 다시 불러오기" : "다음 메시지 다시 불러오기", for: .normal)
+            button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+            button.titleLabel?.adjustsFontForContentSizeCategory = true
+            button.backgroundColor = OutPickTheme.ColorToken.backgroundBase
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.isHidden = true
+            button.addAction(UIAction { [weak self, weak button] _ in
+                guard let self, let button else { return }
+                Task { @MainActor in
+                    button.isEnabled = false
+                    defer { button.isEnabled = true }
+                    if direction == .older {
+                        await self.loadOlderMessages(before: self.messageWindowStore.firstMessageID())
+                    } else {
+                        await self.loadNewerMessagesIfNeeded(after: self.messageWindowStore.lastMessageID())
+                    }
+                }
+            }, for: .touchUpInside)
+            view.addSubview(button)
+            NSLayoutConstraint.activate([
+                button.centerXAnchor.constraint(equalTo: chatMessageCollectionView.centerXAnchor),
+                button.widthAnchor.constraint(lessThanOrEqualTo: chatMessageCollectionView.widthAnchor, constant: -16),
+                button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                direction == .older
+                    ? button.topAnchor.constraint(equalTo: chatMessageCollectionView.topAnchor, constant: 8)
+                    : button.bottomAnchor.constraint(equalTo: chatMessageCollectionView.bottomAnchor, constant: -8)
+            ])
+            pageRetryButtons[direction] = button
+        }
+    }
+
+    private func renderPageRetryButtons() {
+        for (direction, button) in pageRetryButtons {
+            button.isHidden = !chatRoomViewModel.pageRetryDirections.contains(direction)
+        }
     }
 
     @MainActor
-    private func appendMessagesInChunks(_ messages: [ChatMessage], updateType: MessageUpdateType) {
-        guard !messages.isEmpty else { return }
-        let chunkSize = 20
-        let total = messages.count
-        for i in stride(from: 0, to: total, by: chunkSize) {
-            let end = min(i + chunkSize, total)
-            let chunk = Array(messages[i..<end])
-            addMessages(chunk, updateType: updateType)
-        }
+    private func appendMessagePage(_ messages: [ChatMessage], updateType: MessageUpdateType) {
+        // 한 페이지를 여러 번 prepend하면 청크 순서와 화면 기준점이 흔들린다.
+        addMessages(messages, updateType: updateType)
     }
     
     @MainActor
@@ -1118,6 +1162,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     func finishRouteLifecycleForCoordinator() {
+        chatRoomViewModel.invalidateMessagePages()
+        renderPageRetryButtons()
         _ = routeLifecycleState.finishForReplacement()
         stopMediaSelectionSession(reason: "coordinator_route_finished")
         latestJumpTask?.cancel()
@@ -1169,7 +1215,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             #if DEBUG
             print("[MediaQA] event=image_pending_cleared messageID=\(message.ID) uptime=\(ProcessInfo.processInfo.systemUptime) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) source=socket")
             #endif
-            await outgoingOutboxUseCase.completeServerConfirmedMessage(message)
+            // 확정 저장과 outbox 정리는 공통 수신 저장 경로에서 수행한다.
         }
 
         let wasNearBottom = isNearBottom()
@@ -1730,6 +1776,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 await MainActor.run {
                     self.setupChatUI()
+                    // 참여 전 버튼이 입력창 뒤와 접근성 트리에 남지 않도록 정리한다.
+                    self.joinRoomBtn.isHidden = true
                     self.chatUIView.isHidden = false
                     self.chatMessageCollectionView.isHidden = false
                     self.setupInitialMessages()
@@ -3498,6 +3546,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         let windowSize = 300
 
+        // 페이지를 추가하기 직전 보이는 메시지와 화면 내 위치를 유지한다.
+        let anchor: (id: String, offset: CGFloat)? = updateType == .older
+            ? chatMessageCollectionView.indexPathsForVisibleItems.sorted().compactMap { indexPath in
+                guard let item = dataSource.itemIdentifier(for: indexPath),
+                      let id = item.messageID,
+                      let attributes = chatMessageCollectionView.layoutAttributesForItem(at: indexPath) else { return nil }
+                return (id: id, offset: attributes.frame.minY - chatMessageCollectionView.contentOffset.y)
+            }.first
+            : nil
+
         let mutation = messageWindowStore.apply(
             messages: messages,
             updateType: updateType,
@@ -3529,7 +3587,20 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             mutation.items,
             reconfiguring: mutation.reconfiguredItems,
             animatingDifferences: animate,
-            completion: completion
+            completion: { [weak self] in
+                if let self, let anchor,
+                   let item = self.dataSource.snapshot().itemIdentifiers.first(where: { $0.messageID == anchor.id }),
+                   let indexPath = self.dataSource.indexPath(for: item) {
+                    self.chatMessageCollectionView.layoutIfNeeded()
+                    if let attributes = self.chatMessageCollectionView.layoutAttributesForItem(at: indexPath) {
+                        self.chatMessageCollectionView.setContentOffset(
+                            CGPoint(x: self.chatMessageCollectionView.contentOffset.x, y: attributes.frame.minY - anchor.offset),
+                            animated: false
+                        )
+                    }
+                }
+                completion?()
+            }
         )
     }
 

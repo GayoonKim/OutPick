@@ -16,6 +16,23 @@ final class FirebaseMessageRepository: FirebaseMessageRepositoryProtocol {
         self.db = db
     }
 
+    func fetchMessageRange(roomID: String, range: ChatMessageSequenceRange) async throws -> [ChatMessage] {
+        guard range.upper - range.lower < 100 else { throw ChatMessagePageError.invalidRequest }
+        let snapshot = try await db.collection("Rooms").document(roomID).collection("Messages")
+            .whereField("seq", isGreaterThanOrEqualTo: range.lower)
+            .whereField("seq", isLessThanOrEqualTo: range.upper)
+            .order(by: "seq").limit(to: 100).getDocuments(source: .server)
+        return try snapshot.documents.map { document in
+            var payload = document.data()
+            payload["ID"] = document.documentID
+            payload["roomID"] = roomID
+            guard let message = ChatMessage.from(payload), range.contains(message.seq) else {
+                throw ChatMessagePageError.invalidPayload
+            }
+            return message
+        }
+    }
+
     func fetchConfirmedMessage(roomID: String, messageID: String) async throws -> ChatMessage? {
         let snapshot = try await db.collection("Rooms").document(roomID)
             .collection("Messages").document(messageID).getDocument(source: .server)

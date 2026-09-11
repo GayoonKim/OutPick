@@ -169,6 +169,7 @@ struct ChatMessageWindowStore {
 
         for message in existingMessages {
             if let previous = messagesByID[message.ID] {
+                if ChatMessageMergePolicy.samePayload(previous, message) { continue }
                 replacements.append(ChatMessageReplacement(previous: previous, next: message))
                 shouldReloadSnapshot = shouldReloadSnapshot || shouldReposition(previous: previous, next: message)
             }
