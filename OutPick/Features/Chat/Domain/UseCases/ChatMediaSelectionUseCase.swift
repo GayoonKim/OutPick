@@ -6,6 +6,7 @@ enum ChatPreparedSelectionChunk {
     case images([ProcessedImage])
     case video(PreparedVideo)
     case failedVideo(ChatMediaSelection.Source)
+    case failedImages([ChatMediaSelection.Source])
 }
 
 /// 파일 확보 barrier와 순서 보존 준비를 소유한다. 화면은 완성 chunk만 받아 표현한다.
@@ -39,6 +40,23 @@ final class ChatMediaSelectionUseCase {
             selectionSources: [.init(index: source.index, path: target.path, isVideo: true)]))
     }
 
+    func preserveFailedImages(_ sources: [ChatMediaSelection.Source], id: String, roomID: String,
+                              senderUID: String) async throws {
+        let directory = try await repository.directory(id)
+        var owned: [ChatMediaSelection.Source] = []
+        for source in sources {
+            let original = URL(fileURLWithPath: source.path)
+            let target = directory.appendingPathComponent(String(source.index)).appendingPathExtension(original.pathExtension)
+            // 같은 child 원장 저장을 재시도해도 이미 복사한 파일을 다시 덮어쓰지 않는다.
+            if !FileManager.default.fileExists(atPath: target.path) {
+                try FileManager.default.copyItem(at: original, to: target)
+            }
+            owned.append(.init(index: source.index, path: target.path, isVideo: false))
+        }
+        try await repository.save(.init(selectionID: id, roomID: roomID, senderUID: senderUID,
+            createdAt: Date(), selectionSources: owned))
+    }
+
     init(repository: ChatMediaSelectionRepository, limits: ChatMediaPipelineLimits = .init(),
          prepareImage: @escaping @Sendable (URL, Int) throws -> ProcessedImage = {
              try ChatImageTransportSourceNormalizer.prepare(sourceURL: $0, index: $1)
@@ -58,24 +76,36 @@ final class ChatMediaSelectionUseCase {
 
     func acquire(sourceCount: Int, roomID: String, senderUID: String, id: String,
         sourceAt: @escaping @Sendable (Int, URL) async throws -> ChatMediaSelection.Source) async throws -> ChatMediaSelection {
+        #if DEBUG
+        let acquisitionStarted = ProcessInfo.processInfo.systemUptime
+        print("[MediaQA] event=acquisition_started selectionID=\(id) count=\(sourceCount) concurrency=\(limits.acquisition) uptime=\(acquisitionStarted) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)")
+        #endif
         // 빈 source 원장은 확보 도중 앱 종료 시 잔여 파일을 정리하는 용도이며 버블로 표시하지 않는다.
         try await repository.save(.init(selectionID: id, roomID: roomID, senderUID: senderUID,
             createdAt: Date(), selectionSources: []))
         #if DEBUG
-        print("[MediaQA] event=acquisition_ledger_saved selectionID=\(id)")
+        print("[MediaQA] event=acquisition_ledger_saved selectionID=\(id) uptime=\(ProcessInfo.processInfo.systemUptime)")
         #endif
         do {
             let directory = try await repository.directory(id)
             #if DEBUG
-            print("[MediaQA] event=acquisition_directory_ready selectionID=\(id)")
+            print("[MediaQA] event=acquisition_directory_ready selectionID=\(id) uptime=\(ProcessInfo.processInfo.systemUptime)")
             #endif
             let sources = try await withThrowingTaskGroup(of: ChatMediaSelection.Source.self) { group in
                 var next = 0
                 var output: [ChatMediaSelection.Source] = []
                 func add(_ index: Int) {
+                    #if DEBUG
+                    let scheduled = ProcessInfo.processInfo.systemUptime
+                    print("[MediaQA] event=source_scheduled selectionID=\(id) index=\(index) uptime=\(scheduled) sinceAcquisitionMs=\((scheduled - acquisitionStarted) * 1000)")
+                    #endif
                     group.addTask { [acquisitionTurns] in
                         let token = UUID().uuidString
                         try await acquisitionTurns.acquire(lane: .images, uploadID: token)
+                        #if DEBUG
+                        let admitted = ProcessInfo.processInfo.systemUptime
+                        print("[MediaQA] event=source_slot_acquired selectionID=\(id) index=\(index) uptime=\(admitted) queueMs=\((admitted - scheduled) * 1000)")
+                        #endif
                         do {
                             let source = try await sourceAt(index, directory)
                             await acquisitionTurns.release(lane: .images, uploadID: token)
@@ -93,6 +123,9 @@ final class ChatMediaSelectionUseCase {
                 }
                 return output.sorted { $0.index < $1.index }
             }
+            #if DEBUG
+            print("[MediaQA] event=acquisition_sources_completed selectionID=\(id) uptime=\(ProcessInfo.processInfo.systemUptime)")
+            #endif
             try Task.checkCancellation()
             let selection = ChatMediaSelection(selectionID: id, roomID: roomID, senderUID: senderUID,
                 createdAt: Date(), selectionSources: sources)
@@ -122,6 +155,7 @@ final class ChatMediaSelectionUseCase {
         var current: [ProcessedImage] = []
         var currentIndices: [Int] = []
         var rejected = 0
+        var failedImages: [ChatMediaSelection.Source] = []
         var transientFiles: [URL] = []
         defer { transientFiles.forEach { try? FileManager.default.removeItem(at: $0) } }
 
@@ -144,7 +178,7 @@ final class ChatMediaSelectionUseCase {
             switch chunk {
             case .images(let pairs): ownedFiles = pairs.flatMap { [$0.originalFileURL] + [$0.thumbFileURL].compactMap { $0 } }
             case .video(let video): ownedFiles = [video.compressedFileURL] + [video.thumbnailFileURL].compactMap { $0 }
-            case .failedVideo: ownedFiles = []
+            case .failedVideo, .failedImages: ownedFiles = []
             }
             ownedFiles.forEach { try? FileManager.default.removeItem(at: $0) }
             transientFiles.removeAll { ownedFiles.contains($0) }
@@ -177,8 +211,15 @@ final class ChatMediaSelectionUseCase {
             let prepared = await withTaskGroup(of: (Int, ProcessedImage?).self) { group in
                 for source in batch {
                     group.addTask { [prepareImage] in
-                        let result = autoreleasepool {
-                            try? prepareImage(URL(fileURLWithPath: source.path), source.index)
+                        let result: ProcessedImage? = autoreleasepool { () -> ProcessedImage? in
+                            do { return try prepareImage(URL(fileURLWithPath: source.path), source.index) }
+                            catch {
+                                #if DEBUG
+                                let failure = error as NSError
+                                print("[MediaQA] event=image_prepare_failed selectionID=\(original.selectionID) index=\(source.index) domain=\(failure.domain) code=\(failure.code)")
+                                #endif
+                                return nil as ProcessedImage?
+                            }
                         }
                         return (source.index, result)
                     }
@@ -193,8 +234,7 @@ final class ChatMediaSelectionUseCase {
             for (index, pair) in prepared {
                 guard let pair else {
                     rejected += 1
-                    selection.selectionSources.removeAll { $0.index == index }
-                    try await repository.save(selection)
+                    if let source = batch.first(where: { $0.index == index }) { failedImages.append(source) }
                     continue
                 }
                 if !current.isEmpty && (current.count == 30 || current.reduce(0, { $0 + $1.bytesOriginal }) + pair.bytesOriginal > ChatMediaSelectionChunker.maxAggregateBytes) {
@@ -210,6 +250,11 @@ final class ChatMediaSelectionUseCase {
         }
         if !current.isEmpty {
             try await deliver(currentIndices, .images(ChatMediaSelectionChunker.chunks(current)[0]))
+        }
+        // 실패 원본도 child 원장에 보존한 뒤에만 parent 소유권을 해제한다.
+        for offset in stride(from: 0, to: failedImages.count, by: ChatPhotoSizePolicy.maximumImagesPerMessage) {
+            let group = Array(failedImages[offset..<min(offset + ChatPhotoSizePolicy.maximumImagesPerMessage, failedImages.count)])
+            try await deliver(group.map(\.index), .failedImages(group))
         }
         if selection.selectionSources.isEmpty { try await repository.remove(selection.selectionID) }
         return rejected

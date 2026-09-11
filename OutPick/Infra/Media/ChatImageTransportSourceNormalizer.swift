@@ -5,8 +5,8 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 enum ChatImageTransportSourceNormalizer {
-    static let maxSourceBytes = 15 * 1024 * 1024
-    static let maxThumbnailBytes = 4 * 1024 * 1024
+    static let maxSourceBytes = ChatPhotoSizePolicy.maximumFileBytes
+    static let maxThumbnailBytes = ChatPhotoSizePolicy.maximumFileBytes
     private static let mainQualities = [0.92, 0.80, 0.70]
 
     static func prepare(_ result: PHPickerResult, index: Int) async throws -> ProcessedImage {
@@ -17,6 +17,9 @@ enum ChatImageTransportSourceNormalizer {
 
     static func prepare(sourceURL: URL, index: Int) throws -> ProcessedImage {
         try Task.checkCancellation()
+        guard ChatPhotoSizePolicy.acceptsFile(bytes: fileBytes(sourceURL)) else {
+            throw MediaError.sourceTooLarge
+        }
         guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
               let sourceType = CGImageSourceGetType(source) else {
             throw MediaError.failedToConvertImage
@@ -120,7 +123,7 @@ enum ChatImageTransportSourceNormalizer {
     }
 
     /// 저장 해상도는 유지하고 JPEG 품질만 고정한다. 투명 영역은 검정으로 합성한다.
-    static func makeThumbnailFile(_ image: CGImage) throws -> URL {
+    static func makeThumbnailFile(_ image: CGImage, maximumBytes: Int = maxThumbnailBytes) throws -> URL {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: image.width, height: image.height,
                   bitsPerComponent: 8, bytesPerRow: 0, space: space,
@@ -140,7 +143,7 @@ enum ChatImageTransportSourceNormalizer {
         }
         CGImageDestinationAddImage(destination, opaque, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
         guard CGImageDestinationFinalize(destination), fileBytes(url) > 0,
-              fileBytes(url) <= maxThumbnailBytes else { throw MediaError.sourceTooLarge }
+              fileBytes(url) <= maximumBytes else { throw MediaError.sourceTooLarge }
         keep = true
         return url
     }

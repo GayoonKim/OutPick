@@ -463,7 +463,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
 
         if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
-            stopMediaSelectionSession()
+            stopMediaSelectionSession(reason: "route_disappeared")
             onRouteRemoved?(self)
         }
     }
@@ -1119,7 +1119,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     func finishRouteLifecycleForCoordinator() {
         _ = routeLifecycleState.finishForReplacement()
-        stopMediaSelectionSession()
+        stopMediaSelectionSession(reason: "coordinator_route_finished")
         latestJumpTask?.cancel()
         latestJumpTask = nil
         clearRealtimePreviewCard()
@@ -3292,6 +3292,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     private func pendingRecoveryState(for messageID: String) -> ChatMessageCell.MediaUploadRecoveryState? {
+        if mediaSelectionTasks[messageID] != nil { return .processing }
         guard let state = pendingMediaUploadStore.uploadState(for: messageID) else {
             guard let message = messageWindowStore.message(for: messageID), message.isFailed,
                   !message.attachments.isEmpty else { return nil }
@@ -3331,7 +3332,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func reconfigureMessageItem(messageID: String) {
+    func reconfigureMessageItem(messageID: String) {
         reconfigureMessageItems(messageIDs: [messageID])
     }
 
@@ -3659,7 +3660,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     // MARK: 이미지 뷰어 관련
     // 이미지 뷰어 오픈 시 원본 프리패치 task
     private var imageViewerPrefetchTasks: [Task<Void, Never>] = []
-    private let chatThumbnailMaxBytes = 4 * 1024 * 1024
+    private let chatThumbnailMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
     private let mediaPrefetchPad = 60
     private let mediaPrefetchCleanupDelayMs: UInt64 = 350
     
@@ -3878,7 +3879,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             guard let self, !nearPaths.isEmpty else { return }
             await self.attachmentImageLoader.prefetchImages(
                 paths: nearPaths,
-                maxBytes: 60 * 1024 * 1024,
+                maxBytes: ChatPhotoSizePolicy.maximumFileBytes,
                 maxConcurrent: 6
             )
         }
@@ -3889,7 +3890,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 guard let self else { return }
                 await self.attachmentImageLoader.prefetchImages(
                     paths: restPaths,
-                    maxBytes: 60 * 1024 * 1024,
+                    maxBytes: ChatPhotoSizePolicy.maximumFileBytes,
                     maxConcurrent: 3
                 )
             }
@@ -4339,7 +4340,7 @@ extension ChatViewController {
                 } else {
                     self?.flushLastReadSeq(trigger: name.rawValue)
                     if name == UIApplication.didEnterBackgroundNotification {
-                        Task { @MainActor [weak self] in self?.stopMediaSelectionSession() }
+                        Task { @MainActor [weak self] in self?.stopMediaSelectionSession(reason: "app_background") }
                     }
                 }
             }

@@ -1,8 +1,8 @@
 import Foundation
 
 enum ChatMediaSelectionChunker {
-    static let maxImagesPerMessage = 30
-    static let maxAggregateBytes = 150 * 1024 * 1024
+    static let maxImagesPerMessage = ChatPhotoSizePolicy.maximumImagesPerMessage
+    static let maxAggregateBytes = ChatPhotoSizePolicy.maximumBatchDisplayBytes
 
     static func chunks(_ images: [ProcessedImage]) -> [[ProcessedImage]] {
         var result: [[ProcessedImage]] = []
