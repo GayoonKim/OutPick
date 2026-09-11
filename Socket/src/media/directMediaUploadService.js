@@ -3,6 +3,8 @@ import {boundedMap} from "./boundedMap.js";
 import {effectiveModerationStatus} from "../moderation/capabilities.js";
 
 const MiB = 1024 * 1024;
+const MAX_PHOTO_FILE_BYTES = 300_000_000;
+const MAX_PHOTO_BATCH_BYTES = 300_000_000;
 const DAY = 86400000;
 const millis = value => value?.toMillis?.() ?? 0;
 const failure = error => ({ok: false, error});
@@ -23,12 +25,12 @@ export function validateDirectSources(kind, contract, sources) {
     if (f.index !== i || f.attachmentIndex !== Math.floor(i / 2) ||
         f.role !== (thumbnail ? "thumbnail" : "display") || !types.includes(f.contentType) ||
         !Number.isSafeInteger(f.sizeBytes) || f.sizeBytes <= 0 ||
-        f.sizeBytes > (thumbnail ? 4 : kind === "images" ? 15 : 350) * MiB ||
+        f.sizeBytes > (kind === "images" ? MAX_PHOTO_FILE_BYTES : (thumbnail ? 4 : 350) * MiB) ||
         !Number.isSafeInteger(f.width) || f.width <= 0 || !Number.isSafeInteger(f.height) || f.height <= 0 ||
         !Number.isFinite(f.duration) || f.duration < 0) return failure("media_source_invalid");
     if (!thumbnail) total += f.sizeBytes;
   }
-  if (kind === "images" && total > 150 * MiB) return failure("media_aggregate_too_large");
+  if (kind === "images" && total > MAX_PHOTO_BATCH_BYTES) return failure("media_aggregate_too_large");
   return {ok: true, files};
 }
 
