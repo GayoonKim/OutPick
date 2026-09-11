@@ -67,6 +67,20 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
     private let persistence: ChatDeletionSyncPersisting
     private let mediaCleaner: ChatDeletionMediaCleaning
     private let pageSize: Int
+    private struct RoomKey: Hashable { let accountID: String; let roomID: String }
+    private struct ReplyKey: Hashable { let accountID: String; let roomID: String; let ids: [String] }
+    private var reconciliations: [RoomKey: (UUID, Task<Set<String>, Error>)] = [:]
+    private var targetRevisions: [RoomKey: Int64] = [:]
+    private var replyQueries: [ReplyKey: (UUID, Task<[ChatDeletionDelta], Error>)] = [:]
+    private var cleanupTask: Task<Void, Never>?
+    private var cleanupPending: [ChatDeletionCleanupItem] = []
+
+    #if DEBUG
+    // 경합 QA에서 이벤트 접수 완료를 확인해 임의 sleep 없이 조회를 재개한다.
+    func pendingRevisionForDebug(accountID: String, roomID: String) -> Int64? {
+        targetRevisions[RoomKey(accountID: accountID, roomID: roomID)]
+    }
+    #endif
 
     init(
         repository: ChatDeletionSyncRepositoryProtocol,
@@ -85,9 +99,28 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         accountID: String,
         allowEmptyLocalBootstrap: Bool
     ) async throws -> Set<String> {
-        let head = try await repository.headRevision(roomID: roomID)
+        let key = RoomKey(accountID: accountID, roomID: roomID)
+        if let task = reconciliations[key] { return try await task.1.value }
+        let id = UUID()
+        let task = Task { try await self.performReconcile(roomID: roomID, accountID: accountID,
+            allowEmptyLocalBootstrap: allowEmptyLocalBootstrap) }
+        reconciliations[key] = (id, task)
+        defer {
+            if reconciliations[key]?.0 == id {
+                reconciliations.removeValue(forKey: key)
+                targetRevisions.removeValue(forKey: key)
+            }
+        }
+        return try await task.value
+    }
+
+    private func performReconcile(roomID: String, accountID: String, allowEmptyLocalBootstrap: Bool) async throws -> Set<String> {
+        let key = RoomKey(accountID: accountID, roomID: roomID)
+        var head = try await repository.headRevision(roomID: roomID)
+        head = max(head, targetRevisions[key] ?? head)
         guard head >= 0 else { throw ChatDeletionSyncError.invalidHead }
         var cursor = try await persistence.cursor(accountID: accountID, roomID: roomID)
+        head = max(head, targetRevisions[key] ?? head)
         guard head > cursor else {
             await resumePendingCleanup()
             return []
@@ -102,7 +135,8 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         }
 
         var applied = Set<String>()
-        while cursor < head {
+        while cursor < max(head, targetRevisions[key] ?? head) {
+            head = max(head, targetRevisions[key] ?? head)
             let page = try await repository.deltas(
                 roomID: roomID,
                 afterRevision: cursor,
@@ -136,6 +170,24 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
     }
 
     func handleSocketEvent(_ event: ChatDeletionSocketEvent, accountID: String) async throws -> Set<String> {
+        let key = RoomKey(accountID: accountID, roomID: event.roomID)
+        let revision: Int64
+        switch event.kind {
+        case .message(let delta): revision = delta.revision
+        case .headAdvanced(_, let toRevision): revision = toRevision
+        }
+        if let running = reconciliations[key] {
+            targetRevisions[key] = max(targetRevisions[key] ?? 0, revision)
+            let applied = try await running.1.value
+            // 빈 결과/초기 bootstrap 종료 직전에 접수된 이벤트도 이번 호출에서 반영한다.
+            let cursor = try await persistence.cursor(accountID: accountID, roomID: event.roomID)
+            guard cursor < revision else { return applied }
+            if reconciliations[key]?.0 == running.0 {
+                reconciliations.removeValue(forKey: key)
+                targetRevisions.removeValue(forKey: key)
+            }
+            return try await applied.union(handleSocketEvent(event, accountID: accountID))
+        }
         let cursor = try await persistence.cursor(accountID: accountID, roomID: event.roomID)
         switch event.kind {
         case .message(let delta) where delta.revision == cursor + 1:
@@ -211,7 +263,8 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         }
 
         if !unknownReplyTargetIDs.isEmpty {
-            resolvedDeleted.append(contentsOf: try await repository.deltas(
+            resolvedDeleted.append(contentsOf: try await sharedReplyDeltas(
+                accountID: accountID,
                 roomID: roomID,
                 messageIDs: Array(unknownReplyTargetIDs)
             ))
@@ -261,7 +314,15 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
     }
 
     private func clean(_ items: [ChatDeletionCleanupItem]) async {
-        for item in items {
+        for item in items where !cleanupPending.contains(item) { cleanupPending.append(item) }
+        guard cleanupTask == nil, !cleanupPending.isEmpty else { return }
+        cleanupTask = Task { await self.drainCleanup() }
+    }
+
+    private func drainCleanup() async {
+        defer { cleanupTask = nil }
+        while !cleanupPending.isEmpty {
+            let item = cleanupPending.removeFirst()
             do {
                 try await mediaCleaner.clean(item)
                 try await persistence.completeCleanup(item)
@@ -269,5 +330,15 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
                 // durable queue를 남겨 다음 앱 실행·동기화에서 재시도한다.
             }
         }
+    }
+
+    private func sharedReplyDeltas(accountID: String, roomID: String, messageIDs: [String]) async throws -> [ChatDeletionDelta] {
+        let key = ReplyKey(accountID: accountID, roomID: roomID, ids: messageIDs.sorted())
+        if let task = replyQueries[key] { return try await task.1.value }
+        let id = UUID()
+        let task = Task { try await self.repository.deltas(roomID: roomID, messageIDs: key.ids) }
+        replyQueries[key] = (id, task)
+        defer { if replyQueries[key]?.0 == id { replyQueries.removeValue(forKey: key) } }
+        return try await task.value
     }
 }

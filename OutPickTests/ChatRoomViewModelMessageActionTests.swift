@@ -11,6 +11,44 @@ import Testing
 
 @MainActor
 struct ChatRoomViewModelMessageActionTests {
+    @Test func stalePageCannotChangeRetryStateAfterGenerationReset() async throws {
+        let spy = ChatRoomMessageUseCaseSpy()
+        var response: CheckedContinuation<ChatMessagePageResult, Error>?
+        var started: CheckedContinuation<Void, Never>?
+        spy.pageHandler = { _ in
+            try await withCheckedThrowingContinuation { continuation in
+                response = continuation
+                started?.resume()
+            }
+        }
+        let viewModel = makeViewModel(messageUseCase: spy)
+        let task = Task { try await viewModel.loadMessagePage(direction: .older, boundarySeq: 201) }
+        if response == nil { await withCheckedContinuation { started = $0 } }
+        viewModel.invalidateMessagePages()
+        response?.resume(returning: ChatMessagePageResult(messages: [], contiguousMessages: [],
+            nextBoundarySeq: 201, unresolvedRanges: [ChatMessageSequenceRange(lower: 101, upper: 200)!]))
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(viewModel.pageRetryDirections.isEmpty)
+    }
+
+    @Test func partialPageRetryUsesOriginalRangeAndClearsRetryOnSuccess() async throws {
+        let spy = ChatRoomMessageUseCaseSpy()
+        let partial = makeMessage(senderUID: "sender-uid", msg: "QA", seq: 200)
+        spy.pageHandler = { request in
+            ChatMessagePageResult(messages: [partial], contiguousMessages: [partial], nextBoundarySeq: 200,
+                unresolvedRanges: [ChatMessageSequenceRange(lower: 101, upper: 199)!])
+        }
+        let viewModel = makeViewModel(messageUseCase: spy)
+        _ = try await viewModel.loadMessagePage(direction: .older, boundarySeq: 201)
+        #expect(viewModel.pageRetryDirections.contains(.older))
+        spy.pageHandler = { _ in
+            ChatMessagePageResult(messages: [partial], contiguousMessages: [partial], nextBoundarySeq: 101, unresolvedRanges: [])
+        }
+        _ = try await viewModel.loadMessagePage(direction: .older, boundarySeq: 200)
+        #expect(spy.pageRequests.count == 2)
+        #expect(spy.pageRequests[0] == spy.pageRequests[1])
+        #expect(viewModel.pageRetryDirections.isEmpty)
+    }
     @Test func roomCreatorCanModerateAndReportAnotherUsersMessage() {
         let viewModel = makeViewModel(
             room: makeRoom(id: "room-1", creatorUID: "admin-uid"),
@@ -459,6 +497,13 @@ struct ChatRoomViewModelMessageActionTests {
 }
 
 private final class ChatRoomMessageUseCaseSpy: ChatRoomMessageUseCaseProtocol {
+    var pageHandler: ((ChatMessagePageRequest) async throws -> ChatMessagePageResult)?
+    private(set) var pageRequests: [ChatMessagePageRequest] = []
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
+        pageRequests.append(request)
+        guard let pageHandler else { throw MessageActionTestError.unimplemented }
+        return try await pageHandler(request)
+    }
     private(set) var deletedMessages: [ChatMessage] = []
     private(set) var deletedRooms: [ChatRoom] = []
 

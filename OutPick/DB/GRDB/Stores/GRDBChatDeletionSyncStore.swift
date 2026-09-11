@@ -166,13 +166,22 @@ final class GRDBChatDeletionSyncStore: ChatDeletionSyncPersisting {
         accountID: String,
         roomID: String
     ) async throws -> [ChatMessage] {
+        try await database.dbPool.read { db in
+            try Self.sanitize(messages, accountID: accountID, roomID: roomID, db: db)
+        }
+    }
+
+    /// 저장 transaction에서도 같은 marker 정책을 사용해 검증/저장 사이의 삭제 경합을 막는다.
+    static func sanitize(
+        _ messages: [ChatMessage], accountID: String, roomID: String, db: Database
+    ) throws -> [ChatMessage] {
         guard !messages.isEmpty else { return [] }
         let candidateIDs = Set(
             messages.map(\.ID) + messages.compactMap { $0.replyPreview?.messageID }
         )
         guard !candidateIDs.isEmpty else { return messages }
         let ids = Array(candidateIDs)
-        let markers: [String: Marker] = try await database.dbPool.read { db in
+        let markers: [String: Marker] = try {
             let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
             var arguments: [DatabaseValueConvertible] = [accountID, roomID]
             arguments.append(contentsOf: ids)
@@ -191,13 +200,14 @@ final class GRDBChatDeletionSyncStore: ChatDeletionSyncPersisting {
                 )
                 return (row["messageID"] as String, marker)
             })
-        }
+        }()
 
         return messages.map { message in
             if let marker = markers[message.ID] {
                 return ChatMessage(
                     ID: message.ID,
                     seq: marker.seq > 0 ? marker.seq : message.seq,
+                    unreadMessageSeq: message.unreadMessageSeq,
                     roomID: roomID,
                     senderUID: marker.anonymizesSender ? "" : message.senderUID,
                     senderNickname: marker.anonymizesSender ? "알 수 없는 사용자" : message.senderNickname,

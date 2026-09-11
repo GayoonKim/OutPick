@@ -103,6 +103,69 @@ final class ChatRoomViewModel {
     private var searchGeneration: Int = 0
     private var olderRawCursor: String?
     private var newerRawCursor: String?
+    private var pageGeneration: UInt64 = 0
+    private var pageBoundaries: [ChatMessagePageDirection: Int64] = [:]
+    private var pendingPageRequests: [ChatMessagePageDirection: ChatMessagePageRequest] = [:]
+    private var activePageDirections: Set<ChatMessagePageDirection> = []
+    private(set) var pageRetryDirections: Set<ChatMessagePageDirection> = []
+    private var repairedPageMessageIDs: Set<String> = []
+
+    func consumeRepairedPageMessageIDs() -> Set<String> {
+        defer { repairedPageMessageIDs.removeAll() }
+        return repairedPageMessageIDs
+    }
+
+    func invalidateMessagePages() {
+        pageGeneration &+= 1
+        pageBoundaries.removeAll()
+        pendingPageRequests.removeAll()
+        activePageDirections.removeAll()
+        pageRetryDirections.removeAll()
+        repairedPageMessageIDs.removeAll()
+    }
+
+    func loadMessagePage(direction: ChatMessagePageDirection, boundarySeq: Int64) async throws -> [ChatMessage] {
+        guard !activePageDirections.contains(direction) else { return [] }
+        let generation = pageGeneration
+        let accountID = currentUserUID
+        activePageDirections.insert(direction)
+        defer { if generation == pageGeneration { activePageDirections.remove(direction) } }
+        var boundary = pageBoundaries[direction] ?? boundarySeq
+        for _ in 0..<3 {
+            let request = try pendingPageRequests[direction] ?? ChatMessagePageRequest(roomID: roomID, direction: direction,
+                boundarySeq: boundary, upperSeq: max(entryTailSeq, unreadCatchUpState.knownLatestSeq))
+            let result: ChatMessagePageResult
+            do {
+                result = try await messageUseCase.loadMessagePage(request)
+            } catch {
+                guard generation == pageGeneration, accountID == currentUserUID else { throw CancellationError() }
+                pageRetryDirections.insert(direction)
+                throw error
+            }
+            guard generation == pageGeneration, accountID == currentUserUID, !Task.isCancelled else {
+                throw CancellationError()
+            }
+            if result.isComplete {
+                pageRetryDirections.remove(direction)
+                pendingPageRequests.removeValue(forKey: direction)
+            } else {
+                pageRetryDirections.insert(direction)
+                pendingPageRequests[direction] = request
+            }
+            boundary = result.nextBoundarySeq
+            repairedPageMessageIDs.formUnion(result.replacedMessageIDs)
+            pageBoundaries[direction] = boundary
+            if direction == .older { hasMoreOlder = boundary > 1 }
+            else {
+                windowMaxSeq = max(windowMaxSeq, boundary)
+                hasMoreNewer = boundary < unreadCatchUpState.knownLatestSeq
+                if !hasMoreNewer && result.isComplete { liveMode = .live }
+            }
+            let visible = admitVisibleMessages(from: result.contiguousMessages)
+            if !visible.isEmpty || !result.isComplete || request.range == nil { return visible }
+        }
+        return []
+    }
     private var admittedHiddenSeqs = Set<Int64>()
     private var unreadMessageSeqByTimelineSeq: [Int64: Int64] = [:]
     private let lastReadFlushDebounceNanoseconds: UInt64 = 3_000_000_000
@@ -293,6 +356,8 @@ final class ChatRoomViewModel {
     }
 
     func handleCurrentUserMembershipRemoved() {
+        messageUseCase.invalidateMessageCache(roomID: roomID)
+        invalidateMessagePages()
         joinedRoomsStore?.remove(roomID)
     }
 
@@ -311,9 +376,11 @@ final class ChatRoomViewModel {
     func startInitialLoadEvents(
         isParticipant: Bool
     ) -> AsyncStream<ChatInitialLoadEvent> {
-        AsyncStream { continuation in
+        invalidateMessagePages()
+        let generation = pageGeneration
+        return AsyncStream { continuation in
             let task = Task { @MainActor [weak self] in
-                guard let self else {
+                guard let self, generation == self.pageGeneration, !Task.isCancelled else {
                     continuation.finish()
                     return
                 }
@@ -322,12 +389,14 @@ final class ChatRoomViewModel {
                 self.admittedHiddenSeqs.removeAll()
                 self.unreadMessageSeqByTimelineSeq.removeAll()
                 defer {
-                    self.isInitialLoading = false
+                    if generation == self.pageGeneration {
+                        self.isInitialLoading = false
+                    }
                     continuation.finish()
                 }
 
                 for await event in self.initialLoadUseCase.execute(room: self.room, isParticipant: isParticipant) {
-                    if Task.isCancelled { return }
+                    if Task.isCancelled || generation != self.pageGeneration { return }
 
                     if isParticipant {
                         switch event {
@@ -418,7 +487,9 @@ final class ChatRoomViewModel {
     }
 
     func beginLatestJump() -> ChatLatestJumpRequest? {
-        unreadCatchUpState.beginLatestJump()
+        guard let request = unreadCatchUpState.beginLatestJump() else { return nil }
+        invalidateMessagePages()
+        return request
     }
 
     func isCurrentLatestJump(_ request: ChatLatestJumpRequest) -> Bool {
@@ -778,16 +849,20 @@ final class ChatRoomViewModel {
         beforeLimit: Int = 60,
         afterLimit: Int = 60
     ) async throws -> [ChatMessage] {
+        invalidateMessagePages()
+        let generation = pageGeneration
         let messages = try await messageUseCase.loadMessagesAroundAnchor(
             room: room,
             anchor: anchor,
             beforeLimit: beforeLimit,
             afterLimit: afterLimit
         )
+        guard generation == pageGeneration, !Task.isCancelled else { throw CancellationError() }
         return visibleMessages(from: messages)
     }
 
     func applyVisibleWindowAfterSearchJump(_ messages: [ChatMessage]) {
+        invalidateMessagePages()
         hasMoreOlder = true
         hasMoreNewer = true
 

@@ -310,6 +310,7 @@ final class AppCoordinator {
 
         self.profileCoordinator = nil
         self.lookbookContainer = nil
+        self.chatContainer?.invalidateMessageCacheSession()
         self.chatContainer = nil
         self.mainTabController = nil
         self.brandAdminSessionStore.reset()
@@ -530,6 +531,7 @@ final class AppCoordinator {
         brandAdminSessionStore.reset()
         profileCoordinator = nil
         lookbookContainer = nil
+        chatContainer?.invalidateMessageCacheSession()
         chatContainer = nil
         mainTabController = nil
         isShowingLogin = false

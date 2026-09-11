@@ -12,6 +12,8 @@ enum ChatTextInputPolicy {
 }
 
 protocol ChatRoomMessageUseCaseProtocol {
+    func invalidateMessageCache(roomID: String)
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult
     func makeTextMessage(text: String, replyPreview: ReplyPreview?, room: ChatRoom) -> ChatMessage?
     func sendPreparedMessage(
         _ message: ChatMessage,
@@ -32,6 +34,10 @@ protocol ChatRoomMessageUseCaseProtocol {
 }
 
 extension ChatRoomMessageUseCaseProtocol {
+    func invalidateMessageCache(roomID: String) {}
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
+        throw ChatMessagePageError.invalidRequest
+    }
     func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
         messages
     }
@@ -44,6 +50,10 @@ struct ChatMessageSenderSnapshot: Equatable {
 }
 
 final class ChatRoomMessageUseCase: ChatRoomMessageUseCaseProtocol {
+    func invalidateMessageCache(roomID: String) { messageManager.invalidateMessageCache(roomID: roomID) }
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
+        try await messageManager.loadMessagePage(request)
+    }
     private let messageManager: ChatMessageManaging
     private let sendingRepository: ChatMessageSendingRepositoryProtocol
     private let serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling?

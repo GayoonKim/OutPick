@@ -109,6 +109,7 @@ final class ChatRoomExitUseCase: ChatRoomExitUseCaseProtocol {
 }
 
 final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
+    private let cacheSession: ChatMessageCacheSession?
     private let localDataStore: ChatRoomLocalDataPersisting
     private let joinedRoomsStore: JoinedRoomsSessionStoring
     private let joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
@@ -120,16 +121,19 @@ final class DefaultChatRoomLocalExitCleaner: ChatRoomLocalExitCleaning {
         joinedRoomsStore: JoinedRoomsSessionStoring,
         joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
         roomRepository: FirebaseChatRoomRepositoryProtocol,
-        currentUserProvider: CurrentUserProviding
+        currentUserProvider: CurrentUserProviding,
+        cacheSession: ChatMessageCacheSession? = nil
     ) {
         self.localDataStore = localDataStore
         self.joinedRoomsStore = joinedRoomsStore
         self.joinedRoomsRuntime = joinedRoomsRuntime
         self.roomRepository = roomRepository
         self.currentUserProvider = currentUserProvider
+        self.cacheSession = cacheSession
     }
 
     func cleanLocalRoomDataAfterExit(roomID: String) async throws {
+        cacheSession?.invalidate(roomID: roomID)
         var localCleanupError: Error?
         do {
             try localDataStore.cleanRoomDataAfterExit(

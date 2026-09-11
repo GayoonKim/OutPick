@@ -10,6 +10,9 @@ import Foundation
 /// Chat feature DI container.
 @MainActor
 final class ChatContainer {
+    private let messageCacheSession = ChatMessageCacheSession()
+
+    func invalidateMessageCacheSession() { messageCacheSession.invalidate() }
     let persistence: ChatPersistenceProvider
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
@@ -116,6 +119,7 @@ final class ChatContainer {
             persistence: persistence,
             moderationLifecycleRepository: moderationLifecycleRepository,
             deletionSanitizer: deletionSyncUseCase,
+            cacheSession: messageCacheSession,
             currentAccountID: { currentUserProvider.canonicalUserID }
         )
         self.managers = managers
@@ -145,14 +149,23 @@ final class ChatContainer {
         let announcementRepository = announcementRepository ?? repositories.announcementRepository
         self.roomListUseCase = RoomListUseCase(
             roomRepository: self.roomRepository,
-            profileSyncManager: managers.profileSyncManager
+            profileSyncManager: managers.profileSyncManager,
+            sanitizeCachedMessages: { messages, roomID in
+                let accountID = currentUserProvider.canonicalUserID
+                let sanitized = try await persistence.deletionSyncStore.sanitize(
+                    messages, accountID: accountID, roomID: roomID
+                )
+                guard accountID == currentUserProvider.canonicalUserID else { throw CancellationError() }
+                return sanitized
+            }
         )
         let roomLocalExitCleaner = DefaultChatRoomLocalExitCleaner(
             localDataStore: persistence.roomLocalDataStore,
             joinedRoomsStore: joinedRoomsStore,
             joinedRoomsRuntime: joinedRoomsRuntime,
             roomRepository: self.roomRepository,
-            currentUserProvider: currentUserProvider
+            currentUserProvider: currentUserProvider,
+            cacheSession: messageCacheSession
         )
         self.chatRoomExitUseCase = ChatRoomExitUseCase(
             repository: DefaultChatRoomExitRepository(
@@ -188,10 +201,12 @@ final class ChatContainer {
             mediaSendingRepository: SocketChatMediaMessageSendingRepository(socketManager: realtimeSocketService)
         )
         self.chatOutgoingOutboxUseCase = chatOutgoingOutboxUseCase
+        managers.messageManager.configureConfirmedMessageSaving(
+            queue: ChatMessageSaveQueue(session: messageCacheSession), reconciler: chatOutgoingOutboxUseCase)
         self.chatRoomMessageUseCase = ChatRoomMessageUseCase(
             messageManager: managers.messageManager,
             sendingRepository: chatMessageSendingRepository,
-            serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
+            serverConfirmedMessageReconciler: nil,
             currentUserProvider: {
                 ChatMessageSenderSnapshot(
                     senderUID: currentUserProvider.canonicalUserID,
@@ -216,7 +231,7 @@ final class ChatContainer {
             chatRoomRepository: self.roomRepository,
             networkStatusProvider: managers.networkStatusProvider,
             deletionSyncUseCase: deletionSyncUseCase,
-            serverConfirmedMessageReconciler: chatOutgoingOutboxUseCase,
+            serverConfirmedMessageReconciler: nil,
             currentUserUIDProvider: { currentUserProvider.canonicalUserID }
         )
         self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: managers.searchManager)
@@ -298,6 +313,7 @@ final class ChatContainer {
     }
 
     func makeChatRoomViewModel(room: ChatRoom) -> ChatRoomViewModel {
+        messageCacheSession.activate(roomID: room.id)
         let currentUserID = currentUserProvider.canonicalUserID
         let cachedRole: ChatRoomMemberRole? = room.ownerUID == currentUserID
             ? .owner

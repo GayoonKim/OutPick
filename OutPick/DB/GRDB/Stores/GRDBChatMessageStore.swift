@@ -3,19 +3,63 @@ import GRDB
 
 final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
     private let database: AppDatabase
+    private let currentAccountID: @Sendable () -> String
 
-    init(database: AppDatabase) {
+    init(database: AppDatabase, currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }) {
         self.database = database
+        self.currentAccountID = currentAccountID
     }
 
     func saveChatMessages(_ messages: [ChatMessage]) async throws {
+        try await save(messages, accountID: currentAccountID(), session: nil)
+    }
+
+    func saveChatMessages(_ messages: [ChatMessage], accountID: String, session: ChatMessageCacheSession) async throws {
+        try await save(messages, accountID: accountID, session: session)
+    }
+
+    func saveAuthoritativeIdentityRepair(_ messages: [ChatMessage], accountID: String, session: ChatMessageCacheSession) async throws {
+        try await save(messages, accountID: accountID, session: session, repairIdentities: true)
+    }
+
+    private func save(_ messages: [ChatMessage], accountID: String, session: ChatMessageCacheSession?, repairIdentities: Bool = false) async throws {
         guard !messages.isEmpty else { return }
         try await database.dbPool.write { db in
-            for message in messages {
+            guard messages.allSatisfy({ session?.isValid(roomID: $0.roomID) ?? true }) else { throw CancellationError() }
+            for incoming in messages {
+                if repairIdentities, incoming.seq > 0 {
+                    let corruptIDs = try String.fetchAll(db, sql: "SELECT id FROM chatMessage WHERE roomID = ? AND ((seq = ? AND id != ?) OR (id = ? AND seq > 0 AND seq != ?))",
+                        arguments: [incoming.roomID, incoming.seq, incoming.ID, incoming.ID, incoming.seq])
+                    for id in corruptIDs {
+                        try ChatMediaIndexSQL.deleteProjections(messageID: id, roomID: incoming.roomID, in: db)
+                        try db.execute(sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?", arguments: [incoming.roomID, id])
+                        try db.execute(sql: "DELETE FROM chatMessage WHERE roomID = ? AND id = ?", arguments: [incoming.roomID, id])
+                    }
+                }
+                var message = try GRDBChatDeletionSyncStore.sanitize(
+                    [incoming], accountID: accountID, roomID: incoming.roomID, db: db
+                )[0]
                 if message.seq <= 0,
                    try Int.fetchOne(db, sql: "SELECT 1 FROM chatMessage WHERE roomID = ? AND id = ? AND seq > 0",
                        arguments: [message.roomID, message.ID]) != nil { continue }
-                guard let record = ChatMessageRecordMapper.record(from: message) else { continue }
+                let existing = try ChatMessageRecord.fetchOne(db,
+                    sql: "SELECT * FROM chatMessage WHERE roomID = ? AND id = ?",
+                    arguments: [message.roomID, message.ID])
+                if let existing {
+                    message = try ChatMessageMergePolicy.preferred(try ChatMessageRecordMapper.message(from: existing), message)
+                }
+                guard let record = ChatMessageRecordMapper.record(from: message) else { throw ChatMessagePageError.invalidPayload }
+                if let existing,
+                   ChatMessageMergePolicy.samePayload(
+                    try ChatMessageRecordMapper.message(from: existing),
+                    try ChatMessageRecordMapper.message(from: record)) {
+                    continue
+                }
+                if message.seq > 0,
+                   let otherID = try String.fetchOne(db, sql: "SELECT id FROM chatMessage WHERE roomID = ? AND seq = ? AND id != ? LIMIT 1",
+                    arguments: [message.roomID, message.seq, message.ID]), !otherID.isEmpty {
+                    throw ChatMessagePageError.identityConflict
+                }
                 try record.insert(db, onConflict: .replace)
                 try db.execute(
                     sql: "DELETE FROM chatMessageFTS WHERE roomID = ? AND id = ?",

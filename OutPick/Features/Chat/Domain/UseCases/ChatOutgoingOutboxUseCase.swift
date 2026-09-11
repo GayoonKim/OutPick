@@ -378,15 +378,19 @@ final class ChatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol, ChatSe
     }
 
     func completeServerConfirmedMessage(_ message: ChatMessage) async {
-        guard !message.isFailed else { return }
-        try? await messagePersistence.saveChatMessages([message])
-        try? await reconcileServerConfirmedMessages([message])
+        guard !message.isFailed, message.seq > 0 else { return }
+        do {
+            try await messagePersistence.saveChatMessages([message])
+            try await reconcileServerConfirmedMessages([message])
+        } catch {
+            // 저장 실패 시 재전송 자료를 보존한다.
+        }
     }
 
     func reconcileServerConfirmedMessages(_ messages: [ChatMessage]) async throws {
         var seenIDs = Set<String>()
         let confirmed = messages.filter {
-            !$0.isFailed && !$0.ID.isEmpty && seenIDs.insert($0.ID).inserted
+            !$0.isFailed && $0.seq > 0 && !$0.ID.isEmpty && seenIDs.insert($0.ID).inserted
         }
         guard !confirmed.isEmpty else { return }
 

@@ -25,6 +25,7 @@ struct ChatManagerProvider {
         moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol =
             CloudFunctionsChatModerationLifecycleRepository(),
         deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
+        cacheSession: ChatMessageCacheSession = ChatMessageCacheSession(),
         currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
@@ -43,6 +44,7 @@ struct ChatManagerProvider {
             messagePersistence: persistence.messageStore,
             profileCache: persistence.profileStore,
             deletionSanitizer: deletionSanitizer,
+            cacheSession: cacheSession,
             currentAccountID: currentAccountID
         )
         self.roomImageManager = roomImageManager ?? RoomImageService(

@@ -4,6 +4,56 @@ import Testing
 @testable import OutPick
 
 struct GRDBChatDeletionSyncStoreTests {
+    @Test func socketEventAtEmptyReconciliationExitIsAppliedBeforeReturning() async throws {
+        let database = try TemporaryAppDatabase.make()
+        let persistence = ExitGatedDeletionStore(base: GRDBChatDeletionSyncStore(database: database))
+        let useCase = ChatDeletionSyncUseCase(repository: StubChatDeletionSyncRepository(head: 0, deltas: []),
+            persistence: persistence, mediaCleaner: NoopChatDeletionMediaCleaner())
+        let initial = Task { try await useCase.reconcile(roomID: "room-1", accountID: "account-1", allowEmptyLocalBootstrap: false) }
+        await persistence.waitUntilCleanup()
+        let event = Task { try await useCase.handleSocketEvent(ChatDeletionSocketEvent(roomID: "room-1",
+            kind: .message(ChatDeletionDelta(messageID: "late", roomID: "room-1", seq: 1, revision: 1, deletedAt: nil))), accountID: "account-1") }
+        var accepted = false
+        for _ in 0..<10_000 {
+            if await useCase.pendingRevisionForDebug(accountID: "account-1", roomID: "room-1") == 1 { accepted = true; break }
+            await Task.yield()
+        }
+        await persistence.release()
+        #expect(accepted)
+        _ = try await initial.value
+        #expect(try await event.value == ["late"])
+        #expect(try await persistence.cursor(accountID: "account-1", roomID: "room-1") == 1)
+    }
+    @Test func socketRevisionArrivingDuringPageFetchIsIncludedInSameReconciliation() async throws {
+        let database = try TemporaryAppDatabase.make()
+        let store = GRDBChatDeletionSyncStore(database: database)
+        let messages = GRDBChatMessageStore(database: database)
+        try await messages.saveChatMessages((1...2).map { GRDBTestFixtures.message(id: "race-\($0)", seq: Int64($0)) })
+        let repository = GatedDeletionRepository()
+        let useCase = ChatDeletionSyncUseCase(repository: repository, persistence: store,
+            mediaCleaner: NoopChatDeletionMediaCleaner())
+        let first = Task { try await useCase.reconcile(roomID: "room-1", accountID: "account-1", allowEmptyLocalBootstrap: false) }
+        await repository.waitUntilFetching()
+        let event = Task { try await useCase.handleSocketEvent(ChatDeletionSocketEvent(roomID: "room-1",
+            kind: .headAdvanced(fromRevision: 1, toRevision: 2)), accountID: "account-1") }
+        var accepted = false
+        for _ in 0..<10_000 {
+            if await useCase.pendingRevisionForDebug(accountID: "account-1", roomID: "room-1") == 2 { accepted = true; break }
+            await Task.yield()
+        }
+        await repository.release()
+        #expect(accepted)
+        #expect(try await first.value == ["race-1", "race-2"])
+        #expect(try await event.value == ["race-1", "race-2"])
+        #expect(try await store.cursor(accountID: "account-1", roomID: "room-1") == 2)
+        #expect(await repository.headQueries == 1)
+        #expect(await repository.pageQueries == [0, 1])
+        for id in ["race-1", "race-2"] {
+            let message = try #require(try await messages.fetchMessage(id: id, inRoom: "room-1"))
+            #expect(message.isDeleted)
+            #expect(message.msg == nil)
+        }
+    }
     @Test func emptyLocalBootstrapAdvancesToHeadWithoutHistoricalDeltaQuery() async throws {
         let database = try TemporaryAppDatabase.make()
         let deletionStore = GRDBChatDeletionSyncStore(database: database)
@@ -390,6 +440,30 @@ struct GRDBChatDeletionSyncStoreTests {
     }
 }
 
+private actor ExitGatedDeletionStore: ChatDeletionSyncPersisting {
+    let base: GRDBChatDeletionSyncStore
+    private var gate: CheckedContinuation<Void, Never>?
+    private var observer: CheckedContinuation<Void, Never>?
+    init(base: GRDBChatDeletionSyncStore) { self.base = base }
+    func waitUntilCleanup() async {
+        if gate != nil { return }
+        await withCheckedContinuation { observer = $0 }
+    }
+    func release() { gate?.resume(); gate = nil }
+    func pendingCleanupItems() async throws -> [ChatDeletionCleanupItem] {
+        await withCheckedContinuation { gate = $0; observer?.resume(); observer = nil }
+        return []
+    }
+    func cursor(accountID: String, roomID: String) async throws -> Int64 { try await base.cursor(accountID: accountID, roomID: roomID) }
+    func hasServerMessages(roomID: String) async throws -> Bool { try await base.hasServerMessages(roomID: roomID) }
+    func messageIDs(roomID: String) async throws -> [String] { try await base.messageIDs(roomID: roomID) }
+    func apply(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> [ChatDeletionCleanupItem] { try await base.apply(deltas, accountID: accountID, roomID: roomID) }
+    func bootstrapCursor(_ revision: Int64, accountID: String, roomID: String) async throws -> Void { try await base.bootstrapCursor(revision, accountID: accountID, roomID: roomID) }
+    func completeCleanup(_ item: ChatDeletionCleanupItem) async throws -> Void { try await base.completeCleanup(item) }
+    func sanitize(_ messages: [ChatMessage], accountID: String, roomID: String) async throws -> [ChatMessage] { try await base.sanitize(messages, accountID: accountID, roomID: roomID) }
+    func recordResolvedDeletions(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> [ChatDeletionCleanupItem] { try await base.recordResolvedDeletions(deltas, accountID: accountID, roomID: roomID) }
+}
+
 private actor StubChatDeletionSyncRepository: ChatDeletionSyncRepositoryProtocol {
     let head: Int64
     let storedDeltas: [ChatDeletionDelta]
@@ -417,4 +491,26 @@ private actor StubChatDeletionSyncRepository: ChatDeletionSyncRepositoryProtocol
 
 private struct NoopChatDeletionMediaCleaner: ChatDeletionMediaCleaning {
     func clean(_ item: ChatDeletionCleanupItem) async throws {}
+}
+
+private actor GatedDeletionRepository: ChatDeletionSyncRepositoryProtocol {
+    private var gate: CheckedContinuation<Void, Never>?
+    private var started: CheckedContinuation<Void, Never>?
+    private(set) var headQueries = 0
+    private(set) var pageQueries: [Int64] = []
+    func headRevision(roomID: String) async throws -> Int64 { headQueries += 1; return 1 }
+    func waitUntilFetching() async {
+        if gate != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func release() { gate?.resume(); gate = nil }
+    func deltas(roomID: String, afterRevision: Int64, limit: Int) async throws -> [ChatDeletionDelta] {
+        pageQueries.append(afterRevision)
+        if afterRevision == 0 {
+            await withCheckedContinuation { gate = $0; started?.resume(); started = nil }
+        }
+        let revision = afterRevision + 1
+        return [ChatDeletionDelta(messageID: "race-\(revision)", roomID: roomID, seq: revision, revision: revision, deletedAt: nil)]
+    }
+    func deltas(roomID: String, messageIDs: [String]) async throws -> [ChatDeletionDelta] { [] }
 }

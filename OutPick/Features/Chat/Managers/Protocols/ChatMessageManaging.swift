@@ -9,6 +9,9 @@ import Foundation
 
 /// 메시지 관리 관련 비즈니스 로직을 위한 프로토콜
 protocol ChatMessageManaging {
+    func configureConfirmedMessageSaving(queue: ChatMessageSaveQueue, reconciler: ChatServerConfirmedMessageReconciling)
+    func invalidateMessageCache(roomID: String)
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult
     /// 초기 진입용 로컬 창 구성
     func loadLocalInitialWindow(
         roomID: String,
@@ -55,6 +58,11 @@ protocol ChatMessageManaging {
 }
 
 extension ChatMessageManaging {
+    func configureConfirmedMessageSaving(queue: ChatMessageSaveQueue, reconciler: ChatServerConfirmedMessageReconciling) {}
+    func invalidateMessageCache(roomID: String) {}
+    func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
+        throw ChatMessagePageError.invalidRequest
+    }
     func sanitizeForAdmission(_ messages: [ChatMessage], roomID: String) async throws -> [ChatMessage] {
         messages
     }

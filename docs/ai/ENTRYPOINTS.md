@@ -1,5 +1,15 @@
 # OutPick Entrypoints
 
+- 채팅 캐시 동기화 완료(2026-09-11): 합의된 QA 및 PR 리뷰 보완 후 핵심 48개 회귀 통과. Development iOS 빌드·연결 iPhone 14 설치/실행 확인. 앱 코드·테스트·하네스 커밋으로 정리하며 서버 배포 대상 변경은 없다. VoiceOver 제외·실기기 장시간 보류 범위 유지.
+
+- 참여 완료 UI QA: `ChatViewController.joinRoomBtnTapped` 성공 경로는 이전 참여 버튼을 숨긴다. 캐시 동기화 progress의 2026-09-11 19:18 실제 재참여·재진입 검증 및 QA fixture 관리자 상태 보완 기록 참조.
+
+- 오픈채팅 목록 삭제 원문 재노출 방지: `RoomListUseCase.cachedTopRooms()`는 비동기 로컬 삭제 마커 적용 후 미리보기를 반환한다. `ChatContainer`의 GRDB sanitizer 주입 → `RoomListsViewModel`의 복귀 시 이전 본문 제거·조회 세대 검사 → `RoomListsViewModelDeletionTests`를 참조한다. 서버 조회 추가 없음.
+
+- 삭제 조회 도중 Socket revision 상승 경합 검증은 [TESTS](entrypoints/TESTS.md)의 `GRDBChatDeletionSyncStoreTests`를 참조한다. 실제 계정 간 QA와 제외·보류 범위는 캐시 동기화 task progress의 최신 상태를 따른다.
+
+- 채팅 캐시 동기화 구현: 실제 seq 검사·혼합 범위 복구·공용 저장5회·삭제 transaction 보호·페이지 세대. [코드](entrypoints/CHAT.md), [진행·검증](tasks/chat-message-cache-sync/progress.md).
+
 - 공용 이미지 확대 화면: `Infra/Media/ImageViewer/ImageViewerChromeView.swift`(왼쪽 상단 닫기·하단 저장/번호/신고) → `SimpleImageViewerVC.swift`(제스처·페이지별 요청 식별/실패 재시도·저장 중복 방지). 채팅/갤러리/룩북/프로필 공용, 생성자·loader·저장 주입 계약 유지. [구현 계획·검증](tasks/shared-image-viewer-editorial/implementation-plan.md).
 
 - 사진300MB·실패 사진 복구: `ChatPhotoSizePolicy` → `ChatImageTransportSourceNormalizer`/`ChatMediaSelectionChunker` → `ChatMediaSelectionUseCase.failedImages`/`preserveFailedImages` → `ChatViewController+MediaSelection` 기존 선택 원장 복원·재시도·삭제. 서버 `Socket/src/media/directMediaUploadService.js`. [계약·구현·검증](tasks/chat-media-preview-continuity/photo-size-failure-recovery.md).

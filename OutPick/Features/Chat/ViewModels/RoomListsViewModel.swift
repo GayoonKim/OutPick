@@ -21,6 +21,7 @@ final class RoomListsViewModel {
     private var readStateTask: Task<Void, Never>?
     private var profileRefreshTask: Task<Void, Never>?
     private var isBoundReadState = false
+    private var requestGeneration = 0
 
     private(set) var state: State {
         didSet { onStateChanged?(state) }
@@ -34,17 +35,27 @@ final class RoomListsViewModel {
     ) {
         self.useCase = useCase
         self.roomReadStateStore = roomReadStateStore
-        self.state = State(rooms: useCase.cachedTopRooms())
+        self.state = State()
     }
 
     func onAppear() {
         bindReadStateIfNeeded()
-        state.rooms = useCase.cachedTopRooms()
+        // 복귀 첫 프레임에도 삭제 전 미리보기를 재사용하지 않는다.
+        state.rooms = state.rooms.map { ChatRoomPreviewItem(room: $0.room, messages: []) }
+        reloadCachedRooms()
+    }
+
+    private func reloadCachedRooms() {
+        requestGeneration += 1
+        let generation = requestGeneration
         profileRefreshTask?.cancel()
         profileRefreshTask = Task { [weak self] in
             guard let self else { return }
+            let cached = await self.useCase.cachedTopRooms()
+            guard Task.isCancelled == false, self.requestGeneration == generation else { return }
+            self.state.rooms = cached
             let rooms = await self.useCase.refreshCachedProfiles()
-            guard Task.isCancelled == false else { return }
+            guard Task.isCancelled == false, self.requestGeneration == generation else { return }
             self.state.rooms = rooms
         }
     }
@@ -57,12 +68,15 @@ final class RoomListsViewModel {
 
     func refreshTopRooms() async {
         guard !state.isRefreshing else { return }
+        requestGeneration += 1
+        let generation = requestGeneration
+        profileRefreshTask?.cancel()
         state.isRefreshing = true
         state.errorMessage = nil
 
         do {
             let rooms = try await useCase.refreshTopRooms(limit: 30)
-            state.rooms = rooms
+            if requestGeneration == generation { state.rooms = rooms }
         } catch {
             state.errorMessage = "방 목록을 새로고침하지 못했습니다."
         }
@@ -72,6 +86,8 @@ final class RoomListsViewModel {
 
     func removeLocalRoom(roomID: String) {
         guard !roomID.isEmpty else { return }
+        requestGeneration += 1
+        profileRefreshTask?.cancel()
         useCase.removeCachedRoom(roomID: roomID)
         state.rooms.removeAll { $0.room.id == roomID }
     }
@@ -89,7 +105,7 @@ final class RoomListsViewModel {
             guard let self, let roomReadStateStore else { return }
             for await _ in roomReadStateStore.readStateChangeStream() {
                 if Task.isCancelled { return }
-                self.state.rooms = self.useCase.cachedTopRooms()
+                self.reloadCachedRooms()
             }
         }
     }

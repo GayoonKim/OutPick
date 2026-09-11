@@ -1,5 +1,17 @@
 # Chat Entrypoints
 
+- 캐시 동기화 최종 리뷰: 종료 직전 Socket 삭제가 공유 reconciliation의 빈 결과/초기 bootstrap에 묻히지 않도록 `ChatDeletionSyncUseCase.handleSocketEvent`가 완료 후 cursor를 확인한다. 이벤트 revision이 남으면 완료된 작업을 분리하고 해당 이벤트를 처리한다. 핵심 회귀 48개/6 suites 통과(2026-09-11), 이전 QA 범위는 캐시 동기화 progress 참조.
+
+- 참여 완료 버튼 정리: `ChatViewController.joinRoomBtnTapped` 성공 시 `joinRoomBtn.isHidden=true`로 입력창 뒤/접근성 트리의 ‘참여 중…’ 잔존을 막는다. 실제 나가기·재참여·재진입 QA 완료. 전용 테스트방을 직접 생성할 때 `roomModerationStates/{roomID}.moderatorCount=0`이 없으면 일반 참여자 나가기도 ROOM_ROLE_STATE_INVALID로 실패하므로 fixture 계약에 포함한다.
+
+- 목록 삭제 캐시 보정: `RoomListUseCase`는 캐시·새 목록·프로필 갱신 결과를 반환하기 전에 `ChatContainer`가 주입한 `deletionSyncStore.sanitize`로 본문·답장 마커를 적용한다. 서버 reconciliation을 재호출하지 않는다. 조회 실패 시 해당 방 미리보기만 비우고 원문 fallback을 막는다. `RoomListsViewModel.onAppear`는 이전 미리보기를 즉시 비운 뒤 로컬 결과를 표시하고 프로필을 갱신한다. 세대·취소 검증으로 오래된 비동기 결과와 방 제거 후 복원을 차단한다. raw Firebase 목록 캐시는 유지하되 화면에 전달되는 모든 결과에 로컬 삭제 상태를 적용한다.
+
+- `ChatDeletionSyncUseCase.pendingRevisionForDebug`는 DEBUG 빌드의 읽기 전용 revision 진단이다. `GRDBChatDeletionSyncStoreTests`의 조회 중 Socket revision 상승 테스트가 이벤트 접수를 확인하는 데 사용하며, 운영 API·저장 구조에는 변화가 없다. 실행 결과와 실제 두 계정 전파 QA 상태는 `tasks/chat-message-cache-sync/progress.md` 참조.
+
+- 캐시 QA에서 확인한 페이지 prepend 수정(2026-09-11): `ChatViewController.appendMessagePage`는 페이지 전체를 한 번에 적용한다. `addMessages(.older)`는 적용 직전 첫 visible message ID와 화면 내 offset을 잡고 diffable 완료 후 같은 메시지 위치를 복원한다. 20개 단위 반복 prepend의 청크 역전 및 재시도 후 상단 점프를 방지한다. 실제 Firestore 연결 중단→누락 조회→복구 재시도에서 QA 074 위치 유지 확인. 상세 task progress 참조.
+
+- 채팅 캐시 동기화 구현: `ChatMessagePage`/`ChatMessageCacheGapPolicy`/`ChatMessageMergePolicy`가 범위·연속성·중복 계약을 정의한다. `ChatMessagePageLoader` actor는 같은 요청 공유, 1~2개 gap 병렬 복구/3개 이상 전체 페이지 조회, 부분 성공 보관과 충돌 시 서버 재확인을 담당한다. `FirebaseMessageRepository.fetchMessageRange`는 서버 전용 inclusive seq 범위(최대100)를 조회한다. Container가 구성한 `ChatMessageManager` → `ChatMessageSaveQueue`는 UI와 독립적으로 즉시 총5회 직렬 저장하고 성공 후 outbox를 정리한다. `GRDBChatMessageStore`는 transaction 안에서 삭제 marker·계정/방 session을 검사하고 동일 payload 쓰기를 생략한다. VM 세대·연속 cursor와 VC 위/아래 재시도 버튼이 부분 실패를 처리한다. 삭제 동기화와 동일 답장 조회는 진행 중 공유하며 파일 cleanup은 분리했다. 기존 Socket 복구3회와 저장5회는 별개다. [진행·QA](../tasks/chat-message-cache-sync/progress.md).
+
 - 공용 확대 화면 스타일: `ChatCoordinator`/`MediaGalleryViewController` → `SimpleImageViewerVC` → `ImageViewerChromeView`. 최초 컨트롤 표시, 확대 시 숨김, 숫자 페이지 표시, 페이지 로딩 실패 재시도 및 저장 중복 차단. 생성자/신고 callback/300MB loader 계약 유지. `tasks/shared-image-viewer-editorial/implementation-plan.md` 참조.
 
 - 사진300MB 계약: `ChatPhotoSizePolicy.swift`(본/썸네일 각각300,000,000bytes, 본 파일 합산300,000,000bytes/30장) → normalizer/chunker. `DefaultMediaProcessingService`는 영상 썸네일4MiB를 명시한다. 다운로드 한도는 `ChatViewController`, `ChatRoomSettingViewModel`, `SimpleImageViewerVC`에 연결한다.
