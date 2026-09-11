@@ -4,6 +4,40 @@ import UniformTypeIdentifiers
 @testable import OutPick
 
 final class ChatDirectMediaPreparationTests: XCTestCase {
+    func testSourceAbove300MBFailsBeforeDecode() throws {
+        let input = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+        defer { try? FileManager.default.removeItem(at: input) }
+        XCTAssertTrue(FileManager.default.createFile(atPath: input.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: input)
+        try handle.truncate(atOffset: 300_000_001)
+        try handle.close()
+        XCTAssertThrowsError(try ChatImageTransportSourceNormalizer.prepare(sourceURL: input, index: 0)) { error in
+            guard case MediaError.sourceTooLarge = error else { return XCTFail("용량 검사가 디코딩보다 먼저 실행되어야 합니다.") }
+        }
+    }
+
+    func testPhotoThumbnailAboveOld4MiBLimitIsAcceptedButVideoLimitIsKept() throws {
+        let width = 4032, height = 3024
+        let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        var random: UInt32 = 12345
+        for offset in stride(from: 0, to: width * height * 4, by: 4) {
+            random ^= random << 13; random ^= random >> 17; random ^= random << 5
+            pixels[offset] = UInt8(truncatingIfNeeded: random)
+            pixels[offset + 1] = UInt8(truncatingIfNeeded: random >> 8)
+            pixels[offset + 2] = UInt8(truncatingIfNeeded: random >> 16)
+            pixels[offset + 3] = 255
+        }
+        let image = try XCTUnwrap(context.makeImage())
+        let thumbnail = try ChatImageTransportSourceNormalizer.makeThumbnailFile(image)
+        defer { try? FileManager.default.removeItem(at: thumbnail) }
+        let bytes = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: thumbnail.path)[.size] as? NSNumber).intValue
+        XCTAssertGreaterThan(bytes, 4 * 1024 * 1024)
+        XCTAssertLessThanOrEqual(bytes, 300_000_000)
+        XCTAssertThrowsError(try ChatImageTransportSourceNormalizer.makeThumbnailFile(image, maximumBytes: 4 * 1024 * 1024))
+    }
+
     func testMainAndThumbnailKeepPixelsAboveOldLimit() throws {
         let input = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
         defer { try? FileManager.default.removeItem(at: input) }

@@ -51,13 +51,19 @@ struct ChatMediaSelectionUseCaseTests {
         #expect(try await fixture.repository.load(selection.selectionID) == nil)
     }
 
-    @Test func failedPreparationIsExcludedAndRemainingOrderPreserved() async throws {
+    @Test func failedPreparationIsPreservedSeparatelyAndRemainingOrderPreserved() async throws {
         let fixture = Fixture(failingIndex: 4)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let selection = fixture.selection(count: 35)
+        try FileManager.default.createDirectory(at: fixture.root, withIntermediateDirectories: true)
+        try Data([4]).write(to: URL(fileURLWithPath: selection.selectionSources[4].path))
         try await fixture.repository.save(selection)
         let emitted = ChunkRecorder()
         let rejected = try await fixture.useCase.process(selection, onChunk: { id, chunk in
+            if case .failedImages(let sources) = chunk {
+                try await fixture.useCase.preserveFailedImages(sources, id: id, roomID: "room", senderUID: "sender")
+                return
+            }
             guard case .images(let pairs) = chunk else { return }
             await emitted.record(pairs)
             try await fixture.persistence.saveOutgoingOutboxRecord(.init(messageID: id, roomID: "room", kind: .images,
@@ -66,6 +72,77 @@ struct ChatMediaSelectionUseCaseTests {
         #expect(rejected == 1)
         #expect(await emitted.counts == [30, 4])
         #expect(await emitted.hashes == (0..<35).filter { $0 != 4 }.map(String.init))
+        let restored = try await fixture.repository.restored(roomID: "room", senderUID: "sender")
+        #expect(restored.count == 1)
+        #expect(restored[0].selectionSources.map(\.index) == [4])
+        #expect(try Data(contentsOf: URL(fileURLWithPath: restored[0].selectionSources[0].path)) == Data([4]))
+        #expect(try await fixture.repository.load(selection.selectionID) == nil)
+    }
+
+    @Test func oneFailedImageSurvivesRetryAndCanBeDeleted() async throws {
+        let fixture = Fixture(failingIndex: 0)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let original = try await fixture.useCase.acquire(sourceCount: 1, roomID: "room", senderUID: "sender", id: "original") { index, directory in
+            let url = directory.appendingPathComponent("source.jpg")
+            try Data([9]).write(to: url)
+            return .init(index: index, path: url.path, isVideo: false)
+        }
+        func process(_ selection: ChatMediaSelection) async throws {
+            let failed = try await fixture.useCase.process(selection, onChunk: { id, chunk in
+                guard case .failedImages(let sources) = chunk else { Issue.record("실패 묶음이어야 합니다."); return }
+                try await fixture.useCase.preserveFailedImages(sources, id: id, roomID: "room", senderUID: "sender")
+            }, onCommitted: { _ in })
+            #expect(failed == 1)
+        }
+        try await process(original)
+        let first = try #require(try await fixture.repository.restored(roomID: "room", senderUID: "sender").first)
+        try await process(first)
+        let restored = try await fixture.repository.restored(roomID: "room", senderUID: "sender")
+        #expect(restored.count == 1)
+        let retry = try #require(restored.first)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: retry.selectionSources[0].path)) == Data([9]))
+        #expect(!FileManager.default.fileExists(atPath: first.selectionSources[0].path))
+        try await fixture.useCase.deleteSelection(retry.selectionID)
+        #expect(try await fixture.repository.restored(roomID: "room", senderUID: "sender").isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: retry.selectionSources[0].path))
+    }
+
+    @Test func failedChildSaveLeavesParentSourceRecoverable() async throws {
+        let fixture = Fixture(failingIndex: 0)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let selection = try await fixture.useCase.acquire(sourceCount: 1, roomID: "room", senderUID: "sender", id: "parent") { index, directory in
+            let url = directory.appendingPathComponent("source.jpg")
+            try Data([7]).write(to: url)
+            return .init(index: index, path: url.path, isVideo: false)
+        }
+        await #expect(throws: (any Error).self) {
+            _ = try await fixture.useCase.process(selection, onChunk: { _, _ in
+                throw CocoaError(.fileWriteOutOfSpace)
+            }, onCommitted: { _ in })
+        }
+        let restored = try await fixture.repository.restored(roomID: "room", senderUID: "sender")
+        #expect(restored.count == 1)
+        #expect(restored[0].selectionID == selection.selectionID)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: restored[0].selectionSources[0].path)) == Data([7]))
+    }
+
+    @Test func thirtyOneFailedImagesRestoreAsThirtyAndOne() async throws {
+        let fixture = Fixture(failsAll: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let selection = try await fixture.useCase.acquire(sourceCount: 31, roomID: "room", senderUID: "sender", id: "failed-parent") { index, directory in
+            let url = directory.appendingPathComponent("\(index).jpg")
+            try Data([UInt8(index)]).write(to: url)
+            return .init(index: index, path: url.path, isVideo: false)
+        }
+        let count = try await fixture.useCase.process(selection, onChunk: { id, chunk in
+            guard case .failedImages(let sources) = chunk else { Issue.record("실패 묶음이어야 합니다."); return }
+            try await fixture.useCase.preserveFailedImages(sources, id: id, roomID: "room", senderUID: "sender")
+        }, onCommitted: { _ in })
+        #expect(count == 31)
+        let restored = try await fixture.repository.restored(roomID: "room", senderUID: "sender")
+        #expect(restored.map { $0.selectionSources.count } == [30, 1])
+        #expect(restored.flatMap(\.selectionSources).map(\.index) == Array(0..<31))
+        #expect(try await fixture.repository.load(selection.selectionID) == nil)
     }
 
     @Test func interruptedParentConsumesDurableChildBeforeRestoringRemainder() async throws {
@@ -88,10 +165,10 @@ struct ChatMediaSelectionUseCaseTests {
         let persistence = SelectionTestPersistence()
         let repository: ChatMediaSelectionRepository
         let useCase: ChatMediaSelectionUseCase
-        init(failingIndex: Int? = nil) {
+        init(failingIndex: Int? = nil, failsAll: Bool = false) {
             repository = ChatMediaSelectionRepository(persistence: persistence, root: root)
             useCase = ChatMediaSelectionUseCase(repository: repository, prepareImage: { url, index in
-                if index == failingIndex { throw MediaError.failedToConvertImage }
+                if failsAll || index == failingIndex { throw MediaError.failedToConvertImage }
                 return ProcessedImage(index: index, originalFileURL: url, thumbData: Data(),
                     originalWidth: 10, originalHeight: 10, bytesOriginal: 100, sha256: String(index))
             })
