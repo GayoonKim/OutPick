@@ -59,7 +59,7 @@ struct ChatOutgoingOutboxUseCaseTests {
         let persistence = ChatOutgoingOutboxPersistenceFake()
         let useCase = makeUseCase(persistence: persistence)
         let failed = makeMessage(id: "text-1", isFailed: true)
-        let confirmed = makeMessage(id: "text-1", isFailed: false)
+        let confirmed = makeMessage(id: "text-1", isFailed: false, seq: 1)
 
         await useCase.stageTextMessage(failed)
         #expect(await persistence.record(messageID: "text-1") != nil)
@@ -70,10 +70,20 @@ struct ChatOutgoingOutboxUseCaseTests {
         #expect(await persistence.message(messageID: "text-1", roomID: "room-1")?.isFailed == false)
     }
 
+    @Test func unconfirmedMessageDoesNotDeleteOutbox() async throws {
+        let persistence = ChatOutgoingOutboxPersistenceFake()
+        let useCase = makeUseCase(persistence: persistence)
+        let message = makeMessage(id: "pending")
+        await useCase.stageTextMessage(message)
+        await useCase.completeServerConfirmedMessage(message)
+        try await useCase.reconcileServerConfirmedMessages([message])
+        #expect(await persistence.record(messageID: "pending") != nil)
+    }
+
     @Test func completeServerConfirmedMessagePersistsReceiptWithoutOutboxRecord() async {
         let persistence = ChatOutgoingOutboxPersistenceFake()
         let useCase = makeUseCase(persistence: persistence)
-        let confirmed = makeMessage(id: "text-without-outbox", isFailed: false)
+        let confirmed = makeMessage(id: "text-without-outbox", isFailed: false, seq: 1)
 
         await useCase.completeServerConfirmedMessage(confirmed)
 
@@ -94,10 +104,8 @@ struct ChatOutgoingOutboxUseCaseTests {
         await useCase.stageTextMessage(secondFailed)
         await useCase.stageTextMessage(unresolved)
 
-        var firstConfirmed = firstFailed
-        firstConfirmed.isFailed = false
-        var secondConfirmed = secondFailed
-        secondConfirmed.isFailed = false
+        let firstConfirmed = makeMessage(id: "text-1", seq: 1)
+        let secondConfirmed = makeMessage(id: "text-2", seq: 2)
         try await persistence.saveChatMessages([firstConfirmed, secondConfirmed])
 
         try await useCase.reconcileServerConfirmedMessages([firstConfirmed, secondConfirmed])
@@ -264,11 +272,12 @@ struct ChatOutgoingOutboxUseCaseTests {
     private func makeMessage(
         id: String,
         roomID: String = "room-1",
-        isFailed: Bool = false
+        isFailed: Bool = false,
+        seq: Int64 = 0
     ) -> ChatMessage {
         ChatMessage(
             ID: id,
-            seq: 0,
+            seq: seq,
             roomID: roomID,
             senderUID: "me@example.com",
             senderNickname: "나",
