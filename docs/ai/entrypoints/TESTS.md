@@ -1,5 +1,21 @@
 # Test Entrypoints
 
+- 2026-09-11 PR 최종 집중 회귀: gap policy·page loader·save queue·VM message action·deletion store·목록 삭제 총 48개/6 suites 통과. 로그 `/private/tmp/outpick-cache-sync-pr-review-tests.log`. 초기 99개 실행·후속 60,000개 저장·실제 서버 QA와 중복 합산하지 않는다.
+
+- PR 리뷰 경합 보완: `socketEventAtEmptyReconciliationExitIsAppliedBeforeReturning`은 head=cursor인 동기화의 cleanup 조회를 멈추고 새 Socket 삭제를 접수한 뒤, 이벤트 호출이 반환하기 전에 cursor가 전진하는지 검증한다. `handleSocketEvent`는 완료된 공유 작업의 cursor가 이벤트 revision에 못 미치면 해당 이벤트를 다시 처리한다.
+
+- 목록 삭제 수정 최종 검증(2026-09-11): `RoomListsViewModelDeletionTests` 4개(실제 GRDB stale 원문 정리·로컬 오류 fallback 차단·복귀·역순 응답)와 deletion store 9개·profile overlay 2개, 총 15개 통과. 실행 로그 `/private/tmp/outpick-list-deletion-fix-tests.log`, 시뮬레이터 두 계정 표시 검증은 task progress 참조.
+
+- `RoomListsViewModelDeletionTests`: 복귀 즉시 이전 원문 제거와 로컬 조회 완료 후 삭제 표시, 역순으로 완료한 오래된 조회의 원문 복원 차단을 continuation fake로 검증한다. GRDB 삭제 마커·답장 정리와 프로필 보존은 `GRDBChatDeletionSyncStoreTests`, `RoomPreviewProfileOverlayTests`를 함께 실행한다.
+
+- 삭제 동기화 경합 QA: `GRDBChatDeletionSyncStoreTests.socketRevisionArrivingDuringPageFetchIsIncludedInSameReconciliation`은 delta 조회 gate 중 Socket revision 2 접수 후 cursor·tombstone·조회 횟수를 검증한다. `ChatDeletionSyncUseCase.pendingRevisionForDebug`로 고정 sleep 없이 접수 완료를 확인한다. 2026-09-11 suite 9개 통과. 실제 계정 간 전파는 task progress에서 별도로 추적한다.
+
+- 실제 캐시 통합 QA 후속: `ChatRoomViewModelMessageActionTests`의 stale generation·partial retry 원본 범위2개 추가, WindowStore와32개 회귀 통과. `GRDBChatMessageAdmissionTests.sustainedBurstsKeepNewestCacheContiguousAcrossPruning`은6만개/60회 저장 후 매회 최신seq·3300이하·연속성 검사, 약92.5초에 통과. 실제 서버250개 fixture 및 LLDB Firestore 연결 중단/복구로 retry버튼·스크롤 기준점 검증. 세부 실행과 남은 두 기기 로그인은 task progress 참조.
+
+- 캐시 후속 QA(2026-09-11): PageLoader의 실패 범위만 재조회·오프라인/잘못된 방 응답·실제 병렬 중첩, SaveQueue의 중복100회·저장 중 계정 무효화, GRDBAdmission의 SQLite 3000개 burst 및 시간/resident 계측을 추가했다. 진행 결과와 로그인 의존 UI 검증은 `tasks/chat-message-cache-sync/progress.md` 참조.
+
+- 채팅 캐시 동기화: `ChatMessageCacheGapPolicyTests`(범위·혼합 복구·병합), `ChatMessagePageLoaderTests`(부분 실패·재조회·식별자 교정), `ChatMessageSaveQueueTests`(즉시5회·1000개 직렬 저장·방 session), `GRDB/GRDBChatMessageAdmissionTests`(삭제 transaction·무효 session·교정), `ChatOutgoingOutboxUseCaseTests`(확정 seq와 저장 성공 후 정리). 기존 읽음/최신창/Socket 순서/방 종료/VM을 포함한 집중 회귀 99개/13 suites 통과. 전체 앱 테스트나 실기기 성능 측정을 의미하지 않는다. 실행 기록은 `tasks/chat-message-cache-sync/progress.md`.
+
 - 공용 확대 화면: `OutPickTests/ImageViewerStateTests.swift`의 제어 가능한 loader/saver로 local-only·저장 중복/실패 복구·페이지 이동 중 저장 대상·실패 미리보기 보존·재시도/닫힘 후 늦은 응답 차단 검증. 컨트롤 렌더링 attachment 포함. 기존 `ImageViewerPagePolicyTests`로 GIF/페이지 계약 회귀. 결과는 `tasks/shared-image-viewer-editorial/implementation-plan.md`.
 
 - 사진300MB·실패 원본: `ChatMediaSelectionChunkerTests`의10진300MB/30장 경계, `ChatDirectMediaPreparationTests`의300MB 초과 조기 거부·고밀도 썸네일4MiB 초과 허용 및 영상4MiB 유지, `ChatMediaSelectionUseCaseTests`의부분 실패 원본 보존/재시도/삭제/child 저장 실패/31장실패30+1 복원. Socket `test/media/directMediaUploadService.test.js`의본/썸네일 경계·본 파일만 합산·영상 기준 유지. 실행 결과는 `tasks/chat-media-preview-continuity/photo-size-failure-recovery.md`.
