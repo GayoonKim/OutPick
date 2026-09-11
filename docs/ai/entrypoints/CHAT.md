@@ -1,5 +1,15 @@
 # Chat Entrypoints
 
+- 공용 확대 화면 스타일: `ChatCoordinator`/`MediaGalleryViewController` → `SimpleImageViewerVC` → `ImageViewerChromeView`. 최초 컨트롤 표시, 확대 시 숨김, 숫자 페이지 표시, 페이지 로딩 실패 재시도 및 저장 중복 차단. 생성자/신고 callback/300MB loader 계약 유지. `tasks/shared-image-viewer-editorial/implementation-plan.md` 참조.
+
+- 사진300MB 계약: `ChatPhotoSizePolicy.swift`(본/썸네일 각각300,000,000bytes, 본 파일 합산300,000,000bytes/30장) → normalizer/chunker. `DefaultMediaProcessingService`는 영상 썸네일4MiB를 명시한다. 다운로드 한도는 `ChatViewController`, `ChatRoomSettingViewModel`, `SimpleImageViewerVC`에 연결한다.
+- 실패 이미지 복구: `ChatMediaSelectionUseCase`의 `.failedImages`와 `preserveFailedImages` → VC child 원장 보존 → 기존 `restoreMediaSelections` 실패 버블 및 `retryMediaSelection`/`performLocalFailedMessageDelete`. child가 저장된 뒤 parent에서만 원본을 소비하며 실패 이미지 최대30장씩 별도 원장을 만든다. 기존7일 선택 원장 보존/정리와 pendingChunk 복구 계약을 재사용한다. 상세 `tasks/chat-media-preview-continuity/photo-size-failure-recovery.md`, 테스트는 `ChatMediaSelectionUseCaseTests`.
+
+- 원본 확보 지연 상세 DEBUG 계측: `ChatMediaSelectionUseCase`는 scheduled/slot acquired/원장·디렉터리·전체 확보 시각, `ChatMediaSourceAcquisition`은 providerMs/copyMs/파일 크기·형식/요청 등록·취소 시각을 소유한다. `ChatViewController+MediaSelection.stopMediaSelectionSession(reason:)`의 호출자는 `ChatViewController`이며 route_disappeared/coordinator_route_finished/app_background를 구분한다. 처리 정책 변경 없이 [진단 문서](../tasks/chat-media-preview-continuity/acquisition-diagnosis.md)에 따라 첫 측정을 진행한다.
+
+- 2026-09-11 이미지 표시 연속성: `ChatMessageCell.makePreviewItems`는 `ChatImagePreviewItem.stableID(messageID:attachment:)`의 메시지 ID+종류+첨부 index를 사용한다. `ChatImagePreviewCollectionView`는 String ID snapshot과 최신 `itemsByID`를 분리해 경로 변경만으로 항목을 reload하지 않으며 목록/배치가 바뀔 때만 snapshot/layout을 갱신한다. `ChatImagePreviewCell`은 동일 첨부의 표시 이미지·진행 중 요청을 유지하고 로컬 요청 실패 시에만 갱신된 경로로 복구한다. reuse/첨부 변경 시 취소·요청 세대로 늦은 응답을 차단한다.
+- 완료 처리 연결은 기존 `ChatViewController.handleIncomingMessage`의 로컬 preview 캐시 보존→pending/outbox 완료→메시지 반영·저장→FIFO 반환을 유지한다. `configureDataSource`의 `.none` → `ChatMessageCell.applyMediaUploadRecoveryState` → `ChatMediaUploadProgressView.reset()`으로 진행 표시/덮개가 해제된다. 서버 API·GRDB 계약·DI/Container/Coordinator 변경 없음. 검증/QA는 `tasks/chat-media-preview-continuity/implementation.md`와 `ChatImagePreviewContinuityTests` 참조.
+
 - 2026-09-10 최종 상태: 신규 contract 3 직접 업로드 Development 배포 및 iPhone 14 사진 3장/70장 완료 확인. 70장은 30/30/10 순서로 seq 8/9/10 확정, 선택→최종 표시46.872초, 서버 metadata 합계692ms. 저장 공간 부족으로 발생한 Firestore 종료 후 사용자가 공간을 확보하고 전송 중 조작/완료 후 재입장 확인 완료를 보고했다. 이미지→플레이스홀더 깜빡임은 `tasks/active.md`의 다음 작업으로 분리했다. 영상 실전 QA/4대30 비교/Production 배포는 미수행.
 - PR 리뷰 추가 경합 보완: foreground uploader는 취소와 continuation 등록을 같은 stateQueue에서 순서화하고, 등록 전 취소도 기록한다. 완료 delegate보다 먼저 취소돼도 continuation을 한 번 종료한다. `ChatMediaForegroundUploaderTests`의 취소 선행 회귀를 참조한다.
 

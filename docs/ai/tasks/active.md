@@ -2,10 +2,22 @@
 
 ## 현재 상태
 
+- `shared-image-viewer-editorial` — 구현·빌드·자동 회귀12개·렌더링 및 이번 범위 실기기 QA 완료. 사용자 나머지 항목 모두 확인, 큰 글씨·VoiceOver는 명시적으로 QA 제외(미검증). [최종 기록](shared-image-viewer-editorial/implementation-plan.md). 커밋/PR 미수행. 기존 이미지 깜빡임/300MB 작업은 완료 상태 유지.
+
+- 2026-09-11 최종: `chat-media-preview-continuity` 및 후속 사진300MB/실패 복구 작업 완료. 구현·Development 배포·사용자 실기기 QA 완료, Swift29회/Socket115개 통과. [최종 검증 범위](chat-media-preview-continuity/photo-size-failure-recovery.md).300MB 정확한 경계는 자동 테스트로 검증했고 실파일 경계 시험은 완료 조건에서 제외. 커밋/PR/머지 및 Production 배포는 미수행. 아래 깜빡임 착수/QA 대기 상태는 과거 이력이며 다음 핵심 대기는 관리자 웹 설계 논의다.
+
+- 2026-09-10 최종: 사용자 요청으로 이번 미디어 구현·Development 배포·사진 QA·PR #27 머지 작업을 **완료** 처리했다(main `34831dfc`). Production 배포는 아래 별도 핵심 대기 작업으로 분리하며 아직 미승인·미수행이다. 다음 최우선은 이미지 깜빡임 개선이다.
+
 - 2026-09-10 최신 결정: 현재 미디어 변경을 커밋·PR·리뷰·머지한 뒤 **미디어 버블 이미지 깜빡임 제거**를 다음 최우선 핵심 작업으로 진행한다. 사용자는 저장 공간 확보 후 70장 전송·전송 중 조작·완료 후 재입장까지 확인하고 QA 방을 삭제했다. 아래 관리자 웹 작업은 그다음 순서다.
 - 미디어 신규 계약 3은 Development 배포 및 3장/70장 실제 전송 확인 완료. Production 배포·영상 실제 QA·병렬 4 대 30 비교는 미수행. 과거 아래 queued 반환/병렬 묶음 기록은 최종 공용 FIFO 1·성공 UI 반영 또는 실패 후 다음 묶음 정책으로 대체된다.
 
 ### 다음 핵심 작업: 미디어 버블 이미지 깜빡임 제거
+
+- 2026-09-11 후속 로컬 구현 완료: 사진 본/썸네일 각각300,000,000bytes, 묶음 본파일 합계300,000,000bytes/30장, 실패 사진은 별도 실패 버블(재시도/삭제)로 보존. Swift28개 정의/29회 실행·Socket7개 통과. [현재 구현·검증](chat-media-preview-continuity/photo-size-failure-recovery.md)을 따른다. 서버 배포·새 정책 실기기 QA는 미수행.
+
+- 2026-09-11 QA 후속: 31장 원본 확보 중 무반응 보고. index 0~17 복사 뒤 취소됐으며 사용자는 기다리다 앱·방을 이동했다고 확인했다. 최초 지연 원인은 미확정이다. 사용자 승인으로 [파일 제공/복사/대기·동시성 세부 계측](chat-media-preview-continuity/acquisition-diagnosis.md)을 진행하며 원인 확인 전 31장 깜빡임 QA는 통과 처리하지 않는다.
+
+- 2026-09-11: 사용자 세부 계획·구현 승인 후 이미지 표시 보존 로컬 구현 완료. Development 앱 및 최종 테스트 코드 빌드 성공, 자동 테스트 실행·실기기 QA 미실시. 최신 상태는 [구현·검증 기록](chat-media-preview-continuity/implementation.md)을 따른다. 아래 기록만 완료 상태는 착수 전 이력이다.
 
 - 현상: 이미 표시된 사진이 플레이스홀더로 바뀌었다 돌아온다.
 - 근거: `ChatMessageCell.previewItemID`가 hash와 로컬/원격 경로를 포함해 확정 시 identity가 바뀐다. `ChatImagePreviewCollectionView`는 이전 ID 이미지를 제거하고 갱신마다 layout을 재생성한다. `ChatImagePreviewCell.configure`는 이미지가 nil이면 기존 이미지를 지운 뒤 비동기 재로딩한다.
@@ -16,20 +28,25 @@
 - 2026-09-10 이번 대화 최종 승인: `chat-media-bounded-parallel-upload` 상세 설계를 확정하고 로컬 구현·검증을 진행했다. 상세 상태는 해당 [progress](chat-media-bounded-parallel-upload/progress.md)를 우선한다. 아래 관리자 웹 우선순위는 다른 대기 작업 간 순서로 유지한다.
 
 - 2026-09-10 사용자 결정: 핵심 작업 순서는 관리자 웹 전환 → iOS 관리자 콘솔 제거다. 고객지원 페이지와 Apple 로그인은 후순위로 보류한다.
-- 다음 착수 대상은 `admin-web-operations-migration`의 설계 논의다. 상세 구현 계획과 구현은 아직 승인되지 않았다.
+- 관리자 웹 전환은 이미지 깜빡임 개선 다음 대기 작업이며, 상세 구현 계획과 구현은 아직 승인되지 않았다.
 - `chat-room-moderator-delegation`은 완료되어 직전 완료 작업으로 이동했다.
 - `lookbook-discovery-learning-loop`의 후속 구현·Production rollout 완료 기록을 확인해 대기 목록에서 제외했다. 상세 연결은 해당 task의 `progress.md` 최상단을 따른다.
 
 ## 현재 핵심 작업
 
-- `chat-media-bounded-parallel-upload` — 구현·Development 배포·사진 실전 QA 완료, 커밋/PR 리뷰·머지 진행
-  - [최종 설계](chat-media-bounded-parallel-upload/design.md), [구현 계획](chat-media-bounded-parallel-upload/plan.md), [진행·검증](chat-media-bounded-parallel-upload/progress.md), [QA](chat-media-bounded-parallel-upload/qa-checklist.md)
+- 미디어 버블 이미지 깜빡임 제거 및 사진300MB/실패 복구 — 완료. [최종 상태](chat-media-preview-continuity/photo-size-failure-recovery.md).
 
-- `admin-web-operations-migration` — 다음 착수 대상, 설계 논의 대기
+- `admin-web-operations-migration` — 깜빡임 개선 이후 설계 논의 대기
   - [기존 결정](admin-web-operations-migration/decisions.md)
   - 웹 기술 스택·화면/API 범위·권한 전환·검증 기준을 논의한 뒤 구현 계획을 작성한다.
 
 ## 직전 완료 핵심 작업
+
+- `chat-media-bounded-parallel-upload` — 완료
+  - [진행·검증](chat-media-bounded-parallel-upload/progress.md), [직접 업로드 구현·QA](chat-media-bounded-parallel-upload/qa/direct-upload-implementation.md)
+  - 구현·Development 배포·3장/70장 실제 전송·사용자 조작/재입장 확인·5개 커밋·[PR #27](https://github.com/GayoonKim/OutPick/pull/27) 자체 리뷰/머지 완료, main `34831dfc`.
+  - 최종 검증: Swift62/62, Socket113/113, Functions262/262, worker22/22, Storage5/5.
+  - Production 배포·영상 실제 QA·병렬4대30 비교·최종 iOS 취소 경합 보완의 실기기 재설치는 완료 범위에서 제외하고 후속으로 유지한다.
 
 - `chat-room-moderator-delegation`
   - [설계](chat-room-moderator-delegation/design.md)
@@ -57,6 +74,17 @@
 - 문의 접수 방식·처리 이력의 구체 설계는 고객지원 작업과 함께 논의한다. 이를 관리자 웹의 다른 기능 착수 조건으로 두지 않는다.
 
 ## 추가 핵심 대기 작업
+
+- `chat-media-production-rollout`: 이번 미디어 전송 변경의 Production 배포
+  - 상태: 사용자 요청으로 대기 목록에 기록. 실제 Production 배포 승인은 아직 없으며 배포하지 않았다. 다른 대기 작업과의 착수 순서는 추후 결정한다.
+  - 기준: PR #27/main `34831dfc` 및 이후 승인된 미디어 수정. [FIREBASE 진입점](../entrypoints/FIREBASE.md)과 [Development QA 기록](chat-media-bounded-parallel-upload/qa/direct-upload-implementation.md)을 따른다.
+  - 사전 확인: 운영 Socket·관련 Functions·worker·규칙·인덱스의 실제 상태와 코드 차이를 확인하고 정확한 배포 목록 및 기존 revision/digest 롤백 기준을 작성한다. 기존 계약2 진행 자료 호환 경로는 임의 삭제하지 않는다.
+  - 범위: Socket 계약3, 최종 버킷 환경 변수/메타데이터 병렬 설정, 최종 버킷 객체 접근·서명 IAM, ready Storage Rules, cleanup 복합 인덱스/receipt TTL, `reconcileChatMediaObjectCleanup` 및 변경된 기존 media 함수/worker의 배포 필요 여부 확인.
+  - 순서: 규칙·인덱스·필요 IAM 및 서버 준비 → 후보 검증 → 트래픽 전환 → 계약3 iOS 반영 → 실제 통합 확인. 신규 앱을 계약3 미지원 서버보다 먼저 배포하지 않는다. IAM과 운영 변경은 구체 범위를 확인한 후 승인받는다.
+  - 검증: 승인된 QA 방에서 본/썸네일 signed PUT·확정 전 읽기 차단·확정 후 접근, 메시지/seq/Socket 멱등성, 취소/성공 경합, 늦은 PUT 정리, 기존 정상 미디어 및 재시도를 확인한다. 미완료 영상 실전 QA의 운영 전 검증 범위도 결정한다.
+  - 완료 기준: 승인 범위 배포·인덱스 READY·함수 ACTIVE·Socket readiness/오류 확인·실제 QA 결과·롤백 기준·하네스 갱신. 현재 병렬4를 최적값으로 간주하지 않는다.
+
+### 완료 작업의 이전 설계 이력 (대기 작업 아님)
 
 - `chat-media-bounded-parallel-upload`: 미디어 묶음의 제한된 병렬 전송 리팩토링
   - 2026-09-10 상세 논의 후 사용자가 구현을 승인해 현재 작업으로 승격했다. 이 항목의 이전 사용자별 슬롯/terminal 대기안은 최종 설계로 대체한다.

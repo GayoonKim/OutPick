@@ -1,5 +1,7 @@
 # Lookbook Entrypoints
 
+- 확대 화면: `Views/PostDetail/PostImagePreviewView.swift`의 `LookbookImageViewerView` → 공용 `SimpleImageViewerVC`/`ImageViewerChromeView`. 패션 매거진 컨트롤·로딩/실패/저장 상태 공유, 한 장이면 번호 숨김, 기존 원본 loader와 onClose 유지. 검증은 `tasks/shared-image-viewer-editorial/implementation-plan.md`.
+
 ## 목적과 탐색 순서
 
 Lookbook 변경 시 필요한 코드만 찾기 위한 인덱스다.

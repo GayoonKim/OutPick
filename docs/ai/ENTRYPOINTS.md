@@ -1,6 +1,12 @@
 # OutPick Entrypoints
 
-- 다음 최우선 작업은 `tasks/active.md`의 미디어 버블 이미지 깜빡임 제거다. 이번 변경에는 구현하지 않았다. 직접 업로드는 Development 배포/3장·70장 전송 확인 완료, Production 미배포다. 아래 단계별 과거 미배포·병렬 묶음 기술은 최신 CHAT/FIREBASE 계약을 우선한다.
+- 공용 이미지 확대 화면: `Infra/Media/ImageViewer/ImageViewerChromeView.swift`(왼쪽 상단 닫기·하단 저장/번호/신고) → `SimpleImageViewerVC.swift`(제스처·페이지별 요청 식별/실패 재시도·저장 중복 방지). 채팅/갤러리/룩북/프로필 공용, 생성자·loader·저장 주입 계약 유지. [구현 계획·검증](tasks/shared-image-viewer-editorial/implementation-plan.md).
+
+- 사진300MB·실패 사진 복구: `ChatPhotoSizePolicy` → `ChatImageTransportSourceNormalizer`/`ChatMediaSelectionChunker` → `ChatMediaSelectionUseCase.failedImages`/`preserveFailedImages` → `ChatViewController+MediaSelection` 기존 선택 원장 복원·재시도·삭제. 서버 `Socket/src/media/directMediaUploadService.js`. [계약·구현·검증](tasks/chat-media-preview-continuity/photo-size-failure-recovery.md).
+
+- 원본 확보 지연 계측(2026-09-11): `ChatMediaSelectionUseCase`의 사진별 slot 대기 → `ChatMediaSourceAcquisition`의 provider 대기/파일 복사 → VC의 취소 사유. [분석 방법·재현 상태](tasks/chat-media-preview-continuity/acquisition-diagnosis.md).
+
+- 미디어 버블 이미지 깜빡임 개선: `ChatMessageCell` → `ChatImagePreviewItem.stableID` → `ChatImagePreviewCollectionView`의 ID snapshot/최신 payload 분리 → `ChatImagePreviewCell`의 동일 첨부 이미지·로딩 유지. [구현·검증 기록](tasks/chat-media-preview-continuity/implementation.md), 상세 CHAT/TESTS 진입점 참조. 직접 업로드는 Development 배포/3장·70장 전송 확인 완료, Production 미배포다.
 
 - 실제 직접 업로드 QA의 동시 초기화 회귀: `ChatMediaForegroundUploadService.swift`에서 URLSession 최초 접근/작업 생성을 stateQueue로 직렬화한다. `ChatMediaForegroundUploaderTests.swift`가 URLProtocol fake로 동시 첫 업로드 30개의 완료를 검증한다.
 
