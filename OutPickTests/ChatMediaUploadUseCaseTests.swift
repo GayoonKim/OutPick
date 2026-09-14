@@ -661,7 +661,7 @@ struct ChatMediaUploadUseCaseTests {
         #expect(repository.reserveCalls.map(\.uploadID) == ["first", "second", "third", "retry"])
     }
 
-    @Test func filesInsideBatchRunAtMostFourAtOnceBeforeFinalize() async throws {
+    @Test(arguments: [4, Int.max]) func filesInsideBatchRespectConfiguredWidthBeforeFinalize(width: Int) async throws {
         let repository = ChatMediaMessageSendingRepositorySpy()
         let pairs = try (0..<9).map { try makeProcessedImage(index: $0) }
         defer { pairs.forEach { try? FileManager.default.removeItem(at: $0.originalFileURL) } }
@@ -676,18 +676,18 @@ struct ChatMediaUploadUseCaseTests {
             processingStatus: .uploading, targets: targets, expiresAt: Date().addingTimeInterval(1000))
         repository.finalizeResult = makeProcessingSnapshot(status: .queued)
         let uploader = GatedBatchUploader()
-        let useCase = makeUseCase(sendingRepository: repository, foregroundUploader: uploader)
+        let useCase = makeUseCase(sendingRepository: repository, foregroundUploader: uploader, filesPerBatch: width)
         let task = Task { try await useCase.enqueueImageProcessing(pairs: pairs, roomID: "room",
             uploadID: "batch", clientMutationID: "mutation", onReservation: { _ in }, onProgress: { _ in }) }
         for _ in 0..<2000 {
-            if await uploader.startedCount == 4 { break }
+            if await uploader.startedCount == min(width, 18) { break }
             try await Task.sleep(nanoseconds: 1_000_000)
         }
-        #expect(await uploader.startedCount == 4)
+        #expect(await uploader.startedCount == min(width, 18))
         #expect(repository.finalizeCallCount == 0)
         await uploader.open()
         _ = try await task.value
-        #expect(await uploader.peak == 4)
+        #expect(await uploader.peak == min(width, 18))
         #expect(await uploader.startedCount == 18)
         #expect(repository.finalizeCallCount == 1)
         await useCase.finishImageUploadTurn(uploadID: "batch")
@@ -698,6 +698,7 @@ struct ChatMediaUploadUseCaseTests {
         videoRepository: FirebaseVideoStorageRepositoryFake = FirebaseVideoStorageRepositoryFake(),
         sendingRepository: ChatMediaMessageSendingRepositorySpy = ChatMediaMessageSendingRepositorySpy(),
         foregroundUploader: ChatMediaForegroundUploading = ChatMediaForegroundUploaderFake(),
+        filesPerBatch: Int = 4,
         attachmentImageLoader: ChatAttachmentImageLoading = ChatAttachmentImageLoaderSpy(),
         previewDirectory: URL? = nil,
         uploadTurnQueue: ChatMediaUploadTurnQueueProtocol = ChatMediaUploadTurnQueue(),
@@ -722,6 +723,7 @@ struct ChatMediaUploadUseCaseTests {
             previewDirectoryProvider: { previewDirectory ?? FileManager.default.temporaryDirectory },
             fileManager: .default,
             uploadTurnQueue: uploadTurnQueue,
+            filesPerBatch: filesPerBatch,
             slotRetryDelays: slotRetryDelays,
             restoreStatusRetryDelays: restoreStatusRetryDelays,
             sleep: sleep
