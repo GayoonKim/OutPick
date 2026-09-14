@@ -1,13 +1,20 @@
 # Firebase Entrypoints
 
+- 2026-09-14 배포 후QA 완료: `concurrency-all-0914`에서3장/70장/실패재전송 처리·서버저장 확인.70장 metadata60/60/20 policyall, 합663ms. 실패재전송2장 metadata4/33ms. 기존env 유지, Production 미배포. [결과](../tasks/chat-media-concurrency-qa-rollout/progress.md).
+
+- 2026-09-14 Development 최종 동시성 배포: `outpick-socket-development-concurrency-all-0914`100%, digest `sha256:dda2c4eb9540a28643061d8cd4f153189e504ea5072edb1e76fadb95c20a6d37`, candidate/live readiness 정상. 계약3 조회·서명·취소 정리 전체 실행. env/런타임 계정 유지, rollback `photo300-0911`. 실제 결합 QA 진행 중, [증거](../tasks/chat-media-concurrency-qa-rollout/progress.md).
+
+- 2026-09-14 계약3 로컬 구현: `directMediaUploadService`의 metadata·signed URL·취소 정리는 각 대상 전체 실행. `metadataConcurrency` 인자와 계약3 DI 주입 제거. `boundedMap`의 순서 보존·진행 작업 종료 대기 유지, metadata 로그 `concurrencyPolicy=all`/실제 count 기록. Socket check/124개 통과. Development 배포 전이며 [진행·롤백 기준](../tasks/chat-media-concurrency-qa-rollout/progress.md) 참조.
+- 2026-09-12 동시성 비교: `Socket/src/media/{directMediaUploadService,mediaUploadService}.js`의 metadata 설정 허용 상한60, 기본값 유지. 테스트116개 통과. Development metadata60 두 번70장 성공·조회 합계0.475/0.200초. 실험 후 기존metadata4 복원. [결과·리비전](../qa-media-upload-concurrency-2026-09-12.md). 기존1...30 설명은 이전 허용 범위다.
+
 - 2026-09-10 Development 직접 업로드 배포: Socket `outpick-socket-development-direct-0910` traffic100%/readyz200, 최종 버킷 `outpick-test-chat-media`, metadata4. 기존 `reconcileChatMediaObjectCleanup` ACTIVE, 복합 인덱스 `CICAgJjm4YQK` READY, ready Storage Rules 반영. Socket의 최종 버킷 objectUser 권한은 사용자 별도 명시 승인 후 추가했다. rollback 리비전 `outpick-socket-development-finalize-0910b`. Production은 미배포이며 새 iOS contract3을 운영 서버보다 먼저 배포하면 안 된다.
 
-- 신규 직접 업로드 contractVersion 3: Socket `src/media/directMediaUploadService.js`에서 최종 버킷 signed PUT·메타데이터 확인·권한 재확인·메시지/ready/delivery job 원자 확정. `CHAT_MEDIA_READY_BUCKET`과 최종 버킷 서명/객체 접근 권한 설정이 배포 전제다. `CHAT_MEDIA_METADATA_CONCURRENCY`는 1...30, 신규 기본 4. 신규 경로는 worker를 호출하지 않는다. 아래 worker 경로는 기존 contractVersion 2 처리용이다.
+- 신규 직접 업로드 contractVersion 3: Socket `src/media/directMediaUploadService.js`에서 최종 버킷 signed PUT·메타데이터 확인·권한 재확인·메시지/ready/delivery job 원자 확정. `CHAT_MEDIA_READY_BUCKET`과 최종 버킷 서명/객체 접근 권한 설정이 배포 전제다. 현재 로컬 코드는 조회·서명·취소 정리 전체 실행이며 `CHAT_MEDIA_METADATA_CONCURRENCY`를 소비하지 않는다. 신규 경로는 worker를 호출하지 않는다. 아래 worker 경로는 기존 contractVersion 2 처리용이다.
 - 미확정 직접 업로드 정리: `functions/src/chat/media/directUploadCleanup.ts`를 기존 `reconcileChatMediaObjectCleanup`에서 호출한다. 예약 manifest와 generation으로 삭제를 제한하고 ready/기존 메시지는 보호한다. `firestore.indexes.json`의 contractVersion/cleanupStatus/cleanupAfter 인덱스와 `storage.rules`의 mediaContractVersion 3 read gate 반영이 필요하다. 로컬 구현만 완료했으며 배포 전 실제 signed PUT·read gate·지연 정리 검증은 남아 있다.
 
 - 이미지 완료→다음Task 경계: `functions/src/chat/media/functions.ts#createMediaDispatcherHandler`가 이미지 worker 응답 후 `orchestrationService.ts#completeSynchronousImageExecution`을 await한다. `readyService.ts#publishCompletedMediaUpload(expectedLeaseToken)`이 ready/메시지/seq/slot반환을 한 트랜잭션으로 완료한다. 기존 Firestore 완료 이벤트는 멱등 복구·정리 유지, video Job은 기존 비동기 시작 유지. `media_dispatch_completion` 로그와 `readyService.test.ts`/`dispatcher.test.ts` 참조. 일반 성공 경로의 slot반환 전429/30초대기 방지이며 genuine capacity/장애 backoff 설정은 변경하지 않는다.
 
-- 서버 경로 최적화: Socket `mediaUploadService.finalizeV2` + `media/boundedMap.js`; production DI의 `CHAT_MEDIA_METADATA_CONCURRENCY`(1...8, 기본1). 정상 finalize는 객체당1회 조회로 검증/manifest 공유. worker `cloudJob.ts` + `boundedMap.ts` + `httpService.ts`의 `CHAT_MEDIA_IMAGE_CONCURRENCY`(1...4, 기본1), video1 유지. 사진별 source generation·조건부 저장·stale 객체 정리·진행 중 작업 drain. `media_finalize_metadata`, `media_worker_attachment`, `media_worker_completed` 로그로 단계별 시간/CPU/RSS 확인. 실제 비교 전 최적값 미확정. 상세 `tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md`.
+- 기존 계약2 서버 경로: Socket `mediaUploadService.finalizeV2` + `media/boundedMap.js`; production DI의 `CHAT_MEDIA_METADATA_CONCURRENCY`(현재 로컬 허용1...60, 기본1; Development 확인값4). 정상 finalize는 객체당1회 조회로 검증/manifest 공유. worker `cloudJob.ts` + `boundedMap.ts` + `httpService.ts`의 `CHAT_MEDIA_IMAGE_CONCURRENCY`(1...4, 기본1), video1 유지. 사진별 source generation·조건부 저장·stale 객체 정리·진행 중 작업 drain. 과거1...8/1...30은 이전 구현 이력이며 계약3 전체 실행 정책과 구분한다. 상세 `tasks/chat-media-bounded-parallel-upload/qa/server-pipeline-optimization.md`.
 
 ## 2026-09-10 미디어 병렬 전송 Development QA 반영
 

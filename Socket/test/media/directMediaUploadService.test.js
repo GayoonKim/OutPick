@@ -6,7 +6,7 @@ const sources = count => Array.from({length: count * 2}, (_, index) => ({index,
   attachmentIndex: Math.floor(index / 2), role: index % 2 ? "thumbnail" : "display",
   contentType: "image/jpeg", sizeBytes: index % 2 ? 10 : 100, width: 4032, height: 3024,
   duration: 0, isAnimated: false}));
-function fixture() {
+function fixture(hooks = {}) {
   let now = 1000, tail = Promise.resolve(), active = 0, peak = 0, calls = 0;
   const documents = new Map([
     ["Rooms/r", {seq: 5}], ["Rooms/r/members/u", {}],
@@ -34,26 +34,48 @@ function fixture() {
   }};
   const stamp = n => ({toMillis: () => n, toDate: () => new Date(n)});
   const bucket = {name: "qa", file: path => ({delete: async options => {
+    await hooks.delete?.(path, options);
     assert.equal(options.ifGenerationMatch, objects.get(path)?.generation);
     objects.delete(path);
   }, getSignedUrl: async options => {
+    await hooks.sign?.(path, options);
     assert.equal(options.extensionHeaders["x-goog-if-generation-match"], "0");
     return [`https://upload.invalid/${path}`];
   }, getMetadata: async () => {
     calls++; active++; peak = Math.max(peak, active);
-    await new Promise(resolve => setImmediate(resolve));
-    active--;
+    try {
+      await hooks.metadata?.(path);
+      await new Promise(resolve => setImmediate(resolve));
+    } finally { active--; }
     if (!objects.has(path)) throw Object.assign(new Error("missing"), {code: 404});
     return [objects.get(path)];
   }})};
   const service = createDirectMediaUploadService({db, admin: {firestore: {Timestamp: {fromMillis: stamp}}},
-    clock: {nowMillis: () => now}, bucket, metadataConcurrency: 4, logger: {info() {}}});
+    clock: {nowMillis: () => now}, bucket, logger: {info() {}}});
   const args = {roomID: "r", uploadID: "m", senderUID: "u", moderationPrincipalID: "p", clientMutationID: "mutation",
     kind: "images", contract: {attachmentCount: 3}, sources: sources(3)};
   const fill = reservation => reservation.uploads.forEach(t => objects.set(t.path,
     {size: t.sizeBytes, contentType: t.contentType, generation: "1"}));
   return {service, args, documents, objects, fill, setNow: n => {now = n;}, metrics: () => ({calls, peak})};
 }
+
+test("묶음 크기에 맞춰 전체 객체 확인 후 한번만 확정한다", async () => {
+  for (const count of [1, 3, 30]) {
+    const f = fixture();
+    const args = {...f.args, contract: {attachmentCount: count}, sources: sources(count)};
+    f.fill(await f.service.preflight(args));
+    const before = f.metrics().calls;
+    const pending = f.service.finalize(args);
+    assert.equal(f.documents.has("Rooms/r/Messages/m"), false);
+    assert.equal((await pending).processingStatus, "ready");
+    assert.equal(f.metrics().calls - before, count * 2);
+    assert.equal(f.metrics().peak, count * 2);
+    assert.equal(f.documents.get("Rooms/r/Messages/m").attachments.length, count);
+    await f.service.finalize(args);
+    assert.equal(f.documents.get("Rooms/r").seq, 6);
+    assert.equal(f.metrics().calls - before, count * 2);
+  }
+});
 
 test("30장은 60개 role이며 본 파일만300MB 합산한다", () => {
   assert.equal(validateDirectSources("images", {attachmentCount: 30}, sources(30)).ok, true);
@@ -105,7 +127,7 @@ test("누락 썸네일만 복구하고 두 finalize는 하나의 메시지·seq�
   const before = f.metrics().calls;
   assert.equal((await service.finalize(args)).processingStatus, "ready");
   assert.equal(f.metrics().calls, before);
-  assert.ok(f.metrics().peak <= 8); // 두 독립 요청 각각 최대4
+  assert.ok(f.metrics().peak <= 12); // 두 독립 요청 각각 전체6개
   assert.equal((await service.cancel(args)).processingStatus, "ready");
 });
 
@@ -134,6 +156,106 @@ test("권한 검사 전 정상 픽셀 여부를 서버가 다운로드하거나 
   const f = fixture(); f.fill(await f.service.preflight(f.args));
   const result = await f.service.finalize(f.args);
   assert.equal(result.processingStatus, "ready");
-  assert.equal(f.metrics().peak, 4);
+  assert.equal(f.metrics().peak, 6);
   // fake bucket에는 download/copy/이미지 처리 API 자체가 없다.
+});
+
+function gate(count) {
+  let started = 0, notify;
+  const allStarted = new Promise(resolve => { notify = resolve; });
+  const pending = Array.from({length: count}, () => {
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    return {promise, resolve, reject};
+  });
+  return {allStarted, pending, enter() {
+    const item = pending[started++];
+    assert.ok(item, "대상당 작업은 한 번만 시작해야 합니다.");
+    if (started === count) notify();
+    return item.promise;
+  }};
+}
+
+test("서명은 전체60개를 시작하고 역순 완료에도 응답 순서를 유지한다", {timeout: 5000}, async () => {
+  const signing = gate(60);
+  const f = fixture({sign: () => signing.enter()});
+  const args = {...f.args, contract: {attachmentCount: 30}, sources: sources(30)};
+  const pending = f.service.preflight(args);
+  await signing.allStarted;
+  signing.pending.toReversed().forEach(item => item.resolve());
+  const reservation = await pending;
+  assert.deepEqual(reservation.uploads.map(item => item.index), Array.from({length: 60}, (_, i) => i));
+  f.fill(reservation);
+  const retry = await f.service.preflight(args);
+  assert.deepEqual(retry.uploads, []);
+});
+
+test("일부 서명 실패도 진행 중 서명이 모두 끝난 후 반환한다", {timeout: 5000}, async () => {
+  const signing = gate(6);
+  const f = fixture({sign: () => signing.enter()});
+  let settled = false;
+  const pending = f.service.preflight(f.args).finally(() => { settled = true; });
+  const rejected = assert.rejects(pending, /sign failure/);
+  await signing.allStarted;
+  signing.pending[0].reject(new Error("sign failure"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  signing.pending.slice(1).forEach(item => item.resolve());
+  await rejected;
+  assert.equal(f.documents.has("Rooms/r/Messages/m"), false);
+});
+
+test("서명 도중 취소되면 완료된 URL을 새 응답으로 노출하지 않는다", {timeout: 5000}, async () => {
+  const signing = gate(6);
+  const f = fixture({sign: () => signing.enter()});
+  const pending = f.service.preflight(f.args);
+  await signing.allStarted;
+  assert.equal((await f.service.cancel(f.args)).processingStatus, "canceled");
+  signing.pending.forEach(item => item.resolve());
+  const response = await pending;
+  assert.equal(response.processingStatus, "canceled");
+  assert.deepEqual(response.uploads, []);
+});
+
+test("비404 조회 실패는 다른 전체 조회 종료 후 반환하고 메시지를 만들지 않는다", {timeout: 5000}, async () => {
+  const reading = gate(6);
+  const f = fixture({metadata: () => reading.enter()});
+  f.fill(await f.service.preflight(f.args));
+  let settled = false;
+  const pending = f.service.finalize(f.args).finally(() => { settled = true; });
+  const rejected = assert.rejects(pending, /read failure/);
+  await reading.allStarted;
+  reading.pending[0].reject(Object.assign(new Error("read failure"), {code: 503}));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  reading.pending.slice(1).forEach(item => item.resolve());
+  await rejected;
+  assert.equal(f.documents.has("Rooms/r/Messages/m"), false);
+  assert.equal(f.documents.get("Rooms/r").seq, 5);
+});
+
+test("취소는 전체 삭제를 시작하고 일부 실패 후에도 canceled와 지연 정리를 유지한다", {timeout: 5000}, async () => {
+  const deleting = gate(6);
+  const f = fixture({delete: () => deleting.enter()});
+  f.fill(await f.service.preflight(f.args));
+  let settled = false;
+  const pending = f.service.cancel(f.args).finally(() => { settled = true; });
+  await deleting.allStarted;
+  assert.equal(f.documents.get("Rooms/r/MediaUploads/m").processingStatus, "canceled");
+  deleting.pending[0].reject(new Error("delete failure"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  deleting.pending.slice(1).forEach(item => item.resolve());
+  assert.equal((await pending).processingStatus, "canceled");
+  assert.equal(f.objects.size, 1);
+  assert.equal(f.documents.get("Rooms/r/MediaUploads/m").cleanupStatus, "pending");
+  assert.equal(f.documents.has("Rooms/r/Messages/m"), false);
+});
+
+test("확정된 메시지의 취소는 정상 파일을 삭제하지 않는다", async () => {
+  const f = fixture({delete: () => assert.fail("ready 파일 삭제 금지")});
+  f.fill(await f.service.preflight(f.args));
+  await f.service.finalize(f.args);
+  assert.equal((await f.service.cancel(f.args)).processingStatus, "ready");
+  assert.equal(f.objects.size, 6);
 });

@@ -1,5 +1,17 @@
 # OutPick Entrypoints
 
+- 2026-09-14 동시성 적용·Development QA 완료: 원본4/준비전체/PUT4/FIFO1, 계약3 서버조회·서명·취소정리전체. iPhone41개/Socket124개와3장/70장/실패재전송 확인, 계측해제. [진행·증거](tasks/chat-media-concurrency-qa-rollout/progress.md). 커밋/PR 및 Production은 미수행.
+
+- 2026-09-14 최종 동시성 로컬 구현: `ChatMediaPipelineLimits` 기본 원본4/준비전체/PUT4, QA 미지정 값은 기본값 보존. 계약3 `directMediaUploadService`의 조회·서명·취소 정리는 요청 대상 전체 실행, `createProductionDependencies`에서 계약3 폭 주입 제거. [진행·검증](tasks/chat-media-concurrency-qa-rollout/progress.md), [계획](tasks/chat-media-concurrency-qa-rollout/plan.md). Development 서버 미배포, 결합 QA 대기.
+
+- 2026-09-14 원본 확보 비교 완료:4/all/4/all 각각1.630/0.411/0.505/0.437초,280장 앱 성공·사용자 조작 확인. QA 해제/기본4 복원, 최종 정책 논의 대기. [측정과 한계](tasks/chat-media-preview-continuity/acquisition-diagnosis.md).
+
+- 2026-09-14 원본 확보 동시성 비교 준비: DEBUG Development QA의 `OUTPICK_MEDIA_QA_ACQUISITION=4|all`로 원본 확보만 비교한다. 기본4 유지. `ChatMediaSelectionUseCaseTests`의 확보 완료/실패 정리를 두 폭으로 검증하며, 실제 비교 상태는 [원본 확보 진단](tasks/chat-media-preview-continuity/acquisition-diagnosis.md) 참조.
+
+- 2026-09-12 준비·업로드·metadata 실기기 개별 비교 완료: [측정 결과](qa-media-upload-concurrency-2026-09-12.md). 8회560장 정상 저장. 업로드4 유지, 준비all 및metadata60은 속도 개선 후보. 결합 조합·다중 사용자 부하는 미검증. 실험 후 기본4 복원.
+
+- 2026-09-12 동시성 비교 QA: `ChatMediaPipelineLimits.forCurrentProcess`가 DEBUG Development에서만 `OUTPICK_MEDIA_QA=1`, `OUTPICK_MEDIA_QA_UPLOADS=4|all`, `OUTPICK_MEDIA_QA_PREPARATION=4|all`을 적용한다. `ChatMediaQAMetrics`가 메모리200ms 표본/1초 로그를 기록한다. 공용 FIFO1은 유지하며 서버 metadata 설정은 별도로 확인한다. 상세 CHAT 진입점 참조.
+
 - 채팅 캐시 동기화 완료(2026-09-11): 합의된 QA 및 PR 리뷰 보완 후 핵심 48개 회귀 통과. Development iOS 빌드·연결 iPhone 14 설치/실행 확인. 앱 코드·테스트·하네스 커밋으로 정리하며 서버 배포 대상 변경은 없다. VoiceOver 제외·실기기 장시간 보류 범위 유지.
 
 - 참여 완료 UI QA: `ChatViewController.joinRoomBtnTapped` 성공 경로는 이전 참여 버튼을 숨긴다. 캐시 동기화 progress의 2026-09-11 19:18 실제 재참여·재진입 검증 및 QA fixture 관리자 상태 보완 기록 참조.

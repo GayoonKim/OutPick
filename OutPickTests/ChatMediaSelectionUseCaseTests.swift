@@ -3,8 +3,67 @@ import Testing
 @testable import OutPick
 
 struct ChatMediaSelectionUseCaseTests {
-    @Test func acquisitionPublishesOnlyAfterEveryOriginalIsOwned() async throws {
+    @Test func qaWithoutOverridesKeepsProductionPipelineDefaults() {
+        for environment in [[:], ["OUTPICK_MEDIA_QA": "1"],
+                            ["OUTPICK_MEDIA_QA": "1", "OUTPICK_MEDIA_QA_PREPARATION": "invalid"]] {
+            let limits = ChatMediaPipelineLimits.configured(environment: environment, bundleIdentifier: "GayoonKim.OutPick.dev")
+            #expect(limits.acquisition == 4)
+            #expect(limits.imagePreparation == Int.max)
+            #expect(limits.filesPerBatch == 4)
+            #expect(limits.videoPreparation == 1)
+        }
+    }
+
+    @Test func qaOverridesRequireOptInAndDevelopmentBundle() {
+        let overrides = ["OUTPICK_MEDIA_QA": "1", "OUTPICK_MEDIA_QA_ACQUISITION": "all",
+                         "OUTPICK_MEDIA_QA_PREPARATION": "4", "OUTPICK_MEDIA_QA_UPLOADS": "all"]
+        let enabled = ChatMediaPipelineLimits.configured(environment: overrides, bundleIdentifier: "GayoonKim.OutPick.dev")
+        #if DEBUG
+        #expect(enabled.acquisition == Int.max)
+        #expect(enabled.imagePreparation == 4)
+        #expect(enabled.filesPerBatch == Int.max)
+        #else
+        #expect(enabled.acquisition == 4 && enabled.imagePreparation == Int.max && enabled.filesPerBatch == 4)
+        #endif
+        let production = ChatMediaPipelineLimits.configured(environment: overrides, bundleIdentifier: "GayoonKim.OutPick")
+        var disabledEnvironment = overrides
+        disabledEnvironment["OUTPICK_MEDIA_QA"] = "0"
+        let disabled = ChatMediaPipelineLimits.configured(environment: disabledEnvironment, bundleIdentifier: "GayoonKim.OutPick.dev")
+        for limits in [production, disabled] {
+            #expect(limits.acquisition == 4 && limits.imagePreparation == Int.max && limits.filesPerBatch == 4)
+        }
+    }
+
+    @Test func cancellationDuringPreparationRemovesTemporaryFileButKeepsOriginal() async throws {
         let fixture = Fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let selection = try await fixture.useCase.acquire(sourceCount: 1, roomID: "room", senderUID: "sender", id: "cancel-parent") { index, directory in
+            let url = directory.appendingPathComponent("source.jpg")
+            try Data([7]).write(to: url)
+            return .init(index: index, path: url.path, isVideo: false)
+        }
+        let preparedURL = fixture.root.appendingPathComponent("prepared.jpg")
+        let cancellation = PreparationParentCancellation()
+        let useCase = ChatMediaSelectionUseCase(repository: fixture.repository, prepareImage: { _, index in
+            try Data([8]).write(to: preparedURL)
+            cancellation.cancelParent()
+            return ProcessedImage(index: index, originalFileURL: preparedURL, thumbData: Data(),
+                                  originalWidth: 10, originalHeight: 10, bytesOriginal: 1, sha256: "prepared")
+        })
+        let task = Task {
+            try await useCase.process(selection, onChunk: { _, _ in
+                Issue.record("준비 도중 취소된 묶음은 공개하면 안 됩니다.")
+            }, onCommitted: { _ in Issue.record("취소 뒤 원장 소유권을 이전하면 안 됩니다.") })
+        }
+        cancellation.install(task)
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: preparedURL.path))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: selection.selectionSources[0].path)) == Data([7]))
+        #expect(try await fixture.repository.load(selection.selectionID)?.selectionSources.count == 1)
+    }
+
+    @Test(arguments: [4, Int.max]) func acquisitionPublishesOnlyAfterEveryOriginalIsOwned(width: Int) async throws {
+        let fixture = Fixture(acquisition: width)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let id = UUID().uuidString
         let selection = try await fixture.useCase.acquire(sourceCount: 9, roomID: "room", senderUID: "sender", id: id) { index, directory in
@@ -17,8 +76,8 @@ struct ChatMediaSelectionUseCaseTests {
         #expect(try await fixture.repository.load(id)?.selectionSources.count == 9)
     }
 
-    @Test func acquisitionFailureRemovesJournalAndPartiallyCopiedFiles() async throws {
-        let fixture = Fixture()
+    @Test(arguments: [4, Int.max]) func acquisitionFailureRemovesJournalAndPartiallyCopiedFiles(width: Int) async throws {
+        let fixture = Fixture(acquisition: width)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let id = UUID().uuidString
         await #expect(throws: (any Error).self) {
@@ -165,9 +224,9 @@ struct ChatMediaSelectionUseCaseTests {
         let persistence = SelectionTestPersistence()
         let repository: ChatMediaSelectionRepository
         let useCase: ChatMediaSelectionUseCase
-        init(failingIndex: Int? = nil, failsAll: Bool = false) {
+        init(failingIndex: Int? = nil, failsAll: Bool = false, acquisition: Int = 4) {
             repository = ChatMediaSelectionRepository(persistence: persistence, root: root)
-            useCase = ChatMediaSelectionUseCase(repository: repository, prepareImage: { url, index in
+            useCase = ChatMediaSelectionUseCase(repository: repository, limits: ChatMediaPipelineLimits(acquisition: acquisition), prepareImage: { url, index in
                 if failsAll || index == failingIndex { throw MediaError.failedToConvertImage }
                 return ProcessedImage(index: index, originalFileURL: url, thumbData: Data(),
                     originalWidth: 10, originalHeight: 10, bytesOriginal: 100, sha256: String(index))
@@ -177,6 +236,20 @@ struct ChatMediaSelectionUseCaseTests {
             .init(selectionID: UUID().uuidString, roomID: "room", senderUID: "sender", createdAt: Date(),
                 selectionSources: (0..<count).map { .init(index: $0, path: root.appendingPathComponent("\($0).jpg").path, isVideo: false) })
         }
+    }
+}
+
+// 준비 콜백 안에서 부모를 취소하여 실제 파일 생성과 취소의 순서를 고정한다.
+private final class PreparationParentCancellation: @unchecked Sendable {
+    private let installed = DispatchSemaphore(value: 0)
+    private var parent: Task<Int, Error>?
+    func install(_ task: Task<Int, Error>) {
+        parent = task
+        installed.signal()
+    }
+    func cancelParent() {
+        installed.wait()
+        parent?.cancel()
     }
 }
 

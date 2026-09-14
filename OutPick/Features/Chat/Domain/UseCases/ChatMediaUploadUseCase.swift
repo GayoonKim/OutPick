@@ -415,6 +415,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
         onProgress: @escaping (Double) -> Void
     ) async throws -> ChatMediaProcessingSnapshot {
         let orderedSources = sources.sorted(by: { $0.index < $1.index })
+        #if DEBUG
+        print("[MediaQA] event=batch_reservation_started messageID=\(uploadID) files=\(sources.count) bytes=\(sources.reduce(Int64(0)) { $0 + $1.sizeBytes }) uptime=\(ProcessInfo.processInfo.systemUptime)")
+        #endif
         var retryIndex = 0
         let reservation: ChatMediaUploadReservation
         while true {
@@ -439,6 +442,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
             }
         }
         await onReservation(reservation)
+        #if DEBUG
+        print("[MediaQA] event=batch_reserved messageID=\(uploadID) uptime=\(ProcessInfo.processInfo.systemUptime)")
+        #endif
 
         do {
             try Task.checkCancellation()
@@ -485,6 +491,9 @@ final class ChatMediaUploadUseCase: ChatMediaUploadUseCaseProtocol {
                     // 진행 중 PUT이 모두 종료된 뒤 finalize로 응답 유실/실제 누락을 구분한다.
                 }
                 do {
+                    #if DEBUG
+                    print("[MediaQA] event=batch_finalize_started messageID=\(uploadID) uptime=\(ProcessInfo.processInfo.systemUptime)")
+                    #endif
                     let snapshot = try await retryTransport { try await self.sendingRepository.finalizeMediaUpload(
                         roomID: roomID,
                         uploadID: uploadID,
