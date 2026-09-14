@@ -221,8 +221,8 @@ export function createMediaUploadService({
   metadataConcurrency = 1,
   logger = console
 }) {
-  if (!Number.isInteger(metadataConcurrency) || metadataConcurrency < 1 || metadataConcurrency > 30) {
-    throw new Error("CHAT_MEDIA_METADATA_CONCURRENCY must be 1...30");
+  if (!Number.isInteger(metadataConcurrency) || metadataConcurrency < 1 || metadataConcurrency > 60) {
+    throw new Error("CHAT_MEDIA_METADATA_CONCURRENCY must be 1...60");
   }
   const storagePrefix = (roomID, messageID) => `rooms/${roomID}/messages/${messageID}`;
   const reservationRef = (roomID, messageID) => db

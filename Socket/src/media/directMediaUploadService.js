@@ -34,8 +34,7 @@ export function validateDirectSources(kind, contract, sources) {
   return {ok: true, files};
 }
 
-export function createDirectMediaUploadService({db, admin, clock, bucket, metadataConcurrency = 4, logger = console}) {
-  if (!Number.isInteger(metadataConcurrency) || metadataConcurrency < 1 || metadataConcurrency > 30) throw new Error("metadata concurrency must be 1...30");
+export function createDirectMediaUploadService({db, admin, clock, bucket, logger = console}) {
   const stamp = n => admin.firestore.Timestamp.fromMillis(n);
   const refFor = a => db.collection("Rooms").doc(a.roomID).collection("MediaUploads").doc(a.uploadID);
   const matches = (d, a) => d?.contractVersion === 3 && d.senderUID === a.senderUID &&
@@ -94,12 +93,12 @@ export function createDirectMediaUploadService({db, admin, clock, bucket, metada
 
   async function metadata(d) {
     const start = clock.nowMillis();
-    const objects = await boundedMap(d.targets, metadataConcurrency, async target => {
+    const objects = await boundedMap(d.targets, Math.max(1, d.targets.length), async target => {
       try { const [m] = await bucket.file(target.path).getMetadata(); return m; }
       catch (error) { if (Number(error.code) === 404) return null; throw error; }
     });
     logger.info?.(JSON.stringify({event: "media_finalize_metadata", uploadID: d.uploadID,
-      count: d.targets.length, concurrency: metadataConcurrency, durationMs: clock.nowMillis() - start}));
+      count: d.targets.length, concurrency: d.targets.length, concurrencyPolicy: "all", durationMs: clock.nowMillis() - start}));
     for (let i = 0; i < objects.length; i++) {
       const m = objects[i], t = d.targets[i];
       if (m && (Number(m.size) !== t.sizeBytes || m.contentType !== t.contentType || !m.generation)) {
@@ -116,7 +115,8 @@ export function createDirectMediaUploadService({db, admin, clock, bucket, metada
     if (millis(d.uploadExpiresAt) <= clock.nowMillis()) return failure("media_reservation_expired");
     const checked = inspect ? await metadata(d) : {ok: true, objects: d.targets.map(() => null)};
     if (!checked.ok) return checked;
-    const uploads = await boundedMap(d.targets.filter((_, i) => !checked.objects[i]), metadataConcurrency, async t => {
+    const missingTargets = d.targets.filter((_, i) => !checked.objects[i]);
+    const uploads = await boundedMap(missingTargets, Math.max(1, missingTargets.length), async t => {
       const requiredHeaders = {"content-type": t.contentType, "x-goog-if-generation-match": "0"};
       const [signedURL] = await bucket.file(t.path).getSignedUrl({version: "v4", action: "write",
         expires: new Date(millis(d.uploadExpiresAt)), contentType: t.contentType,
@@ -213,7 +213,8 @@ export function createDirectMediaUploadService({db, admin, clock, bucket, metada
     if (result.ok && result.processingStatus === "canceled") {
       const d = (await ref.get()).data();
       try {
-        await boundedMap(d.targets ?? [], metadataConcurrency, async t => {
+        const cleanupTargets = d.targets ?? [];
+        await boundedMap(cleanupTargets, Math.max(1, cleanupTargets.length), async t => {
           const file = bucket.file(t.path);
           try {
             const [m] = await file.getMetadata();
