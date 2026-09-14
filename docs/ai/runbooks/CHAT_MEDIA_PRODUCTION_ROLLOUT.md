@@ -1,5 +1,15 @@
 # Chat Media Production Rollout Runbook
 
+## 2026-09-14 추가 Production 대기 범위
+
+- 상태: 기록만 완료, 실제 배포 미승인·미수행. 기존 `chat-media-production-rollout`의 PR#27(main34831dfc)/PR#28(main8e7d3c31) 직접 업로드·사진300MB·실패복구·뷰어 반영 대기에 이번 최종 동시성 변경을 통합한다. 아래 Phase7 초기 rollout은 과거 이력이다.
+- 앱: 묶음 FIFO1/원본 확보4/연속 사진 전체 준비/PUT4. QA opt-in은 기본값을 바꾸지 않으며 Production에서는 비교 환경 변수를 적용하지 않는다.
+- 계약3 Socket: metadata 조회·signed PUT URL 생성·취소 정리 각각 요청 대상 전체 실행. 최대30장/60파일 계약 유지, 실행 폭 고정60 상한은 없음. 계약3의 `CHAT_MEDIA_METADATA_CONCURRENCY` 의존은 제거하고 계약2 기존 설정만 유지한다.
+- 이번 추가 변경 자체에는 Functions/Worker/Rules/Indexes/IAM 수정이 없다. 기존 PR#27 rollout의 미반영 의존 항목은 실제 Production 상태 감사로 따로 확인한다. 기존 계약2 진행 자료 호환 경로를 삭제하지 않는다.
+- Development 근거: `concurrency-all-0914`100% 배포, image `sha256:dda2c4eb9540a28643061d8cd4f153189e504ea5072edb1e76fadb95c20a6d37`; iPhone41개/Socket124개 통과,3장/70장/네트워크 실패 후 재시도 QA 완료. [수치와 한계](../qa-media-upload-concurrency-2026-09-12.md).
+- 운영 재개 시: 머지된 소스 SHA와 실제 운영 계약/설정 차이 확인→대상과 기존 revision/digest 롤백 기준 작성→별도 배포 승인→서버 준비·readiness·트래픽 전환→Production 앱 반영·통합QA. 새 계약3 앱을 미지원 서버보다 먼저 반영하지 않는다. Development 결과를 Production 검증으로 대신하지 않는다.
+- 조회·서명·취소 정리 실패/ready 파일 보호·늦은PUT 정리·실제 전송/재시도와 다중 사용자 부하를 운영 전 검증 범위에 포함해 점검한다. 단일 iPhone14 결과가 모든 지원 기기/네트워크에서 최적임을 의미하지 않는다.
+
 ## 목적과 범위
 
 Phase 7.0~7.3의 격리 업로드, 서버 정규화, ready 전달, iOS pending/outbox를 `outpick-664ae`에 반영한다. App Store/TestFlight 출시는 범위 밖이며, 머지된 정확한 Git SHA의 backend와 Production iOS build/smoke까지만 수행한다.

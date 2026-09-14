@@ -2,6 +2,24 @@
 
 ## 현재 상태
 
+- 2026-09-14 `chat-media-concurrency-qa-rollout`: 구현·iPhone41개/Socket124개·Development 배포·3장/70장 정상 전송/재입장·네트워크 실패 후 재시도 실기기 QA 완료. QA 계측 해제, 최종 정책 유지. [완료 근거](chat-media-concurrency-qa-rollout/progress.md). 남은 것은 커밋·PR·리뷰·머지, Production은 별도 대기. 아래 QA 대기 문구는 해소됐다.
+
+- 2026-09-14 최종 조합3장+70장 Development 정상 QA 통과. 서버70장30/30/10·seq58~60·계약3 ready 및전체조회 확인, 사용자 전송/스크롤/입력/재입장 확인. 실기기 실패버블 복구 항목만 확인 중. [진행](chat-media-concurrency-qa-rollout/progress.md). 커밋/PR/Production 미수행.
+
+- 2026-09-14 승인된 Development Socket `concurrency-all-0914`100% 반영 및 최신DEV 앱 설치·실행 완료. 원본4/준비전체/PUT4 기본값 확인, 서버 조회·서명·취소 정리 전체 실행 이미지 배포. `미디어 QA`3장 smoke 사용자 응답 대기,70장 결합 QA 미완료. [현재 진행](chat-media-concurrency-qa-rollout/progress.md). Production 미변경.
+
+- 2026-09-14 구현 승인 후 `chat-media-concurrency-qa-rollout` Phase1~2 로컬 구현 완료. 원본4/준비전체/PUT4, 계약3 서버 조회·서명·취소 정리 전체 실행. iPhone41개/4 suites·Socket check/124개 통과. [진행](chat-media-concurrency-qa-rollout/progress.md). Development 서버 배포·실제 결합 QA·커밋/PR 미수행. 아래 구현 승인 전 문구는 이전 이력이다.
+
+- 2026-09-14 최종 방향과 [세부 구현 계획](chat-media-concurrency-qa-rollout/plan.md) 작성 완료. 원본 확보4 유지, 계약3 서버 metadata 조회·URL 서명·취소 정리 모두 요청 대상 전체 실행으로 사용자 확정. FIFO1·준비전체·PUT4 유지. 남은 설계 선택 없음, 코드 구현 승인 전이며 배포 미착수.
+
+- 2026-09-14 원본 확보4/전체 실기기 비교 완료: 4→all→4→all, 원본 확보1.630/0.411/0.505/0.437초. 매회70장·3묶음 앱 성공 및 사용자 조작 확인, 서버 문서 별도 감사 미수행. 반복4 대비 차이는 약0.07~0.09초로 체감 개선 입증 아님. 원본 확보 최종값은 추가 논의 대기, 실험 설정 해제·기본4 복원. [결과](chat-media-preview-continuity/acquisition-diagnosis.md). 정식 적용 구현 계획은 아직 미확정.
+
+- 2026-09-14 `chat-media-concurrency-qa-rollout`: 사용자와 적용 방향 확정. 묶음 FIFO1·원본 확보4·이미지 준비 연속 사진 전체·파일 업로드4·서버 metadata 요청 내 전체 파일 조회, 영상 정책 유지. 방향 확정과 기록까지 완료했으며 정식 코드 반영·최종 결합 QA는 아직 미수행이다.
+
+- 2026-09-12 미디어 동시성 개별 비교 완료. 사용자 요청으로 결과 적용·Development 검증·커밋/PR/리뷰/머지는 아래 핵심 대기 작업으로 **기록만** 한다. 이번 기록 요청으로 추가 구현·배포·커밋·PR·머지를 실행하지 않는다.
+
+- 2026-09-11 현재 대화: `chat-message-cache-sync` — 완료. 합의된 QA·최종48개 회귀·iPhone14 개발 앱 설치/실행·3개 커밋·PR #29 자체 리뷰 및 main 머지 완료(`143544e5`). VoiceOver 제외·실기기 장시간 보류 유지. [진행](chat-message-cache-sync/progress.md).
+
 - `shared-image-viewer-editorial` — 구현·빌드·자동 회귀12개·렌더링 및 이번 범위 실기기 QA 완료. 사용자 나머지 항목 모두 확인, 큰 글씨·VoiceOver는 명시적으로 QA 제외(미검증). [최종 기록](shared-image-viewer-editorial/implementation-plan.md). 커밋/PR 미수행. 기존 이미지 깜빡임/300MB 작업은 완료 상태 유지.
 
 - 2026-09-11 최종: `chat-media-preview-continuity` 및 후속 사진300MB/실패 복구 작업 완료. 구현·Development 배포·사용자 실기기 QA 완료, Swift29회/Socket115개 통과. [최종 검증 범위](chat-media-preview-continuity/photo-size-failure-recovery.md).300MB 정확한 경계는 자동 테스트로 검증했고 실파일 경계 시험은 완료 조건에서 제외. 커밋/PR/머지 및 Production 배포는 미수행. 아래 깜빡임 착수/QA 대기 상태는 과거 이력이며 다음 핵심 대기는 관리자 웹 설계 논의다.
@@ -33,6 +51,18 @@
 - `lookbook-discovery-learning-loop`의 후속 구현·Production rollout 완료 기록을 확인해 대기 목록에서 제외했다. 상세 연결은 해당 task의 `progress.md` 최상단을 따른다.
 
 ## 현재 핵심 작업
+
+- `chat-media-concurrency-qa-rollout` — 적용 방향 확정, 코드 반영 전(2026-09-14)
+  - 세부 계획: [Phase1~4 구현·검증 계획](chat-media-concurrency-qa-rollout/plan.md). 서버 전체 실행은 계약3 metadata 조회뿐 아니라 URL 서명·취소 정리에도 적용한다. 원본 확보4 최종 확정. 기존 계약2 동시성 설정은 유지한다.
+  - 근거: [iPhone 14 동시성 비교 결과](../qa-media-upload-concurrency-2026-09-12.md). 8회·560장·24묶음 정상 저장, 사용자 매회 완료·스크롤·입력 이상 없음 확인.
+  - 확정 방향: 묶음 FIFO1 유지 + 원본 확보4 + 이미지 준비 연속 사진 전체 동시 실행 + 파일 업로드4 + 서버 metadata 요청 내 전체 파일 동시 조회. 영상 정책은 유지한다. 이미지 준비는 30장으로 분할하기 전 연속 사진 구간 전체가 대상이며 30개 제한이 아니다. metadata도 고정60 제한 대신 요청 대상 전체를 조회한다. 현재 계약은 최대30장×본파일/썸네일=60파일이다. 향후 묶음 확대 후 지연·실패율 증가가 관측되면 제한 도입을 재검토한다.
+  - 근거 수치: 업로드4는11.33/12.06초, 전체 동시 실행은19.33/70.15초. 준비 전체 동시 실행은3.82/3.98초(기존약6초), 관측 최고 메모리1338–1592MiB. 서버60 조회 합계0.475/0.200초(기존4는0.621–0.673초).
+  - 다음 진행 순서: 확정 정책의 변경 파일·구현/검증 범위 정리 → 코드·관련 하네스 반영 및 필요한 회귀 → Development 앱/서버 반영 → 최종 결합 조합으로70장 실제 전송·메시지 순서/누락/중복·조작·메모리 확인 → 작업별 커밋 정리 → PR 생성 → 리뷰·지적사항 보완 → 검증한 head 머지. 적용 방향 확정을 배포·커밋·PR·머지 실행 승인으로 간주하지 않는다.
+  - 완료 기준: 개별 측정 결과를 최종 조합 검증과 구분해 기록하고, Development 적용 상태·검증 결과·커밋·PR·리뷰·머지 근거를 남긴다. 여러 사용자 동시 부하는 미검증이므로 이번 결과를 전체 지원 기기의 최적값으로 단정하지 않는다.
+  - 현재 상태: 앱 준비/업로드 기본4 및 Development 기존metadata4로 복원 완료. 서버 실험 트래픽은 `outpick-socket-development-photo300-0911`100%, 템플릿은 기존 이미지/metadata4의 `qa-restored-0912`. 비교용 코드·테스트·문서는 로컬 미커밋 상태로 보존한다.
+  - 커밋 정리 시 이번 Swift 계측·설정·테스트, Socket 상한60/테스트, QA·진입점 문서를 구분한다. 기존 HANDOFF·포트폴리오·로컬 로그 등 무관 변경은 포함하지 않는다. Production 배포는 별도 대기 작업을 유지하며 이번 후속 범위에 포함하지 않는다.
+
+- `chat-message-cache-sync` — 완료: 실기기 개발 앱 설치·PR #29 머지까지 완료. progress 참조.
 
 - 미디어 버블 이미지 깜빡임 제거 및 사진300MB/실패 복구 — 완료. [최종 상태](chat-media-preview-continuity/photo-size-failure-recovery.md).
 
@@ -76,8 +106,11 @@
 ## 추가 핵심 대기 작업
 
 - `chat-media-production-rollout`: 이번 미디어 전송 변경의 Production 배포
+  - 2026-09-14 추가 기록: 기존 PR#27/#28 범위에 이번 최종 동시성 적용도 통합한다. iOS 원본4/준비전체/PUT4/FIFO1, 계약3 Socket 조회·서명·취소정리전체. 계약2 수치 설정은 유지하며 계약3은 metadata 환경 변수를 소비하지 않는다. [Development 최종 근거](../qa-media-upload-concurrency-2026-09-12.md), [운영 배포 대기 범위](../runbooks/CHAT_MEDIA_PRODUCTION_ROLLOUT.md). 실제 Production 배포는 이번 커밋/PR/머지 요청에 포함되지 않는다.
   - 상태: 사용자 요청으로 대기 목록에 기록. 실제 Production 배포 승인은 아직 없으며 배포하지 않았다. 다른 대기 작업과의 착수 순서는 추후 결정한다.
-  - 기준: PR #27/main `34831dfc` 및 이후 승인된 미디어 수정. [FIREBASE 진입점](../entrypoints/FIREBASE.md)과 [Development QA 기록](chat-media-bounded-parallel-upload/qa/direct-upload-implementation.md)을 따른다.
+  - 기준: PR #27/main `34831dfc`와 PR #28/main `8e7d3c31`까지 포함. 2026-09-11 사용자 요청으로 이번 완료 변경의 Production 반영도 기존 대기 항목에 통합 기록했다. 실제 배포 승인은 아님. [FIREBASE 진입점](../entrypoints/FIREBASE.md)과 [Development QA 기록](chat-media-bounded-parallel-upload/qa/direct-upload-implementation.md)을 따른다.
+  - PR #28 추가 범위: Socket 계약3 사진 본 파일·썸네일 각각300,000,000바이트 및 묶음 본 파일 합계300,000,000바이트/30장 정책. iOS 이미지 깜빡임 개선·실패 사진 원본 보존/재시도/삭제·다운로드 한도 정합성·공용 확대 화면 리팩토링도 Production 앱 반영 대상에 포함한다. 공용 확대 화면 자체는 서버 배포가 필요 없고, 이번 PR의 Functions/Firestore/Storage rules 변경은 없다.
+  - 추가 순서/검증: Production Socket의300MB 정책 준비·검증 후 새 앱 반영. Development `outpick-socket-development-photo300-0911` 배포와 문제 사진/31장 전송·실패 복구·공용 뷰어 사용자 QA 결과를 참고하되 Production 통합 검증을 별도로 수행한다. 큰 글씨·VoiceOver는 사용자 요청으로 QA 제외,300MB 정확한 경계는 자동 테스트 검증(실파일 기기 경계 시험 미실시).
   - 사전 확인: 운영 Socket·관련 Functions·worker·규칙·인덱스의 실제 상태와 코드 차이를 확인하고 정확한 배포 목록 및 기존 revision/digest 롤백 기준을 작성한다. 기존 계약2 진행 자료 호환 경로는 임의 삭제하지 않는다.
   - 범위: Socket 계약3, 최종 버킷 환경 변수/메타데이터 병렬 설정, 최종 버킷 객체 접근·서명 IAM, ready Storage Rules, cleanup 복합 인덱스/receipt TTL, `reconcileChatMediaObjectCleanup` 및 변경된 기존 media 함수/worker의 배포 필요 여부 확인.
   - 순서: 규칙·인덱스·필요 IAM 및 서버 준비 → 후보 검증 → 트래픽 전환 → 계약3 iOS 반영 → 실제 통합 확인. 신규 앱을 계약3 미지원 서버보다 먼저 배포하지 않는다. IAM과 운영 변경은 구체 범위를 확인한 후 승인받는다.

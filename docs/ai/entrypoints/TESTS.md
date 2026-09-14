@@ -1,5 +1,10 @@
 # Test Entrypoints
 
+- 최종 조합 Development 수동QA(2026-09-14):3장 smoke→70장30/30/10(seq58~60)→네트워크 차단 실패버블 재시도 성공(seq61/2장). 사용자스크롤/입력/재입장 확인. 삭제버튼 표시는 확인했으나 실제삭제 수동 실행은 주장하지 않는다. 자동41개/124개 및 [증거·한계](../tasks/chat-media-concurrency-qa-rollout/progress.md) 참조.
+
+- 2026-09-14 최종 동시성 로컬 검증: `ChatMediaSelectionUseCaseTests` 설정 누락/잘못된 값의 기본 정책 유지·DEBUG/dev opt-in·준비 중 부모 취소의 임시 파일 제거/원본 보존을 추가했다. 기존70장 분할/순서·실패복원, SourceAcquisition/UploadUseCase/UploadTurnQueue와 함께 iPhone14 Development41개/4 suites 통과. `/private/tmp/outpick-concurrency-final-ios-tests.xcresult`.
+- Socket `test/media/directMediaUploadService.test.js`: 입력 크기별 전체 조회·전체60개 서명·역순 완료 정렬·서명/조회 일부 실패 drain·서명 도중 취소·전체 취소 삭제 일부 실패/지연정리·ready 파일 보존. `test/media/boundedMap.test.js`:73개 전체 실행과 빈 대상. check 및 전체124개 통과, `/private/tmp/outpick-concurrency-final-socket-tests.log`. 최종 Development 결합 실측은 별도 대기.
+
 - 2026-09-11 PR 최종 집중 회귀: gap policy·page loader·save queue·VM message action·deletion store·목록 삭제 총 48개/6 suites 통과. 로그 `/private/tmp/outpick-cache-sync-pr-review-tests.log`. 초기 99개 실행·후속 60,000개 저장·실제 서버 QA와 중복 합산하지 않는다.
 
 - PR 리뷰 경합 보완: `socketEventAtEmptyReconciliationExitIsAppliedBeforeReturning`은 head=cursor인 동기화의 cleanup 조회를 멈추고 새 Socket 삭제를 접수한 뒤, 이벤트 호출이 반환하기 전에 cursor가 전진하는지 검증한다. `handleSocketEvent`는 완료된 공유 작업의 cursor가 이벤트 revision에 못 미치면 해당 이벤트를 다시 처리한다.

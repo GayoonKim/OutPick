@@ -1,5 +1,17 @@
 # Chat Entrypoints
 
+- 최종 동시성 Development QA 완료(2026-09-14): 사용자3장/70장 전송·스크롤·입력·재입장 및 네트워크 차단 실패버블 버튼/재시도 성공 확인. 서버seq57~61 및첨부3/30/30/10/2 대조. QA off 재실행, 실제 기본정책 원본4/준비전체/PUT4 유지. [한계 포함 근거](../tasks/chat-media-concurrency-qa-rollout/progress.md).
+
+- 최종 정책 로컬 구현(2026-09-14): `ChatMediaPipelineLimits.imagePreparation=Int.max`, acquisition4/PUT4/video1 유지. `configured(environment:bundleIdentifier:)`가 DEBUG/dev/QA opt-in 조건과 누락·잘못된 값의 기본값 보존을 담당하며 `forCurrentProcess`는 설정 적용·계측 시작을 조립한다. `ChatContainer`의 기존 주입과 `ChatMediaSelectionUseCase`의 전체준비→정렬→30장/용량분할 구조를 유지한다. `ChatMediaSelectionUseCaseTests`에 설정 gate·준비 중 부모 취소 시 임시 파일 제거/원본 보존 회귀 추가. [진행](../tasks/chat-media-concurrency-qa-rollout/progress.md).
+
+- 원본 확보4/전체 비교 최종(2026-09-14): 네 번280장 앱 성공 및 사용자 조작 확인. 반복4가0.505초, 전체0.411/0.437초로 차이 약0.07~0.09초. 기본4 복원, 최종값 미확정. 실제 증거·전체 시간·메모리 한계는 [진단 결과](../tasks/chat-media-preview-continuity/acquisition-diagnosis.md) 참조.
+
+- 2026-09-14 원본 확보 비교: `ChatMediaPipelineLimits.forCurrentProcess`에 `OUTPICK_MEDIA_QA_ACQUISITION=4|all` 추가(DEBUG/dev/QA opt-in에 한정). 기존 `ChatMediaSelectionUseCase.acquire`의 TaskGroup·공용 확보 슬롯에 주입하며 기본4 유지. 준비4/PUT4를 고정하고 같은70장으로4→all→4→all 비교, provider 대기/복사/전체 확보·메모리·사용자 조작을 분리 기록한다. `ChatMediaSelectionUseCaseTests`의 확보 완료/부분 실패 회귀를4/Int.max로 확장했다. 빌드·실측 결과는 원본 확보 진단 문서에 기록한다.
+
+- 2026-09-12 개별 동시성 비교8회 완료: [측정 결과](../qa-media-upload-concurrency-2026-09-12.md). 업로드4가all보다 빠르고 준비all은약2초 단축. metadata60 조회 합계0.475/0.200초. 모든 실행 정상 저장·사용자 조작 이상 없음. 최종 결합 조합은 미검증이며 앱은기본4 복원.
+
+- 실제 동시성 비교(2026-09-12): 준비4/PUT4/metadata4 기준과 PUT 전체 동시 실행을 먼저 비교한다. `ChatMediaPipelineLimits.forCurrentProcess`의 DEBUG/dev 번들/opt-in 조건으로만 적용하며 기본 정책은4 유지. `all`은 유한한 입력 파일 전체에 대해 작업을 시작하는 `Int.max` 상한이다. 사진70장은 같은 자료·네트워크·기기/동일계측으로 비교하고 단계별시간·중복/누락/순서/실패·메모리표본·발열·사용자조작결과를 기록한다. `ChatMediaUploadUseCaseTests.filesInsideBatchRespectConfiguredWidthBeforeFinalize`가4/전체 실행완료 barrier를 검증한다. peak는200ms 표본이므로 순간최댓값보장없음. UI 부드러움은 메모리로그만으로 판정하지 않는다.
+
 - 캐시 동기화 최종 리뷰: 종료 직전 Socket 삭제가 공유 reconciliation의 빈 결과/초기 bootstrap에 묻히지 않도록 `ChatDeletionSyncUseCase.handleSocketEvent`가 완료 후 cursor를 확인한다. 이벤트 revision이 남으면 완료된 작업을 분리하고 해당 이벤트를 처리한다. 핵심 회귀 48개/6 suites 통과(2026-09-11), 이전 QA 범위는 캐시 동기화 progress 참조.
 
 - 참여 완료 버튼 정리: `ChatViewController.joinRoomBtnTapped` 성공 시 `joinRoomBtn.isHidden=true`로 입력창 뒤/접근성 트리의 ‘참여 중…’ 잔존을 막는다. 실제 나가기·재참여·재진입 QA 완료. 전용 테스트방을 직접 생성할 때 `roomModerationStates/{roomID}.moderatorCount=0`이 없으면 일반 참여자 나가기도 ROOM_ROLE_STATE_INVALID로 실패하므로 fixture 계약에 포함한다.
