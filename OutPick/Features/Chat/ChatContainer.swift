@@ -84,7 +84,7 @@ final class ChatContainer {
         self.persistence = persistence
         let selectionRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ChatMediaSelections", isDirectory: true)
-        let mediaLimits = ChatMediaPipelineLimits()
+        let mediaLimits = ChatMediaPipelineLimits.forCurrentProcess()
         self.mediaSelectionUseCase = ChatMediaSelectionUseCase(repository: ChatMediaSelectionRepository(
             persistence: persistence.outboxStore, root: selectionRoot
         ), limits: mediaLimits)
