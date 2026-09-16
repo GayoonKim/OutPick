@@ -7,6 +7,24 @@ import UIKit
 @MainActor
 struct LookbookHomeViewModelInterestTests {
     @Test
+    func initialBrandsAppearWhileLogoPrefetchIsBlocked() async {
+        let cache = BlockingHomeImageCache()
+        let viewModel = makeViewModel(
+            mainBrands: [homeBrand("brand-with-logo", moodIDs: [], logoThumbPath: "brands/logo-thumb")],
+            interestUseCase: HomeInterestUseCaseFake(results: []),
+            store: CurrentUserStylePreferenceStore(),
+            imageCache: cache
+        )
+        await viewModel.loadInitialPageIfNeeded()
+        viewModel.updateViewport(indices: [0], searching: false)
+        await cache.waitUntilPrefetchStarted()
+
+        #expect(viewModel.phase == .ready)
+        #expect(viewModel.brands.map(\.id.value) == ["brand-with-logo"])
+        await cache.releasePrefetch()
+    }
+
+    @Test
     func noStylePreferenceHidesSectionWithoutQuery() async {
         let interestUseCase = HomeInterestUseCaseFake(results: [])
         let viewModel = makeViewModel(
@@ -94,7 +112,8 @@ struct LookbookHomeViewModelInterestTests {
     private func makeViewModel(
         mainBrands: [Brand],
         interestUseCase: HomeInterestUseCaseFake,
-        store: CurrentUserStylePreferenceStore
+        store: CurrentUserStylePreferenceStore,
+        imageCache: (any BrandImageCacheProtocol)? = nil
     ) -> LookbookHomeViewModel {
         LookbookHomeViewModel(
             repo: HomeBrandRepositoryFake(brands: mainBrands),
@@ -104,7 +123,7 @@ struct LookbookHomeViewModelInterestTests {
             brandAdminSessionStore: BrandAdminSessionStore(
                 capabilitiesClient: HomeBrandCapabilitiesClientFake()
             ),
-            brandImageCache: HomeBrandImageCacheFake(),
+            brandImageCache: imageCache ?? HomeBrandImageCacheFake(),
             initialBrandLimit: 12,
             prefetchLogoCount: 0
         )
@@ -212,6 +231,38 @@ private struct HomeBrandImageCacheFake: BrandImageCacheProtocol {
     ) async {}
 }
 
+private actor BlockingHomeImageCache: BrandImageCacheProtocol {
+    private var didStart = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func waitUntilPrefetchStarted() async {
+        if didStart { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func releasePrefetch() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+
+    func loadImage(path: String, maxBytes: Int) async throws -> UIImage { UIImage() }
+    func storeImageData(_ data: Data, path: String) async throws {}
+    func removeImage(path: String) async {}
+    func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {
+        didStart = true
+        startWaiter?.resume()
+        startWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+    func prefetchAssets(items: [LookbookAssetImageRequest], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {
+        didStart = true
+        startWaiter?.resume()
+        startWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+}
+
 private enum HomeInterestTestError: Error {
     case failed
 }
@@ -219,7 +270,8 @@ private enum HomeInterestTestError: Error {
 private func homeBrand(
     _ id: String,
     moodIDs: [String],
-    likeCount: Int = 0
+    likeCount: Int = 0,
+    logoThumbPath: String? = nil
 ) -> Brand {
     Brand(
         id: BrandID(value: id),
@@ -227,7 +279,7 @@ private func homeBrand(
         englishName: nil,
         websiteURL: nil,
         lookbookArchiveURL: nil,
-        logoThumbPath: nil,
+        logoThumbPath: logoThumbPath,
         logoDetailPath: nil,
         logoOriginalPath: nil,
         isFeatured: false,

@@ -13,6 +13,24 @@ import UIKit
 
 @MainActor
 struct BrandDetailViewModelTests {
+    @Test func seasonCardsAppearWhileCoverPrefetchIsBlocked() async {
+        let brandID = BrandID(value: "brand-metadata-first")
+        let cache = BlockingSeasonImageCache()
+        let viewModel = makeViewModel(
+            brandRepository: BrandRepositorySpy(brand: makeBrand(id: brandID, name: "Brand")),
+            seasonRepository: SeasonRepositorySpy(seasons: [
+                makeSeason(brandID: brandID, seasonID: SeasonID(value: "season-1"), coverPath: "seasons/cover")
+            ]),
+            imageCache: cache
+        )
+        await viewModel.loadContentsIfNeeded(brandID: brandID)
+        viewModel.updateViewport(indices: [0])
+        await cache.waitUntilPrefetchStarted()
+
+        #expect(viewModel.seasons.map(\.id.value) == ["season-1"])
+        await cache.releasePrefetch()
+    }
+
     @Test func refreshUpdatesBrandAndSeasonsFromRepositories() async {
         let brandID = BrandID(value: "brand-1")
         let brandRepository = BrandRepositorySpy(
@@ -70,7 +88,8 @@ struct BrandDetailViewModelTests {
 
     private func makeViewModel(
         brandRepository: BrandRepositorySpy,
-        seasonRepository: SeasonRepositorySpy
+        seasonRepository: SeasonRepositorySpy,
+        imageCache: (any BrandImageCacheProtocol)? = nil
     ) -> BrandDetailViewModel {
         let interactionStore = LookbookInteractionStore(
             maxPostStateCount: 10,
@@ -89,7 +108,7 @@ struct BrandDetailViewModelTests {
             ),
             brandInteractionStore: interactionStore,
             currentUserIDProvider: CurrentUserIDProviderStub(),
-            brandImageCache: BrandImageCacheStub(),
+            brandImageCache: imageCache ?? BrandImageCacheStub(),
             maxBytes: 1_000_000
         )
     }
@@ -215,6 +234,33 @@ private struct BrandImageCacheStub: BrandImageCacheProtocol {
     ) async {}
 }
 
+private actor BlockingSeasonImageCache: BrandImageCacheProtocol {
+    private var didStart = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func waitUntilPrefetchStarted() async {
+        if didStart { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func releasePrefetch() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+
+    func loadImage(path: String, maxBytes: Int) async throws -> UIImage { UIImage() }
+    func storeImageData(_ data: Data, path: String) async throws {}
+    func removeImage(path: String) async {}
+    func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {}
+    func prefetchAssets(items: [LookbookAssetImageRequest], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {
+        didStart = true
+        startWaiter?.resume()
+        startWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+}
+
 private func makeBrand(
     id: BrandID,
     name: String,
@@ -243,7 +289,8 @@ private func makeBrand(
 private func makeSeason(
     brandID: BrandID,
     seasonID: SeasonID,
-    sourceSortIndex: Int? = nil
+    sourceSortIndex: Int? = nil,
+    coverPath: String? = nil
 ) -> Season {
     Season(
         id: seasonID,
@@ -252,7 +299,7 @@ private func makeSeason(
         sourceTitle: nil,
         year: 2026,
         term: .ss,
-        coverPath: nil,
+        coverPath: coverPath,
         coverRemoteURL: nil,
         description: "",
         tagIDs: [],
