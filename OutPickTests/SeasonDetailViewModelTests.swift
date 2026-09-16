@@ -97,7 +97,7 @@ struct SeasonDetailViewModelTests {
         #expect(viewModel.engagementErrorMessage == "좋아요를 반영하지 못했어요.")
     }
 
-    @Test func initialLoadRequestsTwentyFourPostsAndPrefetchesFirstTwelveToDisk() async throws {
+    @Test func initialLoadPublishesTwentyFourPostsAndPrefetchesOnlyViewportDemand() async throws {
         let brandID = BrandID(value: "brand-1")
         let seasonID = SeasonID(value: "season-1")
         let posts = (0..<24).map {
@@ -124,15 +124,15 @@ struct SeasonDetailViewModelTests {
         )
 
         await viewModel.loadIfNeeded()
+        #expect(await imageCache.prefetchRequests.isEmpty)
+        viewModel.updateViewport(indices: Array(0..<5))
         try await waitUntil {
-            await imageCache.prefetchRequests.isEmpty == false
+            await imageCache.prefetchRequests.count == 5
         }
 
         #expect(useCase.initialPageSizes == [24])
         #expect(viewModel.posts.count == 24)
-        #expect(await imageCache.prefetchRequests.first?.items.count == 12)
-        #expect(await imageCache.prefetchRequests.first?.concurrency == 4)
-        #expect(await imageCache.prefetchRequests.first?.storePolicy == .memoryAndDisk)
+        #expect(await imageCache.prefetchRequests.allSatisfy { $0.items.count == 1 && $0.concurrency == 1 && $0.storePolicy == .memoryAndDisk })
     }
 
     @Test func nearEndAppendsNextPageInSourceOrderWithoutDuplicatePosts() async {
@@ -175,7 +175,7 @@ struct SeasonDetailViewModelTests {
         #expect(useCase.postPageRequests.map(\.cursor?.token) == ["page-2"])
     }
 
-    @Test func appendedPagePrefetchesAllNewImagesBeforeTheirCardsAppear() async throws {
+    @Test func appendedPagePrefetchesOnlyNewViewportDemand() async throws {
         let brandID = BrandID(value: "brand-1")
         let seasonID = SeasonID(value: "season-1")
         let firstPosts = (0..<24).map {
@@ -209,26 +209,19 @@ struct SeasonDetailViewModelTests {
         await viewModel.loadIfNeeded()
 
         await viewModel.loadMorePostsIfNeeded(currentPostID: firstPosts[12].id)
+        #expect(await imageCache.prefetchRequests.isEmpty)
+        viewModel.updateViewport(indices: Array(22..<28))
         try await waitUntil {
-            await imageCache.prefetchRequests.count == 2
+            await imageCache.prefetchRequests.count == 6
         }
 
         let requests = await imageCache.prefetchRequests
-        let appendedRequest = try #require(
-            requests.first(where: { $0.items.count == 24 })
-        )
-        #expect(appendedRequest.items.count == 24)
-        #expect(appendedRequest.concurrency == 4)
-        #expect(appendedRequest.storePolicy == .memoryAndDisk)
-        #expect(
-            appendedRequest.items.map(\.path) ==
-                (24..<48).map {
-                    "brands/\(brandID.value)/seasons/\(seasonID.value)/\($0).jpg"
-                }
-        )
+        #expect(requests.count == 6)
+        #expect(requests.allSatisfy { $0.items.count == 1 })
+        #expect(Set(requests.flatMap { $0.items.map(\.path) }).count == 6)
     }
 
-    @Test func repeatedCardAppearancesDoNotPrefetchTheSamePathAgain() async throws {
+    @Test func repeatedViewportUpdateDoesNotPrefetchTheSamePathAgain() async throws {
         let brandID = BrandID(value: "brand-1")
         let seasonID = SeasonID(value: "season-1")
         let posts = (0..<24).map {
@@ -255,17 +248,17 @@ struct SeasonDetailViewModelTests {
         )
         await viewModel.loadIfNeeded()
 
-        viewModel.postDidAppear(postID: posts[0].id)
-        viewModel.postDidAppear(postID: posts[0].id)
+        viewModel.updateViewport(indices: Array(0..<6))
+        viewModel.updateViewport(indices: Array(0..<6))
         try await waitUntil {
-            await imageCache.prefetchRequests.count == 2
+            await imageCache.prefetchRequests.count == 6
         }
 
         let requests = await imageCache.prefetchRequests
         let paths = requests.flatMap { $0.items.map(\.path) }
-        #expect(requests.map(\.concurrency) == [4, 4])
-        #expect(paths.count == 24)
-        #expect(Set(paths).count == 24)
+        #expect(requests.allSatisfy { $0.concurrency == 1 })
+        #expect(paths.count == 6)
+        #expect(Set(paths).count == 6)
     }
 
     @Test func concurrentNearEndAppearancesRequestTheSameCursorOnce() async throws {
@@ -711,5 +704,13 @@ private actor SeasonDetailBrandImageCacheSpy: BrandImageCacheProtocol {
                 storePolicy: storePolicy
             )
         )
+    }
+
+    func prefetchAssets(items: [LookbookAssetImageRequest], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {
+        prefetchRequests.append(PrefetchRequest(
+            items: items.compactMap { item in item.storagePaths.first.map { ($0, item.maxBytes) } },
+            concurrency: concurrency,
+            storePolicy: storePolicy
+        ))
     }
 }

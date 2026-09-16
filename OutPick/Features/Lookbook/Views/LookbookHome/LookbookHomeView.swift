@@ -11,6 +11,9 @@ struct LookbookHomeView: View {
     private let pullToRefreshMinimumVisibleDuration: TimeInterval = 0.6
 
     @StateObject private var viewModel: LookbookHomeViewModel
+    @State private var viewportTracker = LookbookViewportTracker()
+    @State private var viewportFrames: [String: CGRect] = [:]
+    @State private var viewportHeight: CGFloat = 0
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
 
@@ -43,6 +46,15 @@ struct LookbookHomeView: View {
             .outpickDismissKeyboardOnTap()
             .task {
                 await viewModel.loadInitialPageIfNeeded()
+            }
+            .onDisappear { viewModel.clearViewport() }
+            .onChange(of: viewModel.brands.count) { _ in updateViewport() }
+            .onChange(of: viewModel.searchResults.count) { _ in updateViewport() }
+            .onChange(of: viewModel.isSearching) { _ in
+                viewportTracker = LookbookViewportTracker()
+                viewportFrames = [:]
+                viewModel.clearViewport()
+                updateViewport()
             }
     }
 
@@ -137,14 +149,21 @@ struct LookbookHomeView: View {
 
             ForEach(viewModel.brands) { brand in
                 brandRow(brand)
+                    .lookbookItemFrame(brand.id.value, in: "lookbook.home")
                     .onAppear {
-                        Task { await viewModel.loadNextPageIfNeeded(current: brand) }
+                        ImageCacheMetrics.shared.mark("card.home.appeared", key: brand.id.value)
                     }
             }
         }
         .listStyle(.plain)
         .outpickHiddenScrollContentBackground()
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .coordinateSpace(name: "lookbook.home")
+        .background { viewportSizeReader }
+        .onLookbookItemFrames { frames in
+            viewportFrames = frames
+            updateViewport()
+        }
         .refreshable {
             await refreshWithMinimumIndicatorDuration()
         }
@@ -200,11 +219,18 @@ struct LookbookHomeView: View {
             List {
                 ForEach(viewModel.searchResults) { brand in
                     brandRow(brand)
+                        .lookbookItemFrame(brand.id.value, in: "lookbook.home")
                 }
             }
             .listStyle(.plain)
             .outpickHiddenScrollContentBackground()
             .background(OutPickTheme.SwiftUIColor.backgroundBase)
+            .coordinateSpace(name: "lookbook.home")
+            .background { viewportSizeReader }
+            .onLookbookItemFrames { frames in
+                viewportFrames = frames
+                updateViewport()
+            }
 
         case .empty:
             Spacer()
@@ -262,10 +288,39 @@ struct LookbookHomeView: View {
         }
     }
 
+    private var viewportSizeReader: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .onAppear {
+                    viewportHeight = geometry.size.height
+                    updateViewport()
+                }
+                .onChange(of: geometry.size.height) { height in
+                    viewportHeight = height
+                    updateViewport()
+                }
+        }
+    }
+
+    private func updateViewport() {
+        let source = viewModel.isSearching ? viewModel.searchResults : viewModel.brands
+        let indices = viewportTracker.range(
+            ids: source.map { $0.id.value }, frames: viewportFrames,
+            viewportHeight: viewportHeight, columns: 1, estimatedRowStride: 330
+        )
+        viewModel.updateViewport(indices: indices, searching: viewModel.isSearching)
+        if viewModel.isSearching == false,
+           let frontier = indices.max(), frontier >= source.count - 4,
+           let last = source.last {
+            Task { await viewModel.loadNextPageIfNeeded(current: last) }
+        }
+    }
+
     private func refreshWithMinimumIndicatorDuration() async {
         let startedAt = Date()
 
         await viewModel.refreshKeepingVisibleContent()
+        updateViewport()
 
         let elapsed = Date().timeIntervalSince(startedAt)
         guard elapsed < pullToRefreshMinimumVisibleDuration else { return }

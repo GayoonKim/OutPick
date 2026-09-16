@@ -24,6 +24,9 @@ struct BrandDetailView: View {
     @State private var shareMoveErrorMessage: String?
     @State private var isShareMoveInProgress = false
     @State private var didPrepareInitialContent: Bool = false
+    @State private var viewportTracker = LookbookViewportTracker()
+    @State private var viewportFrames: [String: CGRect] = [:]
+    @State private var viewportHeight: CGFloat = 0
 
     init(
         brand: Brand,
@@ -94,15 +97,16 @@ struct BrandDetailView: View {
             .applyShareConfirmationSheetPresentation()
         }
         .task {
-            await brandAdminSessionStore.ensureWritableBrandsLoaded()
-
             if didPrepareInitialContent == false {
-                await viewModel.prepareInitialBrandIfNeeded(initialBrand)
-                await prewarmHeaderLogoIfNeeded()
-                await viewModel.loadContentsIfNeeded(brandID: initialBrand.id)
+                viewModel.setInitialBrandIfNeeded(initialBrand)
                 didPrepareInitialContent = true
+                Task(priority: .utility) { await prewarmHeaderLogoIfNeeded() }
+                await viewModel.loadContentsIfNeeded(brandID: initialBrand.id)
             }
+            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
+        .onDisappear { viewModel.clearViewport() }
+        .onChange(of: viewModel.seasons.count) { _ in updateViewport() }
         .appToast(message: viewModel.engagementErrorMessage) {
             viewModel.clearEngagementError()
         }
@@ -140,7 +144,7 @@ struct BrandDetailView: View {
                 maxBytes: maxBytes,
                 coordinator: coordinator,
                 onSeasonAppear: { season in
-                    viewModel.seasonDidAppear(seasonID: season.id)
+                    ImageCacheMetrics.shared.mark("card.brand.appeared", key: season.id.value)
                 }
             )
             .listRowInsets(EdgeInsets())
@@ -149,6 +153,24 @@ struct BrandDetailView: View {
         }
         .listStyle(.plain)
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
+        .coordinateSpace(name: "lookbook.brand")
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        viewportHeight = geometry.size.height
+                        updateViewport()
+                    }
+                    .onChange(of: geometry.size.height) { height in
+                        viewportHeight = height
+                        updateViewport()
+                    }
+            }
+        }
+        .onLookbookItemFrames { frames in
+            viewportFrames = frames
+            updateViewport()
+        }
         .refreshable {
             await refreshWithMinimumIndicatorDuration(brandID: brand.id)
         }
@@ -158,6 +180,7 @@ struct BrandDetailView: View {
         let startedAt = Date()
 
         await viewModel.refreshContents(brandID: brandID)
+        updateViewport()
 
         let elapsed = Date().timeIntervalSince(startedAt)
         guard elapsed < pullToRefreshMinimumVisibleDuration else { return }
@@ -166,6 +189,14 @@ struct BrandDetailView: View {
             (pullToRefreshMinimumVisibleDuration - elapsed) * 1_000_000_000
         )
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
+    }
+
+    private func updateViewport() {
+        let indices = viewportTracker.range(
+            ids: viewModel.seasons.map { $0.id.value }, frames: viewportFrames,
+            viewportHeight: viewportHeight, columns: 2, estimatedRowStride: 190
+        )
+        viewModel.updateViewport(indices: indices)
     }
 
     private func moveToSharedChatRoom(_ completion: LookbookChatShareViewModel.Completion) {

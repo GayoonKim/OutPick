@@ -79,6 +79,9 @@ final class AvatarImageService: AvatarImageManaging {
                     maxBytes: maxBytes
                 )
             },
+            fileFetcher: { path, maxBytes, url in
+                try await imageStorageRepository.fetchImageFileFromStorage(image: path, location: .profileImage, maxBytes: maxBytes, to: url)
+            },
             disk: ImageCacheDiskStore(
                 folderName: "AvatarImageCache",
                 maxSizeBytes: 100 * 1024 * 1024,

@@ -37,7 +37,9 @@ struct InterestedStyleBrandCardView: View {
         }
         .frame(width: cardWidth, alignment: .leading)
         .task(id: logoLoadKey) {
-            await loadImage()
+            await ImageCacheMetrics.$consumer.withValue("visible") {
+                await ImageCacheMetrics.shared.request(key: logoLoadKey) { await loadImage() }
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("lookbook.interest.brand.card")
@@ -51,6 +53,7 @@ struct InterestedStyleBrandCardView: View {
                 .scaledToFill()
                 .frame(width: cardWidth, height: imageHeight, alignment: .top)
                 .clipped()
+                .onAppear { ImageCacheMetrics.shared.mark("ui.interest.imageBranchAppeared", key: logoLoadKey) }
         } else {
             Rectangle()
                 .fill(OutPickTheme.SwiftUIColor.backgroundRaised)
@@ -76,7 +79,9 @@ struct InterestedStyleBrandCardView: View {
                 path: path,
                 maxBytes: maxLogoBytes
             )
+            ImageCacheMetrics.shared.mark("ui.interest.assigned", key: path, outcome: Task.isCancelled ? "afterCancellation" : "success")
         } catch {
+            if error is CancellationError || Task.isCancelled { return }
             loadFailed = true
         }
     }

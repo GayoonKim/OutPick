@@ -21,6 +21,9 @@ struct SeasonDetailView: View {
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
     @State private var shareMoveErrorMessage: String?
     @State private var isShareMoveInProgress = false
+    @State private var viewportTracker = LookbookViewportTracker()
+    @State private var viewportFrames: [String: CGRect] = [:]
+    @State private var viewportHeight: CGFloat = 0
 
     private let columns: [GridItem] = [
         GridItem(.flexible(), spacing: 10),
@@ -83,13 +86,9 @@ struct SeasonDetailView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("lookbook.post.card")
+                                    .lookbookItemFrame(post.id.value, in: "lookbook.season")
                                     .onAppear {
-                                        viewModel.postDidAppear(postID: post.id)
-                                        Task {
-                                            await viewModel.loadMorePostsIfNeeded(
-                                                currentPostID: post.id
-                                            )
-                                        }
+                                        ImageCacheMetrics.shared.mark("card.season.appeared", key: post.id.value)
                                     }
                                 }
                             }
@@ -99,6 +98,24 @@ struct SeasonDetailView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)
+                }
+                .coordinateSpace(name: "lookbook.season")
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onAppear {
+                                viewportHeight = geometry.size.height
+                                updateViewport()
+                            }
+                            .onChange(of: geometry.size.height) { height in
+                                viewportHeight = height
+                                updateViewport()
+                            }
+                    }
+                }
+                .onLookbookItemFrames { frames in
+                    viewportFrames = frames
+                    updateViewport()
                 }
             }
         }
@@ -131,8 +148,11 @@ struct SeasonDetailView: View {
         .task {
             await viewModel.loadIfNeeded()
         }
+        .onDisappear { viewModel.clearViewport() }
+        .onChange(of: viewModel.posts.count) { _ in updateViewport() }
         .refreshable {
             await viewModel.refresh()
+            updateViewport()
         }
         .appToast(message: viewModel.engagementErrorMessage) {
             viewModel.clearEngagementError()
@@ -155,6 +175,17 @@ struct SeasonDetailView: View {
                 isShareMoveInProgress = false
                 shareMoveErrorMessage = "채팅방으로 이동할 수 없습니다."
             }
+        }
+    }
+
+    private func updateViewport() {
+        let indices = viewportTracker.range(
+            ids: viewModel.posts.map { $0.id.value }, frames: viewportFrames,
+            viewportHeight: viewportHeight, columns: 2, estimatedRowStride: 280
+        )
+        viewModel.updateViewport(indices: indices)
+        if let frontier = indices.max() {
+            Task { await viewModel.loadMorePostsIfNeeded(frontierIndex: frontier) }
         }
     }
 

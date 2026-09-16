@@ -20,6 +20,9 @@ struct LookbookAssetImageView: View {
     @State private var uiImage: UIImage?
     @State private var isLoading: Bool = false
     @State private var didFail: Bool = false
+    @State private var displayedIdentity: String?
+    @State private var activeTaskKey: String?
+    @State private var retryGeneration = 0
 
     init(
         primaryPath: String?,
@@ -51,18 +54,24 @@ struct LookbookAssetImageView: View {
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
+                        .onAppear { ImageCacheMetrics.shared.mark("ui.asset.imageBranchAppeared", key: loadKey) }
                 }
             } else if isLoading {
                 ProgressView()
                     .tint(OutPickTheme.SwiftUIColor.accent)
+            } else if didFail {
+                Button {
+                    retryGeneration &+= 1
+                } label: {
+                    Label("이미지 다시 시도", systemImage: "arrow.clockwise")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                }
+                .buttonStyle(.plain)
             } else {
-                Image(systemName: didFail ? "exclamationmark.triangle" : "photo")
+                Image(systemName: "photo")
                     .imageScale(.large)
-                    .foregroundStyle(
-                        didFail
-                            ? OutPickTheme.SwiftUIColor.warning
-                            : OutPickTheme.SwiftUIColor.iconSecondary
-                    )
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -70,94 +79,105 @@ struct LookbookAssetImageView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         }
-        .task(id: loadKey) {
-            await loadImage()
+        .task(id: taskKey) {
+            await ImageCacheMetrics.$consumer.withValue("visible") {
+                await ImageCacheMetrics.shared.request(key: loadKey) { await loadImage() }
+            }
         }
     }
 
     private var loadKey: String {
-        [
-            primaryPath,
-            secondaryPath,
-            remoteURL?.absoluteString,
-            sourcePageURL?.absoluteString
-        ]
-            .compactMap { $0 }
-            .joined(separator: "|")
+        assetRequest.identity
+    }
+
+    private var taskKey: String { "\(loadKey)|\(retryGeneration)" }
+
+    private var assetRequest: LookbookAssetImageRequest {
+        LookbookAssetImageRequest(
+            primaryPath: primaryPath,
+            secondaryPath: secondaryPath,
+            remoteURL: remoteURL,
+            sourcePageURL: sourcePageURL,
+            maxBytes: maxBytes
+        )
     }
 
     private func loadImage() async {
-        uiImage = nil
+        let request = assetRequest
+        let currentTaskKey = taskKey
+        let isRetry = retryGeneration > 0
+        activeTaskKey = currentTaskKey
+        if displayedIdentity != loadKey {
+            uiImage = nil
+            displayedIdentity = loadKey
+        }
         didFail = false
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if activeTaskKey == currentTaskKey { isLoading = false }
+        }
 
-        for path in storagePaths {
+        for path in request.storagePaths {
             do {
-                uiImage = try await brandImageCache.loadImage(
+                let image = try await brandImageCache.loadImage(
                     path: path,
                     maxBytes: maxBytes
                 )
+                try Task.checkCancellation()
+                guard activeTaskKey == currentTaskKey else { return }
+                uiImage = image
                 onLoadCompleted?(true)
+                ImageCacheMetrics.shared.mark("ui.asset.assigned", key: path, outcome: "success")
                 return
             } catch {
+                if error is CancellationError || Task.isCancelled { return }
                 continue
             }
         }
 
-        guard let remoteURL else {
+        guard let remoteRequest = request.remote else {
+            guard activeTaskKey == currentTaskKey, !Task.isCancelled else { return }
+            if request.storagePaths.isEmpty { return }
             didFail = true
             onLoadCompleted?(false)
             return
         }
-
-        var request = URLRequest(url: remoteURL)
-        request.setValue(
-            "OutPick/1.0 (iOS; lookbook asset preview)",
-            forHTTPHeaderField: "User-Agent"
-        )
-        request.setValue("image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        if let sourcePageURL {
-            request.setValue(
-                sourcePageURL.absoluteString,
-                forHTTPHeaderField: "Referer"
-            )
+        let remoteURL = remoteRequest.remoteURL
+        var completed = false
+        if let cached = await brandImageCache.cachedRemoteImage(request: remoteRequest),
+           cached.requiresValidation == false {
+            guard !Task.isCancelled, activeTaskKey == currentTaskKey else { return }
+            uiImage = cached.image
+            onLoadCompleted?(true)
+            completed = true
+            ImageCacheMetrics.shared.mark("ui.asset.assigned", key: remoteURL.absoluteString, outcome: cached.isFresh ? "httpFresh" : "httpStale")
+            if cached.isFresh { return }
         }
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard
-                let httpResponse = response as? HTTPURLResponse,
-                (200..<300).contains(httpResponse.statusCode),
-                let image = UIImage(data: data)
-            else {
+            let image: UIImage
+            if isRetry {
+                image = try await brandImageCache.retryRemoteImage(request: remoteRequest)
+            } else {
+                image = try await brandImageCache.updatedRemoteImage(request: remoteRequest)
+            }
+            try Task.checkCancellation()
+            guard activeTaskKey == currentTaskKey else { return }
+            uiImage = image
+            ImageCacheMetrics.shared.mark("ui.asset.assigned", key: remoteURL.absoluteString, outcome: "httpValidated")
+            if !completed { onLoadCompleted?(true) }
+        } catch {
+            if error is CancellationError || Task.isCancelled || activeTaskKey != currentTaskKey { return }
+            if case LookbookHTTPImageError.permanentStatus = error {
+                uiImage = nil
                 didFail = true
                 onLoadCompleted?(false)
                 return
             }
-
-            uiImage = image
-            onLoadCompleted?(true)
-        } catch {
-            didFail = true
-            onLoadCompleted?(false)
+            if !completed {
+                didFail = true
+                onLoadCompleted?(false)
+            }
         }
     }
 
-    private var storagePaths: [String] {
-        var paths: [String] = []
-
-        if let primaryPath,
-           primaryPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            paths.append(primaryPath)
-        }
-
-        if let secondaryPath,
-           secondaryPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-           paths.contains(secondaryPath) == false {
-            paths.append(secondaryPath)
-        }
-
-        return paths
-    }
 }

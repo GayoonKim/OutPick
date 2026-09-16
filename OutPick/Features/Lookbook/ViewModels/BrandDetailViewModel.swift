@@ -18,9 +18,6 @@ final class BrandDetailViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var engagementErrorMessage: String?
 
-    private let initialPrefetchCount: Int
-    private let lookAheadPrefetchCount: Int
-    private let prefetchConcurrency: Int
     private let brandRepository: any BrandRepositoryProtocol
     private let seasonRepository: any SeasonRepositoryProtocol
     private let brandUserStateRepository: any BrandUserStateRepositoryProtocol
@@ -28,12 +25,12 @@ final class BrandDetailViewModel: ObservableObject {
     private let brandInteractionStore: any BrandInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let brandImageCache: any BrandImageCacheProtocol
+    private let viewportPrefetch: LookbookImagePrefetchController
     private let maxBytes: Int
 
     private var loadedBrandID: BrandID?
     private var loadedBrandInteractionID: BrandID?
     private var isRequesting: Bool = false
-    private var prefetchedSeasonImagePaths = Set<String>()
     private var brandStateInvalidationTask: Task<Void, Never>?
 
     init(
@@ -44,10 +41,7 @@ final class BrandDetailViewModel: ObservableObject {
         brandInteractionStore: any BrandInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         brandImageCache: any BrandImageCacheProtocol,
-        maxBytes: Int,
-        initialPrefetchCount: Int = 12,
-        lookAheadPrefetchCount: Int = 8,
-        prefetchConcurrency: Int = 6
+        maxBytes: Int
     ) {
         self.brandRepository = brandRepository
         self.seasonRepository = seasonRepository
@@ -56,10 +50,10 @@ final class BrandDetailViewModel: ObservableObject {
         self.brandInteractionStore = brandInteractionStore
         self.currentUserIDProvider = currentUserIDProvider
         self.brandImageCache = brandImageCache
+        self.viewportPrefetch = LookbookImagePrefetchController { [brandImageCache] request in
+            await brandImageCache.prefetchAssets(items: [request], concurrency: 1, storePolicy: .memoryOnly)
+        }
         self.maxBytes = maxBytes
-        self.initialPrefetchCount = initialPrefetchCount
-        self.lookAheadPrefetchCount = lookAheadPrefetchCount
-        self.prefetchConcurrency = prefetchConcurrency
     }
 
     deinit {
@@ -71,10 +65,12 @@ final class BrandDetailViewModel: ObservableObject {
     }
 
     func prepareInitialBrandIfNeeded(_ brand: Brand) async {
-        if self.brand == nil {
-            self.brand = brand
-        }
+        setInitialBrandIfNeeded(brand)
         await prepareBrandInteractionIfNeeded(brand: brand)
+    }
+
+    func setInitialBrandIfNeeded(_ brand: Brand) {
+        if self.brand == nil { self.brand = brand }
     }
 
     func applyUpdatedBrand(_ brand: Brand) async {
@@ -122,8 +118,7 @@ final class BrandDetailViewModel: ObservableObject {
         if loadedBrandID == brandID, !seasons.isEmpty { return }
         await fetchAll(
             brandID: brandID,
-            force: false,
-            shouldRefreshBrand: true
+            force: false
         )
     }
 
@@ -131,15 +126,13 @@ final class BrandDetailViewModel: ObservableObject {
     func refreshContents(brandID: BrandID) async {
         await fetchAll(
             brandID: brandID,
-            force: true,
-            shouldRefreshBrand: true
+            force: true
         )
     }
 
     private func fetchAll(
         brandID: BrandID,
-        force: Bool,
-        shouldRefreshBrand: Bool
+        force: Bool
     ) async {
         if isRequesting { return }
         isRequesting = true
@@ -150,46 +143,31 @@ final class BrandDetailViewModel: ObservableObject {
         }
 
         loadedBrandID = brandID
+        let baseline = ImageCacheMetrics.shared.begin("list.brand.initial", key: brandID.value)
+        defer { ImageCacheMetrics.shared.end(baseline) }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
         do {
             async let fetchedSeasonsTask = seasonRepository.fetchAllSeasons(brandID: brandID)
-
-            let refreshedBrand: Brand?
-            if shouldRefreshBrand {
-                refreshedBrand = try await brandRepository.fetchBrand(brandID: brandID)
-            } else {
-                refreshedBrand = brand
-            }
-            if let refreshedBrand {
-                brand = refreshedBrand
-                loadedBrandInteractionID = nil
-                await prepareBrandInteractionIfNeeded(brand: refreshedBrand)
-            }
-
+            async let refreshedBrandTask = brandRepository.fetchBrand(brandID: brandID)
             let fetched = try await fetchedSeasonsTask
-            prefetchedSeasonImagePaths.removeAll()
+            ImageCacheMetrics.shared.mark("metadata.brand.ready", key: brandID.value, parent: baseline?.id, outcome: "count_\(fetched.count)")
+            viewportPrefetch.clear()
             let sorted = fetched.sorted(by: Season.defaultSort)
-            let initialTargets = makePrefetchTargets(
-                from: sorted,
-                startingAt: 0,
-                count: initialPrefetchCount,
-                maxBytes: maxBytes
-            )
-            await prefetchImmediately(
-                items: initialTargets,
-                brandImageCache: brandImageCache
-            )
             seasons = sorted
+            ImageCacheMetrics.shared.mark("list.brand.published", key: brandID.value, parent: baseline?.id, outcome: "count_\(sorted.count)")
+            let refreshedBrand = try await refreshedBrandTask
+            brand = refreshedBrand
+            loadedBrandInteractionID = nil
+            await prepareBrandInteractionIfNeeded(brand: refreshedBrand)
         } catch {
             if error is LookbookContentUnavailableError {
                 brand = nil
                 seasons = []
             }
             errorMessage = unavailableMessage(for: error) ?? "브랜드와 시즌을 새로고침하지 못했습니다."
-            prefetchedSeasonImagePaths.removeAll()
         }
     }
 
@@ -200,103 +178,22 @@ final class BrandDetailViewModel: ObservableObject {
         return error.errorDescription
     }
 
-    func prefetchInitialSeasonCoversIfNeeded() {
-        let targets = makePrefetchTargets(startingAt: 0, count: initialPrefetchCount, maxBytes: maxBytes)
-        schedulePrefetch(items: targets, brandImageCache: brandImageCache)
-    }
-
-    func seasonDidAppear(seasonID: SeasonID) {
-        guard let currentIndex = seasons.firstIndex(where: { $0.id == seasonID }) else {
-            return
-        }
-
-        let targets = makePrefetchTargets(
-            startingAt: currentIndex + 1,
-            count: lookAheadPrefetchCount,
-            maxBytes: maxBytes
-        )
-        schedulePrefetch(items: targets, brandImageCache: brandImageCache)
-    }
-
-    private func makePrefetchTargets(
-        from seasons: [Season],
-        startingAt startIndex: Int,
-        count: Int,
-        maxBytes: Int
-    ) -> [(path: String, maxBytes: Int)] {
-        guard startIndex < seasons.count, count > 0 else {
-            return []
-        }
-
-        let endIndex = min(seasons.count, startIndex + count)
-        var targets: [(path: String, maxBytes: Int)] = []
-
-        for season in seasons[startIndex..<endIndex] {
-            guard let path = preferredPrefetchPath(for: season) else { continue }
-            guard prefetchedSeasonImagePaths.contains(path) == false else { continue }
-
-            prefetchedSeasonImagePaths.insert(path)
-            targets.append((path: path, maxBytes: maxBytes))
-        }
-
-        return targets
-    }
-
-    private func makePrefetchTargets(
-        startingAt startIndex: Int,
-        count: Int,
-        maxBytes: Int
-    ) -> [(path: String, maxBytes: Int)] {
-        makePrefetchTargets(
-            from: seasons,
-            startingAt: startIndex,
-            count: count,
-            maxBytes: maxBytes
-        )
-    }
-
-    private func schedulePrefetch(
-        items: [(path: String, maxBytes: Int)],
-        brandImageCache: any BrandImageCacheProtocol
-    ) {
-        guard !items.isEmpty else { return }
-        let concurrency = prefetchConcurrency
-
-        Task(priority: .utility) {
-            await brandImageCache.prefetch(
-                items: items,
-                concurrency: concurrency,
-                storePolicy: .memoryOnly
+    func updateViewport(indices: [Int]) {
+        let requests = indices.compactMap { index -> LookbookAssetImageRequest? in
+            guard seasons.indices.contains(index) else { return nil }
+            let season = seasons[index]
+            let request = LookbookAssetImageRequest(
+                primaryPath: season.coverThumbPath,
+                secondaryPath: season.coverPath,
+                remoteURL: season.coverRemoteURL.flatMap(URL.init(string:)),
+                sourcePageURL: season.sourceURL.flatMap(URL.init(string:)), maxBytes: maxBytes
             )
+            return request.storagePaths.isEmpty && request.remote == nil ? nil : request
         }
+        viewportPrefetch.update(requests)
     }
 
-    private func prefetchImmediately(
-        items: [(path: String, maxBytes: Int)],
-        brandImageCache: any BrandImageCacheProtocol
-    ) async {
-        guard !items.isEmpty else { return }
-
-        await brandImageCache.prefetch(
-            items: items,
-            concurrency: prefetchConcurrency,
-            storePolicy: .memoryOnly
-        )
-    }
-
-    private func preferredPrefetchPath(for season: Season) -> String? {
-        let candidates = [season.coverThumbPath, season.coverPath]
-
-        for candidate in candidates {
-            guard let candidate else { continue }
-            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty == false {
-                return trimmed
-            }
-        }
-
-        return nil
-    }
+    func clearViewport() { viewportPrefetch.clear() }
 
     private func bindBrandInteractionStore(brandID: BrandID) {
         brandStateInvalidationTask?.cancel()

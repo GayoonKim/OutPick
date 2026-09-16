@@ -1,5 +1,21 @@
 # Lookbook Entrypoints
 
+- 이미지 로딩 최종 구조·실기기 비교는 [공개 검증 요약](../qa-image-loading-concurrency-2026-09-16.md) 참조. HTTP 디스크 히트도 본문 읽기 전에 디코딩 바이트를 예약한다. 예약 대기 중 캐시 제거는 `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`에서 검증한다.
+
+- Phase 5 재시도 QA: Debug `LookbookUITestFixtureRepositoryProvider.swift`의 `--uitest-lookbook-image-fail-once`가 브랜드/시즌/포스트 각 Storage 경로의 첫 로드만 실패시킨다. 해당 fixture의 prefetch는 no-op으로 유지해 표시 요청 실패가 확정적으로 보인다. `LookbookSmokeUITests.testImageRetryDoesNotOpenCardDetail`은 재시도가 카드 이동 없이 복구되는지 확인한다. 일반 서버·화면 로딩 정책은 변경하지 않았다. [실행 결과](../tasks/image-loading-stage-concurrency/phase-5-validation.md).
+
+- 이미지 Phase 4: `Views/Shared/LookbookViewportObserver.swift`가 세 화면의 카드 frame·화면 높이·스크롤 방향을 받아 미배치 행 위치를 추정한다. `LookbookHomeView`/`BrandDetailView`/`SeasonDetailView` → 각 ViewModel `updateViewport` → `Services/ImageLoading/LookbookImagePrefetchController.swift`가 이미지 수요를 추가/300ms 후 해제한다. 홈은 끝 카드 표시 전 page 요청, 시즌은 기존 page24/cursor 계약 유지. `BrandRowView.swift`와 `Views/Shared/LookbookAssetImageView.swift`가 이미지 실패 재시도와 이전 응답 차단을 소유한다. DI/Coordinator·서버 API 변경 없음. [시작값·QA](../tasks/image-loading-stage-concurrency/phase-4-lookbook-screens.md).
+
+
+- 이미지 Phase 3: `Services/ImageLoading/LookbookAssetImageRequest.swift`가 primary/secondary Storage·remoteURL·Referer 후보를 정규화하고 `BrandDetailViewModel`/`SeasonDetailViewModel` 프리패치 및 `Views/Shared/LookbookAssetImageView.swift` 표시가 공유한다. `BrandImageCacheProtocol`/`BrandImageCache.swift`는 prefetchAssets와 HTTP 갱신 API 경계다. `LookbookHTTPImageCache.swift`가 URL·Referer·maxBytes identity, memory/disk body+metadata, max-age/no-cache/no-store, ETag/Last-Modified 304/200, 일시/영구 오류와 중복 검증·취소를 소유한다. `ImagePipelineResources.shared`의 network/decode/I/O·바이트 예산을 공유한다. 좋아요/시즌·포스트 카드/포스트 상세는 공용 View를 통해 적용된다. [구현 정책과 한계](../tasks/image-loading-stage-concurrency/phase-3-http-cache.md). 화면 viewport/목록 선표시는 Phase4.
+
+
+- 아모멘토 cold QA: 예약8/8→8/16→16/16MiB 비교, 마지막값을 후속 시작값으로 유지. 시즌목록 initial prefetch 대기는 아직 Phase4 대상. 사용자 체감 차이 없음. [비교 결과](../tasks/image-loading-stage-concurrency/phase-2-qa.md).
+
+- Cold QA: BrandDetailViewModel의 metadata→initial prefetch await→seasons 공개 순서가 남아 있다(Phase4 목록 선표시 대상). ImagePipelineProcessor에 성공 body 바이트 계측을 보완했다. [삭제·재설치 관찰과 연결 상태](../tasks/image-loading-stage-concurrency/phase-2-qa.md).
+
+- 2026-09-16 이미지 Phase 2: LookbookRepositoryProvider/BrandImageCache의 Data/file fetcher → LookbookStorageService → FirebaseImageDownload. 작은 썸네일은 byte 예약·네트워크·준비 gate, 큰 허용 크기는 임시 파일. 공용 저장은 표시와 분리. 관리자 LookbookRemotePreviewImageLoader도 파일 전송 지원. 외부 URL 폴백 TTL/통합·화면 프리패치는 Phase3/4. [구현·초기값·QA](../tasks/image-loading-stage-concurrency/phase-2-implementation.md).
+
 - 확대 화면: `Views/PostDetail/PostImagePreviewView.swift`의 `LookbookImageViewerView` → 공용 `SimpleImageViewerVC`/`ImageViewerChromeView`. 패션 매거진 컨트롤·로딩/실패/저장 상태 공유, 한 장이면 번호 숨김, 기존 원본 loader와 onClose 유지. 검증은 `tasks/shared-image-viewer-editorial/implementation-plan.md`.
 
 ## 목적과 탐색 순서
@@ -260,10 +276,16 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 
 ### 이미지
 
+- 2026-09-16 Phase 1: `BrandImageCache` 기존 API → pipeline의 `ImageLoadCoordinator`. 같은 path/maxBytes load의 공용 작업, cache-only 디스크 조회 공유, 소비자별 취소, store/remove/전체 삭제 세대 검사. `LookbookAssetImageView`는 CancellationError/Task 취소에서 다음 후보 요청을 멈추고, BrandRow/InterestedStyleBrandCard/Header도 취소를 일반 실패로 표시하지 않는다. [실제 구현](../tasks/image-loading-stage-concurrency/phase-1-implementation.md). 기존 public protocol/Provider·Container 연결 유지. app/test target compile 통과, 실행·실기기 회귀 미수행. 이전 아래 in-flight 경합 설명은 Phase 0 기준이며 공용 작업 등록은 이번에 보완했다. ViewModel path set/viewport는 Phase 4 대상이다.
+
+- 2026-09-16 Phase 0 계측 코드 적용: `ImageCacheMetrics` → pipeline 단계/세 ViewModel의 metadata·list 공개 → 카드 `ui.*.assigned`/이미지 분기 onAppear. 기존 로딩 정책은 유지한다. [계측 사용법](../tasks/image-loading-stage-concurrency/baseline-instrumentation.md). 앱 build 통과, 실기기 기준선은 미측정이며 아모멘토를 대상으로 준비한다. 아래 계획 미구현 기록 중 Phase 0 상태는 이 기록으로 갱신한다.
+
+- 2026-09-16 단계별 자원 관리 설계·구현 계획: [image-loading-stage-concurrency](../tasks/image-loading-stage-concurrency/implementation-plan.md). 현재는 문서 작성만 완료했고 아래 코드 동작은 아직 변경하지 않았다. 공용 pipeline/외부 URL 캐시 통합과 홈·브랜드 상세·시즌 상세의 데이터 선표시/방향 기반 프리패치를 계획한다.
+
 - 공용 로딩/캐시: `Services/ImageLoading`.
 - extraction review와 existing-season repair의 외부 이미지 preview는 `LookbookRemotePreviewImageLoader` 단일 인스턴스를 Container에서 공유한다. 메모리·디스크 캐시, 동일 요청 in-flight 병합, 중복 제거된 8개 window prefetch와 최대 동시 4개 다운로드를 사용한다.
 - 공용 렌더링은 `Views/Shared/LookbookRemotePreviewImageView.swift`다. extraction review는 순번·제외 상태가 있는 가로 단일 행 `LazyHStack`, repair는 keep/add/reorder/remove-candidate 구역별 2열 `LazyVGrid`로 표시한다.
-- 확대 viewer: `Navigation/LookbookImageViewerView.swift`와 Infra viewer.
+- 확대 viewer: `Views/PostDetail/PostImagePreviewView.swift`에 정의된 `LookbookImageViewerView`와 Infra viewer.
 - 같은 Storage path 덮어쓰기 시 `updatedAt` 기반 cache invalidation을 확인한다.
 
 시즌 상세 목록 계약:
@@ -272,7 +294,7 @@ Repository가 `DocumentSnapshot.documentID`를 같은 snapshot에서 decode한 D
 - 마지막 12개 카드 영역에서 다음 24개를 요청하며 `PostID` 중복 제거, 동일 cursor 동시 호출 차단, refresh generation 이전 결과 폐기를 적용한다.
 - Firestore visibility filter로 빈 page가 반환돼도 `nextCursor`가 있으면 다음 page까지 이어서 조회한다.
 - 첫 12개와 현재 위치 앞 32개 이미지를 prefetch하고, 다음 page가 append되면 새 이미지 최대 24개를 카드 노출 전에 즉시 큐에 등록한다.
-- prefetch concurrency는 4로 제한해 공용 `ImageCachePipeline`의 네트워크 permit 6개 중 2개를 실제 visible image load에 남긴다. 저장은 `.memoryAndDisk`, 동일 경로 in-flight 병합과 중복 방지는 기존 pipeline과 ViewModel path set이 담당한다.
+- prefetch concurrency 4는 호출 한 번의 작업 수다. 여러 호출이 겹칠 수 있으므로 공용6 중 visible용2 확보를 보장하지 않는다. 현재 공용 permit은 다운로드뿐 아니라 디코딩·디스크 저장까지 포함한다. 저장은 `.memoryAndDisk`이며 기존 in-flight는 조회/등록이 별도 actor 호출이어서 최초 동시 미스 경합이 가능하다. ViewModel path set은 예약 시 기록하므로 실패·취소·eviction 후 재요청 정책을 보장하지 않는다. 개선 계획은 위 task를 참조한다.
 - load-more 실패는 기존 포스트를 유지하고 화면 하단 재시도를 제공한다.
 
 ### Chat 공유

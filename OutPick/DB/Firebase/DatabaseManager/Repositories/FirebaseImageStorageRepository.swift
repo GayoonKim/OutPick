@@ -241,7 +241,11 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
     func fetchImageDataFromStorage(image: String, location: ImageLocation, maxBytes: Int) async throws -> Data {
         let _ = location
         let ref = storageReference(for: image)
-        return try await ref.data(maxSize: Int64(max(1, maxBytes)))
+        return try await FirebaseImageDownload.data(from: ref, maxBytes: maxBytes)
+    }
+
+    func fetchImageFileFromStorage(image: String, location: ImageLocation, maxBytes: Int, to url: URL) async throws {
+        try await FirebaseImageDownload.file(from: storageReference(for: image), to: url, maxBytes: maxBytes)
     }
 
     func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage {

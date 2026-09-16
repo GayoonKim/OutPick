@@ -52,11 +52,37 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
 }
 
 private final class LookbookUITestFixtureImageCache: BrandImageCacheProtocol {
+    private actor FirstFailure {
+        private var failedPaths: Set<String> = []
+
+        func shouldFail(_ path: String) -> Bool {
+            failedPaths.insert(path).inserted
+        }
+    }
+
+    private let firstFailure = FirstFailure()
+
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+        if ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-image-fail-once"),
+           await firstFailure.shouldFail(path) {
+            throw URLError(.cannotLoadFromNetwork)
+        }
+        return UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
             OutPickTheme.ColorToken.surfaceBase.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
         }
+    }
+
+    func cachedRemoteImage(request: LookbookHTTPImageRequest) async -> LookbookHTTPImageCache.CachedImage? {
+        if ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-image-fail-once") { return nil }
+        return await LookbookHTTPImageCache.shared.cachedImage(for: request)
+    }
+
+    func updatedRemoteImage(request: LookbookHTTPImageRequest) async throws -> UIImage {
+        if ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-image-fail-once") {
+            throw URLError(.cannotLoadFromNetwork)
+        }
+        return try await LookbookHTTPImageCache.shared.updatedImage(for: request)
     }
 
     func storeImageData(_ data: Data, path: String) async throws {}
@@ -68,6 +94,8 @@ private final class LookbookUITestFixtureImageCache: BrandImageCacheProtocol {
         concurrency: Int,
         storePolicy: ImageCacheStorePolicy
     ) async { }
+
+    func prefetchAssets(items: [LookbookAssetImageRequest], concurrency: Int, storePolicy: ImageCacheStorePolicy) async { }
 }
 
 private final class LookbookUITestFixtureStore:
@@ -108,11 +136,11 @@ private final class LookbookUITestFixtureStore:
             englishName: nil,
             websiteURL: nil,
             lookbookArchiveURL: nil,
-            logoThumbPath: nil,
+            logoThumbPath: imageFailureFixtureEnabled ? "uitest-brand-logo" : nil,
             logoDetailPath: nil,
             logoOriginalPath: nil,
             isFeatured: true,
-            moodIDs: ["minimal"],
+            moodIDs: imageFailureFixtureEnabled ? [] : ["minimal"],
             discoveryStatus: .success,
             lastDiscoveryErrorMessage: nil,
             lastDiscoveryRequestedAt: nil,
@@ -131,7 +159,7 @@ private final class LookbookUITestFixtureStore:
             sourceTitle: nil,
             year: 2026,
             term: .ss,
-            coverPath: nil,
+            coverPath: imageFailureFixtureEnabled ? "uitest-season-cover" : nil,
             coverRemoteURL: nil,
             description: "UI 테스트용 시즌",
             tagIDs: [],
@@ -161,7 +189,7 @@ private final class LookbookUITestFixtureStore:
                 MediaAsset(
                     type: .image,
                     remoteURL: URL(string: "https://example.com/outpick-uitest-look.jpg")!,
-                    thumbPath: nil,
+                    thumbPath: imageFailureFixtureEnabled ? "uitest-post-thumbnail" : nil,
                     detailPath: nil,
                     sourcePageURL: nil
                 )
@@ -179,6 +207,10 @@ private final class LookbookUITestFixtureStore:
             createdAt: now,
             updatedAt: now
         )
+    }
+
+    private var imageFailureFixtureEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-image-fail-once")
     }
 
     private var rootComment: Comment {

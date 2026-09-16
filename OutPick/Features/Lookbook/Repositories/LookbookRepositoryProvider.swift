@@ -148,9 +148,14 @@ final class LookbookRepositoryProvider {
     ) {
         self.storageService = storageService
         self.thumbnailer = thumbnailer
-        let resolvedImageCachePipeline = imageCachePipeline ?? ImageCachePipeline { [storageService] path, maxBytes in
-            try await storageService.downloadImage(from: path, maxSize: maxBytes)
-        }
+        let resolvedImageCachePipeline = imageCachePipeline ?? ImageCachePipeline(
+            fetcher: { [storageService] path, maxBytes in
+                try await storageService.downloadImage(from: path, maxSize: maxBytes)
+            },
+            fileFetcher: { [storageService] path, maxBytes, url in
+                try await storageService.downloadImageFile(from: path, to: url, maxBytes: maxBytes)
+            }
+        )
         self.imageCachePipeline = resolvedImageCachePipeline
 
         // provider가 가진 pipeline/storage를 그대로 사용

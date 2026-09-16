@@ -1,5 +1,31 @@
 # OutPick Entrypoints
 
+- 이미지 로딩 최종 공개 검증 요약: [구조·설정·자동/실기기 QA·성능 한계](qa-image-loading-concurrency-2026-09-16.md). 머지 전 리뷰 보완은 `LookbookHTTPImageCache.cachedImage`의 디스크 크기 확인→바이트 예약→본문 읽기 순서와 `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`에서 확인한다.
+
+- 이미지 Phase 0~5 완료(2026-09-16): 자동90개/UI1개·룩북 기능 실기기 QA·Phase0 CPU/메모리/프레임 비교 후 사용자가 현 D07 값 채택과 Phase5 완료를 승인했다. 설정은 `ImagePipelineLimits.swift`, 화면 수요는 `LookbookImagePrefetchController.swift`; 최종 수치·표본 한계·로그는 [Phase 5](tasks/image-loading-stage-concurrency/phase-5-validation.md). 실패 fixture는 `LookbookUITestFixtureRepositoryProvider.swift`의 `--uitest-lookbook-image-fail-once`, 테스트는 `LookbookSmokeUITests.testImageRetryDoesNotOpenCardDetail`. 채팅 과거 사진 첫 표시 개선은 별도 작업이다. 아래 phase별 미착수/진행 문구는 당시 이력이다.
+
+- 이미지 Phase 4: `Views/Shared/LookbookViewportObserver.swift`(frame·방향·미배치 행 추정) → 홈/브랜드 상세/시즌 상세 View → 각 ViewModel의 `updateViewport` → `Services/ImageLoading/LookbookImagePrefetchController.swift`(희망 집합·300ms 해제) → 공용 캐시. 목록 데이터 선표시·앞선 page 트리거·카드 실패 재시도 연결. [시작값·실기기 QA 잔여](tasks/image-loading-stage-concurrency/phase-4-lookbook-screens.md).
+
+
+- 이미지 Phase 3: `LookbookAssetImageRequest`가 공용 카드 표시와 브랜드 상세/시즌 상세 프리패치의 Storage→외부 URL 후보를 통일. `BrandImageCacheProtocol` → `LookbookHTTPImageCache`가 URL·Referer·maxBytes별 메모리/디스크 캐시, HTTP TTL/304/200, shared 네트워크·준비·I/O 예산, stale→fresh UI 교체를 소유. [정책·구현 범위](tasks/image-loading-stage-concurrency/phase-3-http-cache.md), [테스트](entrypoints/TESTS.md). 관리자 검토 preview/확대 원본은 별도 경로 유지, Phase4 목록·viewport 미구현.
+
+
+- 이미지 QA 최종: ImagePipelineLimits decodeBytes/writeBytes 각16MiB 유지, network6/decode2/I/O2(write1). 성공body 계측 추가. A/B/C 체감 차이 미확인, network6/예약회수는 확인. [실측·한계](tasks/image-loading-stage-concurrency/phase-2-qa.md).
+
+- 이미지 QA 비교 진행: ImagePipelineLimits.writeBytes8→16MiB 후보, 나머지 한도 유지. 실제 cold 로그의 저장 예약 대기 최대2.3초를 근거로 비교 중이며 최적값 확정 아님. [비교 결과](tasks/image-loading-stage-concurrency/phase-2-qa.md).
+
+- 이미지 cold QA 계측: ImagePipelineProcessor의 network.body.received는 성공한 이미지 body 바이트만 기록(전체 회선 사용량 아님). [QA 진행·Instruments 연결 문제](tasks/image-loading-stage-concurrency/phase-2-qa.md). 사용자 DEV 삭제/재설치 승인, USB 연결 대기.
+
+- 이미지 Phase2 실기기 QA: 테스트 이미지 배율 보정 후26개 함수 전체 통과. [측정 기록·상태](tasks/image-loading-stage-concurrency/phase-2-qa.md). 아모멘토 화면 계측과 초기값 튜닝은 자동 fake 회귀와 별개로 진행.
+
+- 2026-09-16 이미지 Phase 2: Infra/Cache/ImageCache의 ImagePipelineLimits(QA 초기값) → ImagePipelineResources/ImageStageGate(공유 단계 gate) → ImagePipelineProcessor(예약·Data/파일·준비) → ImageCachePersistence/ImageCacheDiskStore(비동기 저장·세대). DB/Firebase/DatabaseManager/Repositories/FirebaseImageDownload.swift는 SDK 취소 adapter. [실제 범위·제한·QA](tasks/image-loading-stage-concurrency/phase-2-implementation.md). 기존 서비스 fileFetcher 조립 변경, Container/화면 이동/서버 계약 유지. Phase3 외부 URL 폴백 통합·Phase4 viewport 미구현.
+
+- 2026-09-16 이미지 로딩 Phase 1 구현: `Infra/Cache/ImageCache/ImageRequest.swift` → `ImageLoadCoordinator.swift`(원자 요청 통합·소비자별 취소·세대) → `ImageCachePipeline.swift`(캐시/기존 permit·disk 세대 검사), `ImagePipelineResources.shared`(기능별 캐시/공용 합산6). 룩북 카드 취소 후 fallback 차단. [실제 계약·제한](tasks/image-loading-stage-concurrency/phase-1-implementation.md). 최종 앱/테스트 대상 compile 통과, 새14개 시나리오 실행·실기기 QA는 보류. Phase 0 비교 소스 별도 보존. 큐 우선순위·단계 예산은 Phase 2.
+
+- 2026-09-16 이미지 로딩 Phase 0 계측 구현: `Infra/Cache/ImageCache/ImageCacheMetrics.swift` → 기존 pipeline/cache/permit/fetch/decoder와 룩북 ViewModel/카드. Debug opt-in `OUTPICK_IMAGE_BASELINE=1` 또는 `-ImageLoadingBaseline`, 기본 꺼짐. 정책6/프리패치 유지·앱 Simulator build 통과·실기기 미측정. [사용·한계](tasks/image-loading-stage-concurrency/baseline-instrumentation.md), [진행](tasks/image-loading-stage-concurrency/progress.md). 테스트 실행 보류, 다음 측정 대상 OutPick-DEV 아모멘토.
+
+- 2026-09-16 이미지 로딩 단계 분리 **계획 작성/미구현**: [설계](tasks/image-loading-stage-concurrency/design.md) → [Phase 0~5 계획](tasks/image-loading-stage-concurrency/implementation-plan.md) → [검증 계획](tasks/image-loading-stage-concurrency/qa-checklist.md). 공용 `ImageCachePipeline`·`BrandImageCache`·룩북 세 화면 적용과 다른 소비자 회귀 범위다. 현 코드의 제한/우회와 계획을 구분하며 구체 미정은 설계 D01~D08 참조. 코드·테스트·성능 측정은 미수행.
+
 - 2026-09-14 동시성 적용·Development QA 완료: 원본4/준비전체/PUT4/FIFO1, 계약3 서버조회·서명·취소정리전체. iPhone41개/Socket124개와3장/70장/실패재전송 확인, 계측해제. [진행·증거](tasks/chat-media-concurrency-qa-rollout/progress.md). 커밋/PR 및 Production은 미수행.
 
 - 2026-09-14 최종 동시성 로컬 구현: `ChatMediaPipelineLimits` 기본 원본4/준비전체/PUT4, QA 미지정 값은 기본값 보존. 계약3 `directMediaUploadService`의 조회·서명·취소 정리는 요청 대상 전체 실행, `createProductionDependencies`에서 계약3 폭 주입 제거. [진행·검증](tasks/chat-media-concurrency-qa-rollout/progress.md), [계획](tasks/chat-media-concurrency-qa-rollout/plan.md). Development 서버 미배포, 결합 QA 대기.

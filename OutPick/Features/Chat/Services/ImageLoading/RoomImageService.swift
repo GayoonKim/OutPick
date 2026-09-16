@@ -83,6 +83,9 @@ final class RoomImageService: RoomImageManaging {
                     maxBytes: maxBytes
                 )
             },
+            fileFetcher: { path, maxBytes, url in
+                try await imageStorageRepository.fetchImageFileFromStorage(image: path, location: .roomImage, maxBytes: maxBytes, to: url)
+            },
             disk: ImageCacheDiskStore(
                 folderName: "RoomCoverImageCache",
                 maxSizeBytes: 120 * 1024 * 1024,

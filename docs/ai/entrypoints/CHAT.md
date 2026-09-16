@@ -1,5 +1,15 @@
 # Chat Entrypoints
 
+- 2026-09-16 범위 분리: 미디어 QA방 과거 사진 첫 표시 지연과 화면 근처 썸네일 선로딩·방문 원본/영상 제한 캐시 방향은 [후속 작업](../tasks/chat-media-first-view-loading/README.md)으로 기록했다. 이미지 로딩 Phase 5에서는 채팅 동작을 더 변경하지 않는다.
+
+- 이미지 Phase 5 미디어 QA방 발견: `ChatViewController.chatThumbnailMaxBytes`는 `ChatPhotoSizePolicy.maximumFileBytes`(300MB)라 `ChatAttachmentImageService`의 썸네일도 `ImagePipelineProcessor.downloadFile`로 진입한다. 이 경로는 전송 중 공용 I/O 쓰기1 슬롯을 점유해 cold 사진 전송이 직렬화된다. `ChatImageTransportSourceNormalizer.makeThumbnailFile`은 원본 해상도·최대300MB를 허용한다. 같은 사진 재진입은 즉시 표시되어 저장 캐시 재사용은 작동. 사용자 선택은 화면 근처 썸네일 우선·방문 원본/영상의 제한 캐시이며 별도 상세 설계·수치 검증 전 임의로 maxBytes를 낮추지 않는다. [근거·QA](../tasks/image-loading-stage-concurrency/phase-5-validation.md).
+
+- 공용 예약 QA 변경: ImagePipelineLimits decode/write 각16MiB로 변경, network6/decode2/I/O2(write1) 유지. 큰 허용 크기의 파일 전환 기준도 min=16MiB. 실제 Chat 화면/대용량 RSS 재검증은 남음. [QA 한계](../tasks/image-loading-stage-concurrency/phase-2-qa.md).
+
+- 2026-09-16 이미지 Phase 2: Avatar/Room/ChatAttachment fileFetcher → FirebaseImageStorageRepository.fetchImageFileFromStorage → FirebaseImageDownload. 공유 network6/decode2/I/O2(write1), Data 예약 각8MiB. ChatAttachment 기존1,024px decoder는 URL도 지원. 큰 maxBytes는 파일 경로. raw/GIF·확대 직접 요청 제외, 실제 화면 회귀 미수행. [구현·한계](../tasks/image-loading-stage-concurrency/phase-2-implementation.md).
+
+- 2026-09-16 이미지 로딩 공용 Phase 1 영향: Avatar/Room/ChatAttachment의 기존 서비스 API·전용 캐시/decoder는 유지하며 기본 pipeline은 `ImagePipelineResources.shared`를 공유한다. 공용 `ImageLoadCoordinator`가 요청 통합·소비자별 취소·store/remove 세대를 관리한다. 기존 consumer/test target compile 확인, 실제 Chat 화면·SDK 회귀는 미수행. raw/GIF 직접 다운로드·확대 화면 최적화는 이번 단계에 통합하지 않았다. [계약·검증 한계](../tasks/image-loading-stage-concurrency/phase-1-implementation.md).
+
 - 최종 동시성 Development QA 완료(2026-09-14): 사용자3장/70장 전송·스크롤·입력·재입장 및 네트워크 차단 실패버블 버튼/재시도 성공 확인. 서버seq57~61 및첨부3/30/30/10/2 대조. QA off 재실행, 실제 기본정책 원본4/준비전체/PUT4 유지. [한계 포함 근거](../tasks/chat-media-concurrency-qa-rollout/progress.md).
 
 - 최종 정책 로컬 구현(2026-09-14): `ChatMediaPipelineLimits.imagePreparation=Int.max`, acquisition4/PUT4/video1 유지. `configured(environment:bundleIdentifier:)`가 DEBUG/dev/QA opt-in 조건과 누락·잘못된 값의 기본값 보존을 담당하며 `forCurrentProcess`는 설정 적용·계측 시작을 조립한다. `ChatContainer`의 기존 주입과 `ChatMediaSelectionUseCase`의 전체준비→정렬→30장/용량분할 구조를 유지한다. `ChatMediaSelectionUseCaseTests`에 설정 gate·준비 중 부모 취소 시 임시 파일 제거/원본 보존 회귀 추가. [진행](../tasks/chat-media-concurrency-qa-rollout/progress.md).

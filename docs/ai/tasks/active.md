@@ -1,6 +1,26 @@
 # Active Task Index
 
+> **2026-09-16 완료:** `image-loading-stage-concurrency` Phase0~5 구현·자동90개/UI1개·실기기 기능QA·성능 비교 완료. 사용자가 실측 한계를 수용하고 현재 제한값 채택/Phase5 완료를 승인했다. 최적값 탐색 완료 주장은 하지 않는다. 최신 DEV 일반 실행으로 복원했다. [최종 결과](image-loading-stage-concurrency/phase-5-validation.md). 채팅 첫 과거 사진 지연은 [별도 작업](chat-media-first-view-loading/README.md), 커밋/PR/배포는 미수행. 아래 진행/보류 문구는 과거 이력이다.
+
+> 2026-09-16 Phase 5 반복 cold 후속: 두 번째 현재 DEV 아모멘토 로그에서 목록 공개 약 28/92/43ms(홈/브랜드/시즌), 브랜드·시즌 이미지 본문 42건·1,152,606B, 단계 최대 network6/decode2/diskIO2. Activity Monitor는 스크롤 전에 종료됐고 대응 Phase0 앱 콘솔 실행은 CoreDeviceService 오류로 실패해 유효 반복 비교가 아니다. 최신 DEV 재설치 후 사용자 룩북 홈 정상 진입 확인. D07 현재 제한값 유지, D08 반복 쌍·동조건 프레임 비교/허용 기준은 대기. [상세](image-loading-stage-concurrency/phase-5-validation.md).
+
+> 2026-09-16 Phase 5 프레임 최신: iPhone14 현재 앱 시즌 스크롤의 `Animation Hitches --all-processes` 18.8초에서 OutPick frame lifetime178행·hitch0행. 단일 표본이며 Phase0 동조건 프레임 비교는 남는다. 재설치로 바뀐 App Check debug token을 기존 승인된 outpick-test Development QA 범위에 등록해 `앱 데이터를 준비하지 못했습니다` 오류 복구. 이후 cold QA는 등록된 토큰을 `AppCheckDebugToken` 프로세스 환경 변수로 재사용해 추가 등록을 피한다. D08 반복/허용 기준을 거쳐 현 D07 값 조정 여부 판정. [상세](image-loading-stage-concurrency/phase-5-validation.md). 채팅 미디어 지연은 별도 작업.
+
+> 2026-09-16 Phase 5 USB 비교 최신: Phase0/현재 Phase5 iPhone14 아모멘토 1회씩 이미지 콘솔·Activity Monitor CPU/메모리 정상 수집. 목록 metadata 공개 홈912→48ms·브랜드612→89ms·시즌97→69ms, 사용자 Phase0 첫 이미지 조금 느림 관찰. 요청 이미지 수 44/42 및 단일 실행·무선 변동 때문에 CPU/메모리/바이트 우열을 확정하지 않는다. Animation Hitches 시간 초과, 반복·스크롤 구간 정렬 남음. D07 현 값 유지, D08 최종 판정 대기. 최신 Phase5 DEV 앱 복원 완료. [결과](image-loading-stage-concurrency/phase-5-validation.md) 우선. 채팅 첫 사진 지연은 별도 후속 작업이다.
+
+> 2026-09-16 범위 분리: `미디어 QA`방의 과거 사진 첫 표시 지연은 [chat-media-first-view-loading](chat-media-first-view-loading/README.md) 후속 작업으로 기록만 한다. 화면 근처 썸네일 선로딩·방문한 원본/영상 제한 디스크 캐시 방향은 사용자 선택이며 세부 설계·구현은 미착수다. 현재 우선 작업은 `image-loading-stage-concurrency` Phase 5의 정량 비교/자원 검증으로 유지한다. 아래 Phase 5 기록 속 채팅 관찰은 발견 경위이지 이번 구현 범위가 아니다.
+
+> 2026-09-16 최신 이미지 로딩: `image-loading-stage-concurrency` Phase 5 자동 회귀 64+26개 및 실패 재시도 UI 1개 통과, iPhone14 DEV cold 아모멘토 수동 QA 정상. Phase0 수동 비교는 체감 비슷했으나 계측 연결 오류로 시즌 수치·CPU/RSS/hitch 미확보. 현 D07 시작값 유지, D08 최종 정량 판정 대기. 최신 Phase5 DEV 앱 복원 완료. 미디어 QA방 첫 과거 사진 지연은 chat thumb의 300MB 파일 경로가 I/O write1을 전송 중 점유하는 구조와 관련 가능성이 있으며, 사용자는 화면 근처 선로딩·방문 원본/영상 제한 캐시 방향 선택. 채팅 후속 설계·구현 대기. [실행 기록](image-loading-stage-concurrency/phase-5-validation.md)과 [진행](image-loading-stage-concurrency/progress.md) 우선. 아래 이미지 Phase2/1/0 상태는 과거 이력이다.
+
+> 이미지 Phase2 cold QA: 아모멘토 비교 후 decode/write 예약각16MiB, 나머지한도유지. 사용자체감비슷, network최대6/예약회수확인. Instruments전체송수신량/RSS미확보. 상세 image-loading-stage-concurrency/phase-2-qa.md. Phase3/4미착수.
+
+> 2026-09-16 이미지 로딩 Phase 2: 초기값 구현 후 QA 조정 방식 승인·구현. 네트워크6/디코딩2/I/O2(쓰기1), decode/write 각8MiB, 비동기 저장·큰 파일 처리·SDK 취소. [구현·한계](image-loading-stage-concurrency/phase-2-implementation.md), [검증 상태](image-loading-stage-concurrency/progress.md). 실제 테스트/기기 QA 미수행, Phase3/4 미착수.
+
 ## 현재 상태
+
+- 2026-09-14 다음 최우선 핵심 작업: **이미지 로딩 단계별 자원 사용 분석과 동시성 정책 설계**(`image-loading-stage-concurrency`). 사용자 요청으로 아래 현재 핵심 작업에 기록했다. 다음 착수 시 이 작업의 설계 논의부터 진행한다. 이번 요청은 기록까지이며 단계별 수치·구현 계획·코드 변경은 아직 확정하거나 승인하지 않았다. 이전 이력의 이미지 깜빡임·관리자 웹 우선 문구보다 이 순서를 우선한다.
+
+- 2026-09-14 최종완료: 동시성 적용4개 커밋→[PR#30](https://github.com/GayoonKim/OutPick/pull/30) 자체리뷰(COMMENT)→main `71e1376c74fef490efd1c901f34c2b79a35ba33c` 머지. iPhone41/Socket124 및 Development3장/70장/실패재전송 QA 완료. Production은 기존 배포대기에 이번 변경까지 통합 기록했고 미배포. 아래 커밋/PR대기 문구는 과거 이력이다.
 
 - 2026-09-14 `chat-media-concurrency-qa-rollout`: 구현·iPhone41개/Socket124개·Development 배포·3장/70장 정상 전송/재입장·네트워크 실패 후 재시도 실기기 QA 완료. QA 계측 해제, 최종 정책 유지. [완료 근거](chat-media-concurrency-qa-rollout/progress.md). 남은 것은 커밋·PR·리뷰·머지, Production은 별도 대기. 아래 QA 대기 문구는 해소됐다.
 
@@ -29,7 +49,7 @@
 - 2026-09-10 최신 결정: 현재 미디어 변경을 커밋·PR·리뷰·머지한 뒤 **미디어 버블 이미지 깜빡임 제거**를 다음 최우선 핵심 작업으로 진행한다. 사용자는 저장 공간 확보 후 70장 전송·전송 중 조작·완료 후 재입장까지 확인하고 QA 방을 삭제했다. 아래 관리자 웹 작업은 그다음 순서다.
 - 미디어 신규 계약 3은 Development 배포 및 3장/70장 실제 전송 확인 완료. Production 배포·영상 실제 QA·병렬 4 대 30 비교는 미수행. 과거 아래 queued 반환/병렬 묶음 기록은 최종 공용 FIFO 1·성공 UI 반영 또는 실패 후 다음 묶음 정책으로 대체된다.
 
-### 다음 핵심 작업: 미디어 버블 이미지 깜빡임 제거
+### 완료 작업의 이전 이력: 미디어 버블 이미지 깜빡임 제거
 
 - 2026-09-11 후속 로컬 구현 완료: 사진 본/썸네일 각각300,000,000bytes, 묶음 본파일 합계300,000,000bytes/30장, 실패 사진은 별도 실패 버블(재시도/삭제)로 보존. Swift28개 정의/29회 실행·Socket7개 통과. [현재 구현·검증](chat-media-preview-continuity/photo-size-failure-recovery.md)을 따른다. 서버 배포·새 정책 실기기 QA는 미수행.
 
@@ -46,13 +66,28 @@
 - 2026-09-10 이번 대화 최종 승인: `chat-media-bounded-parallel-upload` 상세 설계를 확정하고 로컬 구현·검증을 진행했다. 상세 상태는 해당 [progress](chat-media-bounded-parallel-upload/progress.md)를 우선한다. 아래 관리자 웹 우선순위는 다른 대기 작업 간 순서로 유지한다.
 
 - 2026-09-10 사용자 결정: 핵심 작업 순서는 관리자 웹 전환 → iOS 관리자 콘솔 제거다. 고객지원 페이지와 Apple 로그인은 후순위로 보류한다.
-- 관리자 웹 전환은 이미지 깜빡임 개선 다음 대기 작업이며, 상세 구현 계획과 구현은 아직 승인되지 않았다.
+- 관리자 웹 전환은 이미지 로딩 단계별 동시성 작업 다음 대기 작업이며, 상세 구현 계획과 구현은 아직 승인되지 않았다.
 - `chat-room-moderator-delegation`은 완료되어 직전 완료 작업으로 이동했다.
 - `lookbook-discovery-learning-loop`의 후속 구현·Production rollout 완료 기록을 확인해 대기 목록에서 제외했다. 상세 연결은 해당 task의 `progress.md` 최상단을 따른다.
 
 ## 현재 핵심 작업
 
-- `chat-media-concurrency-qa-rollout` — 적용 방향 확정, 코드 반영 전(2026-09-14)
+- `image-loading-stage-concurrency` — Phase0~5 구현·QA 완료, 현재값 채택 승인. PR 정리 리뷰에서 HTTP 디스크 바이트 예약 순서를 보완했고 최종91개/14 suite 통과(2026-09-16). [공개 검증 요약](../qa-image-loading-concurrency-2026-09-16.md). 아래 하위 항목은 최초 조사·구현 단계의 이력이다.
+  - 최신 Phase 1: 사용자 D01/공용 자원 기준 확정 후 요청 통합·소비자 취소·캐시 세대 보호 구현. [실제 계약](image-loading-stage-concurrency/phase-1-implementation.md), [진행](image-loading-stage-concurrency/progress.md). 테스트14개 시나리오 작성·컴파일 성공/실행 보류. Phase 0 소스 별도 보존, 아모멘토 실측은 아직 미수행. Phase 2 D02 디스크 배분/D03 바이트 예산·실험 수치 결정이 다음 선행 조건이다. 아래 Phase 0 당시 Phase1 미착수 표기보다 이 기록 우선.
+  - 최신: 사용자 순차 진행 요청으로 Phase 0 계측 구현, 기존 정책 유지. 테스트4개 작성/실행 보류, 앱 Simulator build 통과. [계측 사용법](image-loading-stage-concurrency/baseline-instrumentation.md)·[진행](image-loading-stage-concurrency/progress.md). OutPick-DEV 아모멘토 선택, 시즌/캐시 준비 방식 미정. Phase 1~5·기기 측정·배포·커밋 미수행. 아래 계획 작성 당시 미착수 기록보다 이 상태를 우선한다.
+  - 최신 기준: [설계](image-loading-stage-concurrency/design.md), [구현 계획](image-loading-stage-concurrency/implementation-plan.md), [QA](image-loading-stage-concurrency/qa-checklist.md), [진행](image-loading-stage-concurrency/progress.md). 공용 기반 + 룩북 세 화면 + 다른 소비자 회귀 확인으로 범위를 확정했다. Phase 0~5는 전부 미착수이며 성능 측정도 미수행이다.
+  - 승인 상태: 사용자 `세부 구현 계획 작성 진행` 요청으로 task/phase 문서를 작성했다. 코드 구현·테스트 실행·기기 설치·배포 승인은 별도이며 수행하지 않았다. 미정 수치/기술 선택은 설계 D01~D08에서 해당 phase 선행 조건으로 관리한다. 아래 항목은 최초 조사 배경이며 현재 결정은 새 설계를 우선한다.
+  - 문제: 현재 공용 `ImageCachePipeline`은 메모리·디스크 캐시를 먼저 확인한 뒤, 캐시 미적중 시 다운로드 → 디코딩 → 메모리 등록·디스크 저장 전체를 공용 6개 제한으로 묶는다. CPU·메모리·디스크 I/O·네트워크 특성에 맞춘 단계별 동시성 정책은 분리되어 있지 않다.
+  - 현재 대화에서 코드로 확인한 사항: 기본 파이프라인들은 기능별 6개가 아닌 같은 정적 limiter의 합산 6개를 공유한다. prefetch에는 캐시 조회를 포함하는 별도 작업 수 제한이 있다. `ChatAttachmentImageService.loadImageData`는 로컬 파일·별도 메모리 데이터 캐시 확인 후 Storage를 직접 호출하며 공용 제한과 디스크 데이터 캐시를 거치지 않는다. 디스크 캐시 스토어는 actor이므로 네트워크 제한 밖이라는 사실을 디스크 I/O 무제한 병렬 실행으로 해석하지 않는다.
+  - 다음 첫 작업: 룩북·프로필/아바타·채팅방 대표 이미지·첨부 썸네일·확대 화면의 실제 호출 경로를 확인하고, 캐시 조회·네트워크·디코딩/다운샘플링·캐시 저장 단계 및 공용 제한 우회 경로를 정리한다. 기존 미디어 전송 작업의 단계별 정책 결정 방식은 참고하되 업로드의 수치를 다운로드에 그대로 적용하지 않는다.
+  - 설계 논의 대상: 메모리 캐시 적중의 즉시 반환, 디스크 읽기·디코딩의 CPU/메모리 부담, 다운로드와 후속 처리의 제한 분리 여부, 공용/기능별 제한 범위, visible/prefetch 우선순위, 동일 요청 병합·취소·실패 복구, 직접 다운로드 경로의 포함 범위. 캐시라는 이유만으로 무제한을 확정하거나 모든 단계에 제한이 필요하다고 단정하지 않는다.
+  - 측정·검증 후보: 메모리 적중/디스크 적중/캐시 미적중을 구분한 첫 이미지·전체 표시 시간, 스크롤 응답성, CPU·최고 메모리·동시 네트워크 요청 수, 중복 요청과 취소/재사용 경합. 비교 조건·허용 기준·실기기 범위는 사용자와 논의한 뒤 확정한다. 현재 성능 측정은 미수행이며 단계별 분리의 개선 효과와 최적 수치는 미확정이다.
+  - 코드 진입점: `OutPick/Infra/Cache/ImageCache/ImageCachePipeline.swift`, `OutPick/Features/Chat/Services/ImageLoading/{AvatarImageService,RoomImageService,ChatAttachmentImageService}.swift`, `OutPick/Features/Lookbook/Repositories/LookbookRepositoryProvider.swift`, `OutPick/Features/Lookbook/Services/ImageLoading/`, `OutPick/DB/Firebase/DatabaseManager/Repositories/FirebaseImageStorageRepository.swift`, `OutPick/Infra/Media/ImageViewer/SimpleImageViewerVC.swift`.
+  - 최초 기록 당시 승인 상태(2026-09-14): 우선순위 기록만 승인됐다. 이후 설계 합의·계획 작성 승인은 위 2026-09-16 기록으로 갱신됐다. 구현·검증·배포는 여전히 미수행이다.
+
+### 직전 미디어 동시성 작업의 설계 이력
+
+- `chat-media-concurrency-qa-rollout` — 완료(PR #30 머지). 아래 세부 내용은 적용 전 설계 이력이며 현재 완료 상태는 이 문서 최상단과 progress를 따른다.
   - 세부 계획: [Phase1~4 구현·검증 계획](chat-media-concurrency-qa-rollout/plan.md). 서버 전체 실행은 계약3 metadata 조회뿐 아니라 URL 서명·취소 정리에도 적용한다. 원본 확보4 최종 확정. 기존 계약2 동시성 설정은 유지한다.
   - 근거: [iPhone 14 동시성 비교 결과](../qa-media-upload-concurrency-2026-09-12.md). 8회·560장·24묶음 정상 저장, 사용자 매회 완료·스크롤·입력 이상 없음 확인.
   - 확정 방향: 묶음 FIFO1 유지 + 원본 확보4 + 이미지 준비 연속 사진 전체 동시 실행 + 파일 업로드4 + 서버 metadata 요청 내 전체 파일 동시 조회. 영상 정책은 유지한다. 이미지 준비는 30장으로 분할하기 전 연속 사진 구간 전체가 대상이며 30개 제한이 아니다. metadata도 고정60 제한 대신 요청 대상 전체를 조회한다. 현재 계약은 최대30장×본파일/썸네일=60파일이다. 향후 묶음 확대 후 지연·실패율 증가가 관측되면 제한 도입을 재검토한다.
@@ -66,7 +101,7 @@
 
 - 미디어 버블 이미지 깜빡임 제거 및 사진300MB/실패 복구 — 완료. [최종 상태](chat-media-preview-continuity/photo-size-failure-recovery.md).
 
-- `admin-web-operations-migration` — 깜빡임 개선 이후 설계 논의 대기
+- `admin-web-operations-migration` — 이미지 로딩 단계별 동시성 작업 이후 설계 논의 대기
   - [기존 결정](admin-web-operations-migration/decisions.md)
   - 웹 기술 스택·화면/API 범위·권한 전환·검증 기준을 논의한 뒤 구현 계획을 작성한다.
 
@@ -97,7 +132,7 @@
 
 ## 핵심 작업 진행 순서
 
-1. 미디어 버블 이미지 깜빡임 제거: 위 다음 핵심 작업의 범위로 진행한다.
+1. `image-loading-stage-concurrency`: 구현·QA 완료. 현재값 채택 승인 후 커밋·PR·머지 정리 중이다.
 2. `admin-web-operations-migration`: 플랫폼 총관리자 운영 기능을 localhost 관리자 웹으로 전환한다. 기존 iOS가 사용하는 권한·API의 호환과 최종 제거 시점을 먼저 설계한다.
 3. `ios-admin-console-removal`: 관리자 웹의 필수 운영 기능 동등성 검증과 운영 경로 전환 후 iOS 관리자 콘솔·전용 연결을 제거한다. 일반 사용자 브랜드 요청과 채팅방 운영 기능은 유지한다.
 
@@ -106,6 +141,7 @@
 ## 추가 핵심 대기 작업
 
 - `chat-media-production-rollout`: 이번 미디어 전송 변경의 Production 배포
+  - 최종 소스 연결: [PR#30](https://github.com/GayoonKim/OutPick/pull/30), main `71e1376c74fef490efd1c901f34c2b79a35ba33c`. 기존 PR#27/#28과 함께 운영 상태 차이를 확인할 대상이며 이번에는 기록만 수행했다.
   - 2026-09-14 추가 기록: 기존 PR#27/#28 범위에 이번 최종 동시성 적용도 통합한다. iOS 원본4/준비전체/PUT4/FIFO1, 계약3 Socket 조회·서명·취소정리전체. 계약2 수치 설정은 유지하며 계약3은 metadata 환경 변수를 소비하지 않는다. [Development 최종 근거](../qa-media-upload-concurrency-2026-09-12.md), [운영 배포 대기 범위](../runbooks/CHAT_MEDIA_PRODUCTION_ROLLOUT.md). 실제 Production 배포는 이번 커밋/PR/머지 요청에 포함되지 않는다.
   - 상태: 사용자 요청으로 대기 목록에 기록. 실제 Production 배포 승인은 아직 없으며 배포하지 않았다. 다른 대기 작업과의 착수 순서는 추후 결정한다.
   - 기준: PR #27/main `34831dfc`와 PR #28/main `8e7d3c31`까지 포함. 2026-09-11 사용자 요청으로 이번 완료 변경의 Production 반영도 기존 대기 항목에 통합 기록했다. 실제 배포 승인은 아님. [FIREBASE 진입점](../entrypoints/FIREBASE.md)과 [Development QA 기록](chat-media-bounded-parallel-upload/qa/direct-upload-implementation.md)을 따른다.

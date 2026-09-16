@@ -47,6 +47,7 @@ protocol StorageServiceProtocol {
     /// 지정된 경로의 파일을 로컬 파일 시스템으로 다운로드합니다.
     /// 대용량 파일이나 오프라인 캐시가 필요한 경우에 사용되며, 같은 위치에 파일이 존재하면 덮어씁니다.
     func downloadFile(from path: String, to localURL: URL) async throws
+    func downloadImageFile(from path: String, to localURL: URL, maxBytes: Int) async throws
 
     // MARK: - 다운로드 (이미지 전용)
     /// 이미지 파일을 메모리에 다운로드합니다. 반환된 데이터는 UIImage(data:)로 변환해 사용합니다.
@@ -69,4 +70,10 @@ protocol StorageServiceProtocol {
         for path: String,
         metadata: StorageMetadata
     ) async throws -> StorageMetadata
+}
+
+extension StorageServiceProtocol {
+    func downloadImageFile(from path: String, to localURL: URL, maxBytes: Int) async throws {
+        throw ImageCachePipelineError.missingFileTransport
+    }
 }
