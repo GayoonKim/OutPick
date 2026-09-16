@@ -72,268 +72,11 @@ final class ImageCacheMemoryStore {
     }
 }
 
-/// Caches 디렉터리에 이미지 Data를 저장/조회하는 디스크 스토어
-/// - Note: 쓰기는 tmp 파일 후 move로 원자적으로 반영합니다.
-actor ImageCacheDiskStore {
-    private struct DiskEntry {
-        let url: URL
-        let size: Int64
-        let modifiedAt: Date
-    }
-
-    private let fileManager = FileManager.default
-    private let baseDir: URL
-    private let maxSizeBytes: Int64
-    private let trimTargetBytes: Int64
-    private var hasScannedSize = false
-    private var currentSizeBytes: Int64 = 0
-
-    init(
-        folderName: String = "ImageCache",
-        maxSizeBytes: Int64 = 300 * 1024 * 1024,
-        trimTargetBytes: Int64? = nil
-    ) {
-        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        self.baseDir = caches.appendingPathComponent(folderName, isDirectory: true)
-        self.maxSizeBytes = max(1, maxSizeBytes)
-        let defaultTrimTarget = Int64(Double(self.maxSizeBytes) * 0.85)
-        let requestedTrimTarget = trimTargetBytes ?? defaultTrimTarget
-        self.trimTargetBytes = max(1, min(requestedTrimTarget, self.maxSizeBytes))
-        try? fileManager.createDirectory(at: baseDir, withIntermediateDirectories: true)
-        Task { [weak self] in
-            guard let self else { return }
-            await self.bootstrapTrimIfNeeded()
-        }
-    }
-
-    func read(forKey key: String) -> Data? {
-        let url = fileURL(forKey: key)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        touch(url)
-        return data
-    }
-
-    func write(data: Data, forKey key: String) {
-        ensureCurrentSizeLoaded()
-
-        let url = fileURL(forKey: key)
-        let tmp = url.appendingPathExtension("tmp")
-        let oldSize = fileSize(at: url) ?? 0
-
-        do {
-            try data.write(to: tmp, options: [.atomic])
-            if fileManager.fileExists(atPath: url.path) {
-                try? fileManager.removeItem(at: url)
-            }
-            try fileManager.moveItem(at: tmp, to: url)
-            touch(url)
-
-            let newSize = fileSize(at: url) ?? Int64(data.count)
-            currentSizeBytes = max(0, currentSizeBytes - oldSize + newSize)
-            trimIfNeeded()
-        } catch {
-            try? fileManager.removeItem(at: tmp)
-            // 필요 시 로깅 확장
-        }
-    }
-
-    func remove(forKey key: String) {
-        ensureCurrentSizeLoaded()
-
-        let url = fileURL(forKey: key)
-        if let existing = fileSize(at: url) {
-            currentSizeBytes = max(0, currentSizeBytes - existing)
-        }
-        try? fileManager.removeItem(at: url)
-    }
-
-    func removeAll() {
-        guard let files = try? fileManager.contentsOfDirectory(
-            at: baseDir,
-            includingPropertiesForKeys: nil
-        ) else {
-            currentSizeBytes = 0
-            hasScannedSize = true
-            return
-        }
-        for file in files {
-            try? fileManager.removeItem(at: file)
-        }
-        currentSizeBytes = 0
-        hasScannedSize = true
-    }
-
-    private func fileURL(forKey key: String) -> URL {
-        let hashed = key.sha256Hex
-        return baseDir.appendingPathComponent("\(hashed).bin")
-    }
-
-    private func bootstrapTrimIfNeeded() {
-        ensureCurrentSizeLoaded()
-        trimIfNeeded()
-    }
-
-    private func ensureCurrentSizeLoaded() {
-        guard !hasScannedSize else { return }
-        hasScannedSize = true
-
-        let entries = listDiskEntries()
-        currentSizeBytes = entries.reduce(Int64(0)) { $0 + $1.size }
-    }
-
-    private func trimIfNeeded() {
-        guard currentSizeBytes > maxSizeBytes else { return }
-
-        var entries = listDiskEntries()
-        guard !entries.isEmpty else {
-            currentSizeBytes = 0
-            return
-        }
-
-        entries.sort { lhs, rhs in lhs.modifiedAt < rhs.modifiedAt }
-
-        for entry in entries {
-            try? fileManager.removeItem(at: entry.url)
-            currentSizeBytes = max(0, currentSizeBytes - entry.size)
-            if currentSizeBytes <= trimTargetBytes {
-                break
-            }
-        }
-    }
-
-    private func listDiskEntries() -> [DiskEntry] {
-        guard let files = try? fileManager.contentsOfDirectory(
-            at: baseDir,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        var entries: [DiskEntry] = []
-        entries.reserveCapacity(files.count)
-
-        for url in files {
-            if url.pathExtension == "tmp" {
-                try? fileManager.removeItem(at: url)
-                continue
-            }
-            guard url.pathExtension == "bin" else { continue }
-
-            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]),
-                  values.isRegularFile == true else {
-                continue
-            }
-
-            let fileSize = Int64(values.fileSize ?? 0)
-            let modifiedAt = values.contentModificationDate ?? .distantPast
-            entries.append(DiskEntry(url: url, size: fileSize, modifiedAt: modifiedAt))
-        }
-        return entries
-    }
-
-    private func fileSize(at url: URL) -> Int64? {
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-              values.isRegularFile == true else {
-            return nil
-        }
-        return Int64(values.fileSize ?? 0)
-    }
-
-    private func touch(_ url: URL) {
-        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
-    }
-}
-
-/// 동일 키의 load 요청을 하나의 Task로 병합하는 레지스트리
-actor ImageCacheInFlightRegistry {
-    private var tasks: [String: Task<UIImage, Error>] = [:]
-
-    func task(for key: String) -> Task<UIImage, Error>? {
-        tasks[key]
-    }
-
-    func set(_ task: Task<UIImage, Error>, for key: String) {
-        tasks[key] = task
-    }
-
-    func remove(_ key: String) {
-        tasks.removeValue(forKey: key)
-    }
-
-    func cancel(_ key: String) {
-        tasks.removeValue(forKey: key)?.cancel()
-    }
-
-    func cancelAll() {
-        tasks.values.forEach { $0.cancel() }
-        tasks.removeAll()
-    }
-}
-
-/// 동일 키 prefetch 요청을 병합하는 레지스트리
-actor ImageCachePrefetchRegistry {
-    private var tasks: [String: Task<Void, Never>] = [:]
-
-    func task(for key: String) -> Task<Void, Never>? {
-        tasks[key]
-    }
-
-    func set(_ task: Task<Void, Never>, for key: String) {
-        tasks[key] = task
-    }
-
-    func remove(_ key: String) {
-        tasks.removeValue(forKey: key)
-    }
-
-    func cancel(_ key: String) {
-        tasks.removeValue(forKey: key)?.cancel()
-    }
-
-    func cancelAll() {
-        tasks.values.forEach { $0.cancel() }
-        tasks.removeAll()
-    }
-}
-
-actor ImageCacheAsyncLimiter {
-    private var permits: Int
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    init(_ maxPermits: Int) {
-        self.permits = max(1, maxPermits)
-    }
-
-    func withPermit<T>(_ operation: @Sendable () async throws -> T) async rethrows -> T {
-        await acquire()
-        defer { release() }
-        return try await operation()
-    }
-
-    private func acquire() async {
-        if permits > 0 {
-            permits -= 1
-            return
-        }
-
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    private func release() {
-        if !waiters.isEmpty {
-            let continuation = waiters.removeFirst()
-            continuation.resume()
-        } else {
-            permits += 1
-        }
-    }
-}
-
 enum ImageCachePipelineError: Error {
     case invalidImageData
+    case reservationTooLarge
+    case missingFileTransport
+    case imageTooLarge
 }
 
 /// 프리패치 시점에 어떤 캐시 계층까지 저장할지 결정합니다.
@@ -353,173 +96,107 @@ private extension ImageCacheStorePolicy {
     }
 }
 
-/// 메모리 -> 디스크 -> 네트워크 순으로 이미지를 로딩하는 공용 파이프라인
-/// - Note: 동일 키 로딩은 in-flight 레지스트리로 병합합니다.
+/// 기능별 캐시와 고정 fetcher/decoder를 소유하고 동일 요청은 coordinator에 위임한다.
 final class ImageCachePipeline {
     typealias Fetcher = @Sendable (_ path: String, _ maxBytes: Int) async throws -> Data
 
-    private static let sharedLoadLimiter = ImageCacheAsyncLimiter(6)
-
-    private let fetcher: Fetcher
-    private let decoder: @Sendable (Data) -> UIImage?
+    private let processor: ImagePipelineProcessor
     private let memory: ImageCacheMemoryStore
     private let disk: ImageCacheDiskStore
-    private let inflight: ImageCacheInFlightRegistry
-    private let prefetchRegistry: ImageCachePrefetchRegistry
-    private let loadLimiter: ImageCacheAsyncLimiter
+    private let coordinator: ImageLoadCoordinator
+    private let resources: ImagePipelineResources
     private static let registryLock = NSLock()
     private static let registry = NSHashTable<ImageCachePipeline>.weakObjects()
 
     init(
         fetcher: @escaping Fetcher,
+        fileFetcher: ImagePipelineProcessor.FileFetcher? = nil,
         memory: ImageCacheMemoryStore = ImageCacheMemoryStore(),
-        disk: ImageCacheDiskStore = ImageCacheDiskStore(),
-        inflight: ImageCacheInFlightRegistry = ImageCacheInFlightRegistry(),
-        prefetchRegistry: ImageCachePrefetchRegistry = ImageCachePrefetchRegistry(),
-        loadLimiter: ImageCacheAsyncLimiter = ImageCachePipeline.sharedLoadLimiter,
-        decoder: @escaping @Sendable (Data) -> UIImage? = { UIImage(data: $0) }
+        disk: ImageCacheDiskStore? = nil,
+        resources: ImagePipelineResources = .shared,
+        decoder: @escaping @Sendable (Data) -> UIImage? = { ImageFileDecoding.image($0) },
+        fileDecoder: @escaping @Sendable (URL) -> UIImage? = { ImageFileDecoding.image($0) }
     ) {
-        self.fetcher = fetcher
-        self.decoder = decoder
+        let disk = disk ?? ImageCacheDiskStore(resources: resources)
+        self.processor = ImagePipelineProcessor(resources: resources, fetcher: fetcher, fileFetcher: fileFetcher, decoder: decoder, fileDecoder: fileDecoder)
         self.memory = memory
         self.disk = disk
-        self.inflight = inflight
-        self.prefetchRegistry = prefetchRegistry
-        self.loadLimiter = loadLimiter
+        self.resources = resources
+        self.coordinator = ImageLoadCoordinator(memory: memory, disk: disk, resources: resources)
         Self.registryLock.lock()
         Self.registry.add(self)
         Self.registryLock.unlock()
     }
 
     func cachedImage(path: String) async -> UIImage? {
-        let key = canonicalKey(for: path)
-        if let cached = memory.image(forKey: key) {
-            return cached
+        try? await cachedValue(path: path, priority: .visible).image
+    }
+
+    private func cachedValue(path: String, priority: ImageRequestPriority) async throws -> ImageLoadValue {
+        try Task.checkCancellation()
+        let request = ImageRequest(path: path, work: .cache)
+        if let image = memory.image(forKey: request.cacheKey) {
+            ImageCacheMetrics.shared.mark("cache", key: path, outcome: "memory")
+            return ImageLoadValue(image: image)
         }
-        if let data = await disk.read(forKey: key),
-           let diskImage = decoder(data) {
-            memory.set(diskImage, forKey: key)
-            return diskImage
+        return try await coordinator.value(for: request, priority: priority, storePolicy: .memoryOnly) { [self] revision in
+            // fast path 이후 다른 작업이 채운 메모리도 재사용한다.
+            if let image = memory.image(forKey: request.cacheKey) { return ImageLoadValue(image: image) }
+            return try await processor.cached(disk: disk, key: request.cacheKey, revision: revision)
         }
-        return nil
     }
 
     func loadImage(path: String, maxBytes: Int) async throws -> UIImage {
-        try await loadImage(
-            path: path,
-            maxBytes: maxBytes,
-            storePolicy: .memoryAndDisk
-        )
+        try await loadImage(path: path, maxBytes: maxBytes, storePolicy: .memoryAndDisk, priority: .visible)
     }
 
-    private func loadImage(
-        path: String,
-        maxBytes: Int,
-        storePolicy: ImageCacheStorePolicy
-    ) async throws -> UIImage {
-        let key = canonicalKey(for: path)
-        let fetcher = self.fetcher
-        let pathDetails = LookbookImageLoadDebugLog.pathDetails(path)
-
-        if let memoryImage = memory.image(forKey: key) {
-            LookbookImageLoadDebugLog.log(
-                "cache hit(memory) \(pathDetails)"
-            )
-            return memoryImage
-        }
-
-        if let data = await disk.read(forKey: key),
-           let diskImage = decoder(data) {
-            memory.set(diskImage, forKey: key)
-            LookbookImageLoadDebugLog.log(
-                "cache hit(disk) \(pathDetails) bytes=\(data.count)"
-            )
-            return diskImage
-        }
-
-        if let existing = await inflight.task(for: key) {
-            LookbookImageLoadDebugLog.log(
-                "join inflight \(pathDetails)"
-            )
-            return try await existing.value
-        }
-
-        let totalStartedAt = CFAbsoluteTimeGetCurrent()
-        let task = Task<UIImage, Error> { [memory, disk, loadLimiter] in
-            try await loadLimiter.withPermit {
-                let fetchStartedAt = CFAbsoluteTimeGetCurrent()
-                let downloaded = try await fetcher(path, maxBytes)
-                let fetchElapsed = LookbookImageLoadDebugLog.milliseconds(
-                    since: fetchStartedAt
-                )
-
-                let decodeStartedAt = CFAbsoluteTimeGetCurrent()
-                guard let image = decoder(downloaded) else {
-                    throw ImageCachePipelineError.invalidImageData
-                }
-                let decodeElapsed = LookbookImageLoadDebugLog.milliseconds(
-                    since: decodeStartedAt
-                )
-
-                try Task.checkCancellation()
-                memory.set(image, forKey: key)
-                if storePolicy == .memoryAndDisk {
-                    await disk.write(data: downloaded, forKey: key)
-                }
-
-                LookbookImageLoadDebugLog.log(
-                    "load success \(pathDetails) bytes=\(downloaded.count) fetch=\(fetchElapsed) decode=\(decodeElapsed) total=\(LookbookImageLoadDebugLog.milliseconds(since: totalStartedAt)) policy=\(storePolicy.debugLabel)"
-                )
+    func loadImage(path: String, maxBytes: Int, storePolicy: ImageCacheStorePolicy, priority: ImageRequestPriority) async throws -> UIImage {
+        try await ImageCacheMetrics.shared.request("pipelineRequest", key: path) {
+            try Task.checkCancellation()
+            let request = ImageRequest(path: path, work: .load(maxBytes: maxBytes))
+            if let image = memory.image(forKey: request.cacheKey) {
+                ImageCacheMetrics.shared.mark("cache", key: path, outcome: "memory")
                 return image
             }
-        }
-
-        await inflight.set(task, for: key)
-        do {
-            let image = try await task.value
-            await inflight.remove(key)
+            let value = try await coordinator.value(for: request, priority: priority, storePolicy: storePolicy) { [self] _ in
+                let cached = try await cachedValue(path: path, priority: priority)
+                if cached.image != nil {
+                    ImageCacheMetrics.shared.mark("cache", key: path, outcome: "local")
+                    return cached
+                }
+                try Task.checkCancellation()
+                return try await processor.download(path: path, maxBytes: maxBytes)
+            }
+            try Task.checkCancellation()
+            guard let image = value.image else { throw ImageCachePipelineError.invalidImageData }
             return image
-        } catch {
-            await inflight.remove(key)
-            LookbookImageLoadDebugLog.log(
-                "load failed \(pathDetails) total=\(LookbookImageLoadDebugLog.milliseconds(since: totalStartedAt)) error=\(error.localizedDescription)"
-            )
-            throw error
         }
     }
 
     func storeImageData(_ data: Data, path: String) async throws {
-        let key = canonicalKey(for: path)
-        guard let image = decoder(data) else {
-            throw ImageCachePipelineError.invalidImageData
-        }
-
-        memory.set(image, forKey: key)
-        await disk.write(data: data, forKey: key)
+        let value = try await processor.stored(data)
+        do {
+            guard let image = value.image, let payload = value.payload else { throw ImageCachePipelineError.invalidImageData }
+            try await coordinator.store(image: image, payload: payload, path: path)
+            await value.release?()
+        } catch { await value.release?(); throw error }
     }
 
+    func flushPendingWrites() async { await coordinator.flushPendingWrites() }
+
     func removeImage(path: String) async {
-        let key = canonicalKey(for: path)
-        await inflight.cancel(key)
-        await prefetchRegistry.cancel(key)
-        memory.remove(forKey: key)
-        await disk.remove(forKey: key)
+        await coordinator.remove(path: path)
     }
 
     func removeAllCachedImages() async {
-        await inflight.cancelAll()
-        await prefetchRegistry.cancelAll()
-        memory.removeAll()
-        await disk.removeAll()
+        await coordinator.removeAll()
     }
 
     static func removeAllRegisteredCaches() async {
         let pipelines = registeredPipelines()
         await withTaskGroup(of: Void.self) { group in
             for pipeline in pipelines {
-                group.addTask {
-                    await pipeline.removeAllCachedImages()
-                }
+                group.addTask { await pipeline.removeAllCachedImages() }
             }
         }
     }
@@ -530,33 +207,22 @@ final class ImageCachePipeline {
         return registry.allObjects
     }
 
-    func prefetch(
-        items: [(path: String, maxBytes: Int)],
-        concurrency: Int,
-        storePolicy: ImageCacheStorePolicy = .memoryAndDisk
-    ) async {
+    func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int, storePolicy: ImageCacheStorePolicy = .memoryAndDisk) async {
         guard !items.isEmpty else { return }
-
         await withTaskGroup(of: Void.self) { group in
             var iterator = items.makeIterator()
             var running = 0
-
             func spawnNext() {
-                guard let next = iterator.next() else { return }
+                guard !Task.isCancelled, let next = iterator.next() else { return }
                 running += 1
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    await self.prefetchOne(
-                        path: next.path,
-                        maxBytes: next.maxBytes,
-                        storePolicy: storePolicy
-                    )
+                    _ = try? await ImageCacheMetrics.$consumer.withValue("prefetch") {
+                        try await self.loadImage(path: next.path, maxBytes: next.maxBytes, storePolicy: storePolicy, priority: .prefetch)
+                    }
                 }
             }
-
-            let initial = min(max(concurrency, 1), items.count)
-            for _ in 0..<initial { spawnNext() }
-
+            for _ in 0..<min(max(concurrency, 1), items.count) { spawnNext() }
             while running > 0 {
                 await group.next()
                 running -= 1
@@ -565,41 +231,7 @@ final class ImageCachePipeline {
         }
     }
 
-    private func prefetchOne(
-        path: String,
-        maxBytes: Int,
-        storePolicy: ImageCacheStorePolicy
-    ) async {
-        if Task.isCancelled { return }
-        let key = canonicalKey(for: path)
 
-        if memory.image(forKey: key) != nil {
-            return
-        }
-
-        if let existing = await prefetchRegistry.task(for: key) {
-            await existing.value
-            return
-        }
-
-        let task = Task<Void, Never> { [weak self] in
-            guard let self else { return }
-            if Task.isCancelled { return }
-            _ = try? await self.loadImage(
-                path: path,
-                maxBytes: maxBytes,
-                storePolicy: storePolicy
-            )
-        }
-
-        await prefetchRegistry.set(task, for: key)
-        await task.value
-        await prefetchRegistry.remove(key)
-    }
-
-    private func canonicalKey(for path: String) -> String {
-        "imageCache|\(path)"
-    }
 }
 
 private extension UIImage {
@@ -608,12 +240,5 @@ private extension UIImage {
         let width = Int(self.size.width * scale)
         let height = Int(self.size.height * scale)
         return max(1, width) * max(1, height) * 4
-    }
-}
-
-private extension String {
-    var sha256Hex: String {
-        let digest = SHA256.hash(data: Data(self.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -29,9 +29,16 @@ protocol FirebaseImageStorageRepositoryProtocol {
     ) async throws -> [Attachment]
 
     func fetchImageDataFromStorage(image: String, location: ImageLocation, maxBytes: Int) async throws -> Data
+    func fetchImageFileFromStorage(image: String, location: ImageLocation, maxBytes: Int, to url: URL) async throws
     func fetchImageFromStorage(image: String, location: ImageLocation) async throws -> UIImage
     func fetchImagesFromStorage(from imagePaths: [String], location: ImageLocation, createdDate: Date) async throws -> [UIImage]
     func prefetchImages(paths: [String], location: ImageLocation, createdDate: Date)
     func deleteImageFromStorage(path: String)
     func setDataFallbackLimitMB(_ mb: Int)
+}
+
+extension FirebaseImageStorageRepositoryProtocol {
+    func fetchImageFileFromStorage(image: String, location: ImageLocation, maxBytes: Int, to url: URL) async throws {
+        throw ImageCachePipelineError.missingFileTransport
+    }
 }

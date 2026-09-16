@@ -151,6 +151,17 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         return UIImage(cgImage: image)
     }
 
+    private static func decodePreview(_ url: URL) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1024,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
+    }
+
     func removeCachedImage(for path: String) async {
         imageDataCache.removeObject(forKey: path as NSString)
         await pipelines.remote.removeImage(path: path)
@@ -203,18 +214,23 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
                         maxBytes: maxBytes
                     )
                 },
+                fileFetcher: { path, maxBytes, url in
+                    try await imageStorageRepository.fetchImageFileFromStorage(image: path, location: .roomImage, maxBytes: maxBytes, to: url)
+                },
                 disk: ImageCacheDiskStore(
                     folderName: "ChatImageCache",
                     maxSizeBytes: 350 * 1024 * 1024,
                     trimTargetBytes: 280 * 1024 * 1024
                 ),
-                decoder: { decodePreview($0) }
+                decoder: { decodePreview($0) },
+                fileDecoder: { decodePreview($0) }
             ),
             outgoingPreview: ImageCachePipeline(
                 fetcher: { _, _ in throw URLError(.fileDoesNotExist) },
                 memory: ImageCacheMemoryStore(totalCostLimitBytes: 80 * 1024 * 1024),
                 disk: ImageCacheDiskStore(folderName: "ThumbCache"),
-                decoder: { decodePreview($0) }
+                decoder: { decodePreview($0) },
+                fileDecoder: { decodePreview($0) }
             )
         )
     }

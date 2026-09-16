@@ -101,8 +101,12 @@ struct BrandDetailHeaderView: View {
             .frame(height: 220, alignment: .top)
             .clipped()
             .task(id: logoLoadKey) {
-                await loadLogoIfNeeded()
-                scheduleDetailUpgradeIfNeeded()
+                await ImageCacheMetrics.$consumer.withValue("visible") {
+                    await ImageCacheMetrics.shared.request(key: logoLoadKey) {
+                        await loadLogoIfNeeded()
+                        scheduleDetailUpgradeIfNeeded()
+                    }
+                }
             }
             .fullScreenCover(isPresented: $isPresentingZoomPreview) {
                 if let image = uiImage {
@@ -258,7 +262,9 @@ struct BrandDetailHeaderView: View {
                 maxBytes: headerMaxBytes
             )
             uiImage = image
+            ImageCacheMetrics.shared.mark("ui.header.assigned", key: path, outcome: Task.isCancelled ? "afterCancellation" : "success")
         } catch {
+            if error is CancellationError || Task.isCancelled { return }
             loadFailed = true
         }
     }

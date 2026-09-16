@@ -49,6 +49,7 @@ private actor LookbookRemotePreviewLoadCoordinator {
 }
 
 final class LookbookRemotePreviewImageLoader: LookbookRemotePreviewImageLoading {
+    typealias FetchFile = @Sendable (LookbookRemotePreviewImageRequest, Int, URL) async throws -> Void
     typealias FetchData = @Sendable (
         _ request: LookbookRemotePreviewImageRequest,
         _ maxBytes: Int
@@ -64,6 +65,9 @@ final class LookbookRemotePreviewImageLoader: LookbookRemotePreviewImageLoading 
                 request: request,
                 maxBytes: maxBytes
             )
+        },
+        fetchFile: @escaping FetchFile = { request, maxBytes, url in
+            try await LookbookRemotePreviewImageLoader.fetchFile(request: request, maxBytes: maxBytes, to: url)
         }
     ) {
         let requestStore = LookbookRemotePreviewRequestStore()
@@ -75,6 +79,12 @@ final class LookbookRemotePreviewImageLoader: LookbookRemotePreviewImageLoading 
                     throw LookbookRemotePreviewImageError.missingRequest
                 }
                 return try await fetchData(request, maxBytes)
+            },
+            fileFetcher: { key, maxBytes, url in
+                guard let request = await requestStore.request(for: key) else {
+                    throw LookbookRemotePreviewImageError.missingRequest
+                }
+                try await fetchFile(request, maxBytes, url)
             },
             disk: ImageCacheDiskStore(
                 folderName: "LookbookRemotePreviewImageCache",
@@ -161,10 +171,7 @@ final class LookbookRemotePreviewImageLoader: LookbookRemotePreviewImageLoading 
         }.joined()
     }
 
-    private static func fetchData(
-        request: LookbookRemotePreviewImageRequest,
-        maxBytes: Int
-    ) async throws -> Data {
+    private static func urlRequest(_ request: LookbookRemotePreviewImageRequest) -> URLRequest {
         var urlRequest = URLRequest(url: request.remoteURL)
         urlRequest.setValue(
             "OutPick/1.0 (iOS; lookbook review preview)",
@@ -178,16 +185,40 @@ final class LookbookRemotePreviewImageLoader: LookbookRemotePreviewImageLoading 
             )
         }
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        return urlRequest
+    }
+
+    private static func fetchFile(request: LookbookRemotePreviewImageRequest, maxBytes: Int, to url: URL) async throws {
+        let (temporaryURL, response) = try await URLSession.shared.download(for: urlRequest(request))
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        try validate(response)
+        let size = try temporaryURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= maxBytes else { throw LookbookRemotePreviewImageError.responseTooLarge }
+        try Task.checkCancellation()
+        try FileManager.default.moveItem(at: temporaryURL, to: url)
+    }
+
+    private static func fetchData(request: LookbookRemotePreviewImageRequest, maxBytes: Int) async throws -> Data {
+        let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest(request))
+        defer { bytes.task.cancel() }
+        try validate(response)
+        guard response.expectedContentLength <= Int64(maxBytes) else {
+            throw LookbookRemotePreviewImageError.responseTooLarge
+        }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < maxBytes else { throw LookbookRemotePreviewImageError.responseTooLarge }
+            data.append(byte)
+        }
+        return data
+    }
+
+    private static func validate(_ response: URLResponse) throws {
         guard
             let httpResponse = response as? HTTPURLResponse,
             (200..<300).contains(httpResponse.statusCode)
         else {
             throw LookbookRemotePreviewImageError.invalidResponse
         }
-        guard data.count <= maxBytes else {
-            throw LookbookRemotePreviewImageError.responseTooLarge
-        }
-        return data
     }
 }

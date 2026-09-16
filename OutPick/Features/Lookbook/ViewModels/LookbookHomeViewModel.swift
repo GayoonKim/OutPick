@@ -53,6 +53,7 @@ final class LookbookHomeViewModel: ObservableObject {
     private let stylePreferenceStore: CurrentUserStylePreferenceStore
     private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
+    private let viewportPrefetch: LookbookImagePrefetchController
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
     private var interestLoadGeneration = 0
@@ -94,6 +95,9 @@ final class LookbookHomeViewModel: ObservableObject {
         self.stylePreferenceStore = stylePreferenceStore
         self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
+        self.viewportPrefetch = LookbookImagePrefetchController { [brandImageCache] request in
+            await brandImageCache.prefetchAssets(items: [request], concurrency: 1, storePolicy: .memoryAndDisk)
+        }
         self.initialBrandLimit = initialBrandLimit
         self.prefetchLogoCount = prefetchLogoCount
         self.prefetchConcurrency = prefetchConcurrency
@@ -108,6 +112,8 @@ final class LookbookHomeViewModel: ObservableObject {
     /// 앱 시작 시 또는 룩북 탭 진입 전에 한 번 호출
     func loadInitialPageIfNeeded() async {
         guard !didLoadInitialPage, !isLoadingInitialPage else { return }
+        let baseline = ImageCacheMetrics.shared.begin("list.home.initial")
+        defer { ImageCacheMetrics.shared.end(baseline) }
         isLoadingInitialPage = true
         defer { isLoadingInitialPage = false }
         
@@ -116,14 +122,11 @@ final class LookbookHomeViewModel: ObservableObject {
         do {
             // 1) 브랜드 fetch (정렬 미지정: 기본 순서)
             let page = try await repo.fetchBrands(sort: nil, limit: initialBrandLimit, after: nil)
+            ImageCacheMetrics.shared.mark("metadata.home.ready", parent: baseline?.id, outcome: "count_\(page.items.count)")
 
-            // 2) 첫 페이지 이미지는 prefetch 완료까지 대기합니다.
-            //    룩북 탭 진입 시 로고가 모두 준비된 상태로 한 번에 노출됩니다.
-            let prefetchTargets = makePrefetchTargets(from: page.items, count: page.items.count)
-            await brandImageCache.prefetch(items: prefetchTargets, concurrency: prefetchConcurrency)
-
-            // 3) 프리패치 완료 후에 리스트를 publish합니다.
+            // 브랜드 데이터가 준비되면 이미지를 기다리지 않고 목록을 먼저 공개한다.
             self.brands = page.items
+            ImageCacheMetrics.shared.mark("list.home.published", parent: baseline?.id, outcome: "count_\(page.items.count)")
             self.lastBrandDocument = page.last
             self.phase = .ready
             didLoadInitialPage = true
@@ -134,6 +137,7 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     func retry() async {
+        viewportPrefetch.clear()
         didLoadInitialPage = false
         lastBrandDocument = nil
         brands = []
@@ -157,6 +161,21 @@ final class LookbookHomeViewModel: ObservableObject {
         searchText = ""
     }
 
+    func updateViewport(indices: [Int], searching: Bool) {
+        let source = searching ? searchResults : brands
+        let requests = indices.compactMap { index -> LookbookAssetImageRequest? in
+            guard source.indices.contains(index), let path = source[index].listLogoPath,
+                  !path.isEmpty else { return nil }
+            return LookbookAssetImageRequest(
+                primaryPath: path, secondaryPath: nil, remoteURL: nil,
+                sourcePageURL: nil, maxBytes: thumbMaxBytes
+            )
+        }
+        viewportPrefetch.update(requests)
+    }
+
+    func clearViewport() { viewportPrefetch.clear() }
+
     func refreshKeepingVisibleContent() async {
         guard phase == .ready else {
             await retry()
@@ -174,19 +193,11 @@ final class LookbookHomeViewModel: ObservableObject {
                 after: nil
             )
 
-            let prefetchTargets = makePrefetchTargets(
-                from: page.items,
-                count: page.items.count
-            )
-            await brandImageCache.prefetch(
-                items: prefetchTargets,
-                concurrency: prefetchConcurrency
-            )
-
             brands = page.items
             lastBrandDocument = page.last
             didLoadInitialPage = true
             phase = .ready
+            viewportPrefetch.clear()
             await reloadInterestedStyleBrands(keepsExistingContentOnFailure: true)
         } catch {
             // 한국어 주석: 당겨서 새로고침 실패 시에는 기존 목록을 유지해 화면이 갑자기 비지 않도록 합니다.
@@ -289,11 +300,9 @@ final class LookbookHomeViewModel: ObservableObject {
 
             // 목록 append를 먼저 수행해서 스크롤 체감을 개선합니다.
             self.brands.append(contentsOf: page.items)
+            ImageCacheMetrics.shared.mark("list.home.appended", outcome: "count_\(page.items.count)")
             self.lastBrandDocument = page.last
 
-            // 다음 페이지도 첫 몇 개만 가볍게 prefetch (백그라운드)
-            let prefetchTargets = makePrefetchTargets(from: page.items, count: min(prefetchLogoCount, 8))
-            schedulePrefetch(items: prefetchTargets)
         } catch {
             // 페이지네이션 실패는 치명적이지 않으니 조용히 무시
         }
@@ -430,11 +439,6 @@ final class LookbookHomeViewModel: ObservableObject {
             searchResults = visibleResults
             searchPhase = visibleResults.isEmpty ? .empty : .results
 
-            let prefetchTargets = makePrefetchTargets(
-                from: visibleResults,
-                count: min(visibleResults.count, prefetchLogoCount)
-            )
-            schedulePrefetch(items: prefetchTargets)
         } catch {
             guard !Task.isCancelled else { return }
             searchResults = []

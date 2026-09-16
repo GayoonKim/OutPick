@@ -21,6 +21,8 @@ struct BrandRowView: View {
 
     @State private var loadFailed: Bool = false
     @State private var lastRequestedKey: String?
+    @State private var retryGeneration = 0
+    @State private var lastRetryGeneration = 0
 
     // 목록 썸네일이므로 다운로드 최대 용량을 낮게 유지합니다. (대략 1MB)
     private let maxLogoBytes: Int = 1 * 1024 * 1024
@@ -57,8 +59,10 @@ struct BrandRowView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         )
-        .task(id: logoLoadKey) {
-            await loadLogoIfNeeded()
+        .task(id: "\(logoLoadKey)|\(retryGeneration)") {
+            await ImageCacheMetrics.$consumer.withValue("visible") {
+                await ImageCacheMetrics.shared.request(key: logoLoadKey) { await loadLogoIfNeeded() }
+            }
         }
         .accessibilityIdentifier("lookbook.brand.card")
     }
@@ -82,6 +86,7 @@ struct BrandRowView: View {
                 .scaledToFill()
                 // 얼굴이 위쪽에서 잘리는 경우가 많아서 상단 기준으로 크롭되도록 정렬을 고정합니다.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onAppear { ImageCacheMetrics.shared.mark("ui.brand.imageBranchAppeared", key: logoLoadKey) }
         } else {
             placeholderSlot
         }
@@ -94,13 +99,20 @@ struct BrandRowView: View {
         Rectangle()
             .fill(OutPickTheme.SwiftUIColor.backgroundRaised)
             .overlay {
-                Image(systemName: loadFailed ? "exclamationmark.triangle" : "photo")
-                    .font(.title3)
-                    .foregroundStyle(
-                        loadFailed
-                            ? OutPickTheme.SwiftUIColor.warning
-                            : OutPickTheme.SwiftUIColor.iconSecondary
-                    )
+                if loadFailed {
+                    Button {
+                        retryGeneration &+= 1
+                    } label: {
+                        Label("이미지 다시 시도", systemImage: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.title3)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
+                }
             }
     }
 
@@ -124,6 +136,8 @@ struct BrandRowView: View {
 
     @MainActor
     private func loadLogoIfNeeded() async {
+        let requestedKey = logoLoadKey
+        let requestedRetryGeneration = retryGeneration
         // 목록에서는 썸네일 -> detail -> original 순으로 폴백합니다.
         let resolvedPath = brand.listLogoPath
         guard let path = resolvedPath, !path.isEmpty else { return }
@@ -134,6 +148,11 @@ struct BrandRowView: View {
             #if canImport(UIKit)
             uiImage = nil
             #endif
+        }
+
+        if lastRetryGeneration != retryGeneration {
+            lastRetryGeneration = retryGeneration
+            loadFailed = false
         }
 
         // 이미 로드했거나 실패했다면 중복 호출 방지
@@ -149,9 +168,14 @@ struct BrandRowView: View {
                 path: path,
                 maxBytes: maxLogoBytes
             )
+            guard !Task.isCancelled, lastRequestedKey == requestedKey,
+                  retryGeneration == requestedRetryGeneration else { return }
             uiImage = image
+            ImageCacheMetrics.shared.mark("ui.brand.assigned", key: path, outcome: Task.isCancelled ? "afterCancellation" : "success")
             #endif
         } catch {
+            if error is CancellationError || Task.isCancelled || lastRequestedKey != requestedKey ||
+                retryGeneration != requestedRetryGeneration { return }
             loadFailed = true
         }
     }

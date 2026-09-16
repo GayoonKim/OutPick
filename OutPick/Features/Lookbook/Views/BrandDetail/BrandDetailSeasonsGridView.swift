@@ -63,6 +63,7 @@ struct BrandDetailSeasonsGridView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("lookbook.season.card")
+                        .lookbookItemFrame(season.id.value, in: "lookbook.brand")
                         .onAppear {
                             onSeasonAppear(season)
                         }

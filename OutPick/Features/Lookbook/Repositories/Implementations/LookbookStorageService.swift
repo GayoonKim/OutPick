@@ -120,7 +120,7 @@ final class LookbookStorageService: StorageServiceProtocol {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
         do {
-            let data = try await ref.data(maxSize: Int64(maxSize))
+            let data = try await FirebaseImageDownload.data(from: ref, maxBytes: maxSize)
             LookbookImageLoadDebugLog.log(
                 "storage success \(LookbookImageLoadDebugLog.pathDetails(path)) bytes=\(data.count) limit=\(maxSize) total=\(LookbookImageLoadDebugLog.milliseconds(since: startedAt))"
             )
@@ -136,6 +136,10 @@ final class LookbookStorageService: StorageServiceProtocol {
     func downloadFile(from path: String, to localURL: URL) async throws {
         let ref = storage.reference(withPath: path)
         _ = try await ref.writeAsync(toFile: localURL)
+    }
+
+    func downloadImageFile(from path: String, to localURL: URL, maxBytes: Int) async throws {
+        try await FirebaseImageDownload.file(from: storage.reference(withPath: path), to: localURL, maxBytes: maxBytes)
     }
 
     func downloadImage(from path: String, maxSize: Int) async throws -> Data {
