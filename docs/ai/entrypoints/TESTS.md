@@ -1,5 +1,25 @@
 # Test Entrypoints
 
+- PR 리뷰 보완: `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`은 용량 예약 전 디스크 본문 보유를 방지한다. 예약 대기 중 파일 제거를 제어하며 기존 코드 실패를 확인했다. [공개 QA 요약](../qa-image-loading-concurrency-2026-09-16.md).
+
+- 이미지 Phase5 최종 완료(2026-09-16): 기존 자동90개/UI1개 통과 근거와 iPhone14 Phase0/최신 통합 스크롤 CPU·메모리·OutPick hitch 비교를 [최종 검증 기록](../tasks/image-loading-stage-concurrency/phase-5-validation.md)에 모았다. 사용자가 측정 한계를 수용하고 현 설정을 채택했다. 이번 마무리는 코드 변경 없이 계측/문서 갱신으로 진행해 자동 테스트를 중복 실행하지 않았다.
+
+- 이미지 Phase 5 집중 회귀: `ImageCacheMetricsTests`/`ImageLoadCoordinatorTests`/`ImageCacheRevisionTests`/`ImagePipelineResourcesTests`/`LookbookHTTPImageCacheTests`/`LookbookViewportPrefetchTests`/룩북 세 VM/`ChatAttachmentImageServiceTests`에서 64개, 관리자 preview·좋아요/관심 목록 26개 통과. `OutPickUITests/LookbookSmokeUITests.testImageRetryDoesNotOpenCardDetail`은 `LookbookUITestFixtureRepositoryProvider`의 `--uitest-lookbook-image-fail-once`를 사용해 브랜드/시즌/포스트 재시도 터치·복구를 확인했고 1개 통과. 실행 명령/로그·제외된 실서버와 CPU/RSS는 [Phase 5](../tasks/image-loading-stage-concurrency/phase-5-validation.md).
+
+- 이미지 Phase 4: `OutPickTests/LookbookViewportPrefetchTests.swift`는 방향 전환·24장 cap·동일 수요 중복 방지를, `LookbookHomeViewModelInterestTests.swift`/`BrandDetailViewModelTests.swift`는 이미지 요청 대기 중 목록 선표시를, `SeasonDetailViewModelTests.swift`는 viewport 수요만 선예약하고 append 전체 예약을 피하는지를 확인한다. 컴파일·실행 상태는 [진행](../tasks/image-loading-stage-concurrency/progress.md) 참조. 실제 프리패치 거리/취소율·실패 버튼 터치는 iPhone QA 대상.
+
+
+- 이미지 Phase 3: `OutPickTests/LookbookHTTPImageCacheTests.swift` 12개는 fake HTTP로 fresh network0, stale 304, no-cache/no-store, 404 제거, 동시 검증1회, 일시 오류 cooldown, 디스크 metadata 재시작 복원, validator 없는 동일 본문, Referer/maxBytes 키 분리, 표시/프리패치 후보 순서, 200 교체, Age를 확인하도록 작성. 실제 실행 여부·빌드 결과는 [진행](../tasks/image-loading-stage-concurrency/progress.md) 참조. 실서버 헤더·화면 교체는 별도 QA.
+
+
+- 2026-09-16 이미지 Phase2 QA: 캐시/자원/취소/계측26개 함수(27시나리오) iPhone14 통과. PNG fixture 배율 의존3개 실패를 format.scale=1로 고친 뒤 재검증. [실기기 기록](../tasks/image-loading-stage-concurrency/phase-2-qa.md). 초기값 조정은 아모멘토 실측 후 판단.
+
+- 이미지 Phase 2: OutPickTests/ImagePipelineResourcesTests.swift 9개(단계/바이트 상한, 취소·승격, 저장 정체 중 반환, 큰 파일 정리, 실패 회수, 네트워크 전 backpressure). ImageLoadCoordinatorTests 저장 승격은 persistence flush 후 확인. 앱·테스트 컴파일 확인, 실행은 사용자 미요청으로 보류. [최종 증거·수동 QA](../tasks/image-loading-stage-concurrency/progress.md).
+
+- 이미지 로딩 Phase 1: `OutPickTests/ImageLoadCoordinatorTests.swift`(인자 포함9개) + `ImageCacheRevisionTests.swift`(5개). 원자 통합·소비자 취소·이전 job 완료·store/remove/clear 경합·진행 저장 승격·maxBytes 분리·기존 디스크 cache-only 호환. **14개 작성/실행 미수행**, 최종 Development generic Simulator `build-for-testing` 통과(`/private/tmp/outpick-image-phase1-verified-build.log`). 컴파일 성공을 자동 회귀 통과로 해석하지 않는다. [구현](../tasks/image-loading-stage-concurrency/phase-1-implementation.md).
+
+- 이미지 로딩 Phase 0: `OutPickTests/ImageCacheMetricsTests.swift` — 비활성 no-op, 중복 end/보유 바이트, 동시 span 집계, 요청 결과·오류·TaskLocal 복원·키 hash 검증4개 작성. 테스트 실행은 사용자 요청이 없어 보류. 앱 build/테스트 컴파일/실측 결과는 [진행](../tasks/image-loading-stage-concurrency/progress.md), 계측 해석은 [사용법](../tasks/image-loading-stage-concurrency/baseline-instrumentation.md) 참조.
+
 - 최종 조합 Development 수동QA(2026-09-14):3장 smoke→70장30/30/10(seq58~60)→네트워크 차단 실패버블 재시도 성공(seq61/2장). 사용자스크롤/입력/재입장 확인. 삭제버튼 표시는 확인했으나 실제삭제 수동 실행은 주장하지 않는다. 자동41개/124개 및 [증거·한계](../tasks/chat-media-concurrency-qa-rollout/progress.md) 참조.
 
 - 2026-09-14 최종 동시성 로컬 검증: `ChatMediaSelectionUseCaseTests` 설정 누락/잘못된 값의 기본 정책 유지·DEBUG/dev opt-in·준비 중 부모 취소의 임시 파일 제거/원본 보존을 추가했다. 기존70장 분할/순서·실패복원, SourceAcquisition/UploadUseCase/UploadTurnQueue와 함께 iPhone14 Development41개/4 suites 통과. `/private/tmp/outpick-concurrency-final-ios-tests.xcresult`.

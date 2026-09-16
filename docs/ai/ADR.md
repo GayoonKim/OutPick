@@ -1,5 +1,14 @@
 # OutPick ADR
 
+- 2026-09-16 이미지 Phase5 최종 사용자 결정: 자동/기능 QA와 iPhone14 아모멘토 비교 결과를 근거로 network6/decode2/I/O2(write1), decode/write 각각16MiB, viewport 진행1.5/반대0.5·최대24장·이탈300ms를 채택하고 Phase5 완료. 추가 튜닝 필요성을 보여주는 뚜렷한 근거가 없어 현재값을 유지했다. 표본·캐시·수동 조작 시간의 차이는 수용하되 모든 기기의 최적값/통계적 성능 개선을 주장하지 않는다. 실제 지연·메모리 압박·더 큰 목록에서 회귀가 확인되면 해당 병목을 기준으로 재검토한다. [실측·한계·승인](tasks/image-loading-stage-concurrency/phase-5-validation.md).
+
+- 2026-09-16 Phase 5 채팅 미디어 사용자 선택: 방의 모든 과거 사진·영상을 무제한 자동 저장하지 않고, 화면 근처 썸네일을 선로딩하며 사용자가 연 원본·영상은 용량 제한 디스크 캐시에서 재사용한다. DEV 재설치 뒤 미디어 QA방 첫 방문은 느리고 재진입은 즉시 표시됐다. 현재 chat thumb는 업로드 계약상 원본 해상도/최대300MB이며 300MB `maxBytes`가 파일 전송 중 I/O 쓰기1 슬롯을 점유시키는 병목을 발견했다. 별도 개선의 수치·legacy 폴백은 설계 후 검증하며 기존 업로드 계약을 여기서 변경하지 않는다. [Phase 5 근거](tasks/image-loading-stage-concurrency/phase-5-validation.md).
+
+- 2026-09-16 이미지 Phase4 사용자 확정: iOS 15.6 룩북 세 화면은 카드 frame/화면 높이 관찰과 미배치 행 높이 추정으로 희망 이미지를 정한다. 진행 방향1.5화면·반대0.5화면·최대24장·이탈300ms를 초기 QA 값으로 사용한다. 화면은 수요만 관리하고 실제 메모리/디스크/네트워크/준비 동시성은 공용 pipeline이 맡는다. [구현·QA 범위](tasks/image-loading-stage-concurrency/phase-4-lookbook-screens.md).
+
+- 2026-09-16 이미지 Phase3 사용자 확정: 룩북 외부 URL 대체 이미지는 Storage와 네트워크 한도를 공유하며 URL·Referer·maxBytes별 memory/disk body+HTTP metadata를 보관한다. 서버 max-age 최대7일/없으면24시간, no-cache 재검증 전 미표시, no-store 저장 금지, 일반 만료본 우선 표시 후 ETag/Last-Modified 확인. 401/403/404/410은 기존본 제거·자동 중단, 일시 오류는 30초/2분/10분 최대3회. [구현·범위](tasks/image-loading-stage-concurrency/phase-3-http-cache.md).
+
+
 - 2026-09-10 최신 사용자 확정: 최종 미디어는 iOS에서 원해상도 본 파일/썸네일로 생성하고 최종 경로에 직접 업로드한다. 서버 내용 재검사·재가공·파일 복사·SHA-256 재계산을 제거하고 업로드 완료/현재 전송 권한/취소·멱등성만 확정 경계에서 확인한다. Socket 계약3이 메시지 확정을 소유하고 worker는 신규 경로에서 제외한다. 실제 기존 실패 자료만 재준비하며 운영 데이터·리소스 임의 삭제 없음. [상세 설계](tasks/chat-media-bounded-parallel-upload/direct-upload-detailed-design.md).
 
 - 2026-09-10 사용자 승인으로 미디어 묶음을 공용 FIFO에서 순차 처리한다. 최종 버블을 선택 순서대로 먼저 표시하고, ready 및 정상 메시지 UI 반영 또는 일반실패 표시 이후 실행권을 반환한다. 묶음 내부 PUT/서버 처리는 제한 병렬이다. 완료 순서 예측 가능성을 위해 묶음 병렬의 처리량 이점을 포기한다. 대기 버블은 고정원형과장수로 처리중 회전과 구분한다. 실제 네트워크 장애/이탈 정책은 유지한다. [최신 설계](tasks/chat-media-bounded-parallel-upload/design.md).
