@@ -1,9 +1,29 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import OutPick
 
 @MainActor
 final class AvatarNestedViewportTests: XCTestCase {
+    func testSwiftUIViewportPrefetchesChangedPathWithoutScrolling() async throws {
+        let spy = AvatarRouteImageSpy()
+        let model = AvatarViewportTestModel()
+        let controller = UIHostingController(rootView: AvatarViewportTestView(model: model, manager: spy))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(spy.requests.isEmpty)
+        for path in ["first-photo", "changed-photo"] {
+            model.items = [AvatarViewportItem(id: "same-row", path: path)]
+            for _ in 0..<200 where !spy.requests.contains(where: { $0.path == path }) {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            XCTAssertTrue(spy.requests.contains(where: { $0.path == path }), "스크롤 없이 최신 경로를 선로딩해야 합니다: \(path)")
+        }
+    }
+
     func testNestedParticipantsRequestOnlyOuterViewportAndPrefetchRegion() async throws {
         let spy = AvatarRouteImageSpy()
         let manager = spy.scoped { .memoryAndDisk }
@@ -53,6 +73,26 @@ final class AvatarNestedViewportTests: XCTestCase {
         }
         viewport.clear()
         XCTAssertTrue(viewport.prefetch.activePaths.isEmpty)
+    }
+}
+
+@MainActor
+private final class AvatarViewportTestModel: ObservableObject {
+    @Published var items = [AvatarViewportItem(id: "same-row", path: nil)]
+}
+
+private struct AvatarViewportTestView: View {
+    @ObservedObject var model: AvatarViewportTestModel
+    let manager: AvatarImageManaging
+    var body: some View {
+        ScrollView {
+            VStack {
+                Text("고정 행").frame(height: 60)
+                    .avatarViewportRow("same-row", space: "avatar-review")
+            }
+        }
+        .avatarViewport(items: model.items, space: "avatar-review", manager: manager)
+        .frame(height: 300)
     }
 }
 
