@@ -1,5 +1,36 @@
 # OutPick Entrypoints
 
+- 아바타 Phase0~5 완료(2026-09-21, VoiceOver사용자제외): 구현·QA·임시자료정리·일반DEV복구완료. 최종 iPhone14 16개검증의 범위/기존112개회귀와중복 여부는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md), 다음작업 진입점은 [현재 상태](tasks/avatar-image-loading/progress.md) 참조.
+
+- 잔여 QA2~4: `AvatarRouteContractTests`의 원본only 상세/확대2회, `AvatarNestedViewportTests`의 중첩 참여자50 UIKit 요청계측, `AvatarImageServiceTests`의 연속 아바타뷰 메모리승격/디스크재사용. 실기기 실행 여부와 결과는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md)에서 구분한다. 서버 fixture 추가와 제품 코드 변경은 없다.
+
+- 아바타 잔여 QA1 자동 경계: `OutPickTests/AvatarRouteContractTests.swift`는 실제 UserProfileDetailCompositionRoot→화면→주입 로더 요청의 정책 유지와 기존 scope의 참여 상태 변경 후 read/load/prefetch 정책 재평가를 검증한다. 상위 AppCoordinator/ChatCoordinator 조립은 코드 대조로 구분하며 앱 구조 변경은 없다. 실행 결과는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md) 참조.
+
+- 2026-09-21 아바타 후속 QA: 위임 후보·미참여 방·실패 후 스크롤/새 메시지 재시도·다른 계정 왕복 확인. 임시 오류/메시지 주입 및 정리 코드는 제거했고 서버183문서/20이미지·기기QA174행/3이미지를 정리했다. 검증 범위와 미검증 항목은 [Phase5](tasks/avatar-image-loading/progress/phase-5.md), [체크리스트](tasks/avatar-image-loading/qa-checklist.md) 참조.
+
+
+- 프로필 확대 원본 30초 제한: `AvatarImageService.loadRemoteAvatar`에서 원본 소비자만 제한하고 기존 공용 pipeline 취소에 연결한다. 썸네일/로컬 파일·SDK 전역 설정은 유지. 테스트와 실제 오프라인 QA는 [프로필 진입점](entrypoints/PROFILE.md), [Phase5](tasks/avatar-image-loading/progress/phase-5.md) 참조.
+
+- 아바타 즉시 메모리 표시: `AvatarImageManaging.cachedAvatarImmediately` → `AvatarImageService` → `AvatarImageSessionController.immediateReads` → 기존 `ImageCachePipeline` NSCache. 추가 이미지 캐시 없이 첫 렌더를 보완하며 전환/경로 무효화는 동기 read gate로 차단. 검증은 `AvatarImageSessionTests`/`AvatarImageServiceTests`/`AvatarImagePresentationStateTests`, 진행은 아바타 Phase5.
+
+- 방 설정 스크롤: `ChatRoomSettingViewController`의 초기 상단 위치 유지와 `actionsSection/actionsItem`(참여자 뒤 나가기·차단 사용자·알림). [채팅 진입점](entrypoints/CHAT.md), 실제 QA는 아바타 Phase5 기록 참조.
+
+- 답글 창 확장: `PostCommentsSheetView.repliesSheet`의 detent `[.fraction(0.62), .large]`. 상단 드래그로 최대 높이 확장, iOS16+ 적용. [룩북 진입점](entrypoints/LOOKBOOK.md).
+
+- 2026-09-20 댓글 재진입 상단 사진 수정: `CommentSafetyAvatarView.onChange(of: identity)`에서 콜백의 최신 identity를 `configure(_:)`에 직접 전달한다. 실기기 사용자 정상 및 상단4행 loaded 확인, 원인 조사용 로그 제거. [검증](tasks/avatar-image-loading/progress/phase-5.md).
+
+- 아바타 Phase5 통합 QA: [진행 기록](tasks/avatar-image-loading/progress/phase-5.md). `AvatarImagePrefetchController.loadingPaths`는 진행 상태를 읽는 내부 진단 값이며 `AvatarViewportPrefetchTests`가 고정 yield 횟수 대신 실제 실패 처리를 기다리는 데 사용한다. 기기 서명 복구와 실기기 QA 상태는 진행 기록에서 확인한다.
+
+- 아바타 Phase4: `AvatarViewportPrefetchPolicy`/`AvatarCollectionViewport`/`AvatarImagePrefetchController`와 SwiftUI `AvatarViewportObserver`가 방향1.5/0.5·고유24·이탈300ms 수요를 관리한다. UIKit 메시지/방 목록/중첩 참여자/위임 후보, SwiftUI 댓글/답글/대표 댓글의 일괄 선로딩을 교체했다. 새 visible 메시지·재등장·수동 갱신의 재시도 및 session unavailable 경로 차단. [구현·검증·QA 잔여](tasks/avatar-image-loading/progress/phase-4.md).
+
+- 아바타 Phase3 표시 수명 구현: `AvatarImagePresentationState`/`AvatarImageView` → UIKit 프로필/채팅 셀·SwiftUI CommentSafetyAvatarView. 같은 사진 유지, 재사용/화면 이탈 취소, 늦은 성공·실패 차단, SimpleImageViewerVC의 프로필 transient 종료 정리. [구현·검증](tasks/avatar-image-loading/progress/phase-3.md). Phase4 viewport/추가 표시 계기와 Phase5 실기기 QA는 남음.
+
+- 아바타 Phase2 완료: `AvatarImageRequest`/`ScopedAvatarImageManager`/`AvatarImageSessionController` → 단일 `AvatarImageService` → App/Chat DI와 `AvatarObservingPublicProfileRepository`·`UpdatePublicProfileUseCase`. 댓글 memory-only·참여방/내 프로필 disk100/75MiB·원본 transient·세션/사진 무효화 연결. JPEG0.8 실제 사진 비교, 최종48개/10suite 통과. [구현·검증·남은 범위](tasks/avatar-image-loading/progress/phase-2.md). Phase3 화면 수명·Phase4 viewport/retry·Phase5 실기기 QA는 남아 있다.
+
+- 아바타 Phase1 공용 기반: `Infra/Cache/ImageCache/ImageCachePipeline.swift`의 `.transient`/`promotionEncoding` → `ImageLoadCoordinator.swift`의 비저장 완료·메모리 hit 승격/세대 → `ImageCachePromotionEncoding.swift`의 준비/출력 예산. `OutPickTests/ImageCacheStorePolicyTests.swift`. [검증](tasks/avatar-image-loading/progress/phase-1.md).
+
+- 아바타 전체 작업: [설계](tasks/avatar-image-loading/design.md) → [Phase0~5 계획](tasks/avatar-image-loading/plan.md) → [현재 상태](tasks/avatar-image-loading/progress.md). 서비스 기반과 화면 적용의 완료 범위를 구분한다. 상세 출발점은 [PROFILE](entrypoints/PROFILE.md).
+
 - 이미지 로딩 최종 공개 검증 요약: [구조·설정·자동/실기기 QA·성능 한계](qa-image-loading-concurrency-2026-09-16.md). 머지 전 리뷰 보완은 `LookbookHTTPImageCache.cachedImage`의 디스크 크기 확인→바이트 예약→본문 읽기 순서와 `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`에서 확인한다.
 
 - 이미지 Phase 0~5 완료(2026-09-16): 자동90개/UI1개·룩북 기능 실기기 QA·Phase0 CPU/메모리/프레임 비교 후 사용자가 현 D07 값 채택과 Phase5 완료를 승인했다. 설정은 `ImagePipelineLimits.swift`, 화면 수요는 `LookbookImagePrefetchController.swift`; 최종 수치·표본 한계·로그는 [Phase 5](tasks/image-loading-stage-concurrency/phase-5-validation.md). 실패 fixture는 `LookbookUITestFixtureRepositoryProvider.swift`의 `--uitest-lookbook-image-fail-once`, 테스트는 `LookbookSmokeUITests.testImageRetryDoesNotOpenCardDetail`. 채팅 과거 사진 첫 표시 개선은 별도 작업이다. 아래 phase별 미착수/진행 문구는 당시 이력이다.

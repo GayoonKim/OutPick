@@ -1,5 +1,29 @@
 # Profile Entrypoints
 
+- 2026-09-21 아바타 Phase5 완료: AvatarRouteContractTests(정책전달·원본only상세/확대), AvatarNestedViewportTests(실제중첩50명요청계측), AvatarImageServiceTests(연속뷰memory승격/disk재사용)를iPhone14에서16개통과. 테스트전용캐시0·일반DEV홈복구, VoiceOver제외. 실제앱전체route자동화·실서버성능계측과구분한 [최종근거](../tasks/avatar-image-loading/progress/phase-5.md).
+
+- 2026-09-21 아바타 재시도·계정 전환 QA 완료: 경로 한정 오류 주입으로 스크롤/새 메시지 재시도 및 실제 이미지 복구 확인, 다른 계정 로그인·원래 계정 복귀 사용자 확인. AvatarImageService/SceneDelegate의 임시 진단 코드는 제거했고 기기 제어파일과 QA 캐시도 정리했다. 상세 증거와 검증 한계는 [Phase5](../tasks/avatar-image-loading/progress/phase-5.md) 참조.
+
+- `AvatarImageService.loadRemoteAvatar`는 원격 `.original` 요청에 30초 대기 한도를 적용한다. 주입 가능한 `originalTimeoutWait`와 pipeline 소비자 요청을 경합시키고 먼저 끝난 결과를 전달, 나머지는 취소한다. 시간 초과는 `URLError.timedOut`으로 재시도 가능하며 unavailable 경로로 기록하지 않는다. viewer 기존 실패 표시가 썸네일/재시도 버튼을 유지한다. 로컬 파일과 썸네일, Firebase 전역 timeout은 바꾸지 않는다. 마지막 소비자 취소 시 SDK 취소가 전달되고 실제 SDK 완료까지 기존 전송 permit을 유지한다.
+
+- `AvatarImageSessionController`의 `AvatarImmediateReadGate`는 사진을 보관하지 않고 세션 허용 여부·퇴역/불가 경로·진행 중 무효화 횟수만 잠금으로 보호한다. 서비스의 즉시 NSCache 조회에 적용하고, 세션 전환 시작/완료·프로필 경로 제거·실패 해제·직접 캐시 제거와 동기화한다. 디스크 읽기·promotion·원본은 기존 async 경로 유지.
+
+- 아바타 Phase4 실패 계약: AvatarImageSessionController의 unavailablePaths는 객체 없음/권한 거부의 반복 서버 요청을 막고, `AvatarImageManaging.resetAvatarFailures(paths:)`가 명시 갱신을 허용한다. transient 오류는 시간 cooldown 없이 새 표시 계기로 재시도한다. 프로필 확대의 사용자 원본 재시도는 해당 경로 실패 해제 후 실행한다. [Phase4](../tasks/avatar-image-loading/progress/phase-4.md).
+
+- Phase3: MyPageViewController/ProfileEditViewController/UserProfileDetailViewController는 `AvatarImageView`로 동일 이미지 유지·선택/제거 reset·화면 이탈 취소를 적용한다. ViewModel userID는 읽기 전용. SimpleImageViewerVC `transientImages`는 프로필에서만 켜며 종료 시 원본 참조 해제·주입 provider 강제 경유; 기본 다른 미디어 경로 유지. [검증](../tasks/avatar-image-loading/progress/phase-3.md).
+
+- 아바타 Phase2 서비스/DI 구현: `AvatarImageService`의 명시 request/원본 transient·로컬 decode/I/O, `AvatarImageSessionController`의 세션/경로 무효화, `AvatarObservingPublicProfileRepository`의 기존 조회 관찰, `UpdatePublicProfileUseCase`의 성공 후 무효화가 진입점이다. `AvatarImageSource.merged`는 authoritative nil을 사진 제거로 적용한다. 상세 화면은 일반 원본 업그레이드를 제거하고 viewer 원본 API를 연결했다. JPEG0.8 비교 근거·검증·남은 범위는 [Phase2](../tasks/avatar-image-loading/progress/phase-2.md).
+
+- 아바타 공용 기반 Phase1 구현: 신규 `Infra/Cache/ImageCache/ImageCachePromotionEncoding.swift`, `ImageCachePipeline`의 transient/encoder 주입과 `ImageLoadCoordinator`의 승격 단일화·세대 보호. [범위·검증](../tasks/avatar-image-loading/progress/phase-1.md). AvatarImageService/화면/DI에는 아직 연결하지 않았으며 저장 형식은 미확정이다.
+
+## 아바타 로딩 후속 설계 — 구현 전
+
+- [설계](../tasks/avatar-image-loading/design.md), [Phase0~5 계획](../tasks/avatar-image-loading/plan.md), [진행](../tasks/avatar-image-loading/progress.md), [검증](../tasks/avatar-image-loading/qa-checklist.md).
+- 현재 구현 확인: `Features/Chat/Services/ImageLoading/AvatarImage{Managing,Service}.swift` → `Infra/Cache/ImageCache/{ImageCachePipeline,ImageLoadCoordinator,ImagePipelineProcessor}.swift`.
+- 프로필 데이터·표시: `Features/Profile/Domain/AvatarImageSource.swift`, `Repository/ProfileAvatarUploader.swift`, `Views/UserProfileDetailViewController.swift`, `Features/MyPage/Controller/MyPageViewController.swift`, `Views/ProfileEditViewController.swift`.
+- DI/최신화/정리: `App/AppCompositionRoot.swift`·`AppCoordinator.swift`, Profile/Chat/MyPage/Lookbook의 Container/Coordinator, `Features/Chat/Managers/Implementations/ChatProfileSyncManager.swift`, `Features/Lookbook/Domains/Stores/CommentAuthorProfileStore.swift`, `Features/MyPage/AccountDeletionLocalDataScrubber.swift`.
+- 합의 정책: 일반 썸네일·확대 원본 화면 소유만, 댓글/미참여 memory-only·참여/내 프로필 disk100/75MiB, viewport1.5/0.5·고유24·300ms, 새 표시 계기 재시도·로그아웃 정리. 아래 기존 상세 설명은 현재 코드이며 새 정책 적용 완료를 뜻하지 않는다.
+
 - 프로필 이미지 확대: `UserProfileDetailViewController` → 공용 `SimpleImageViewerVC`/`ImageViewerChromeView`. local-only initialImage도 정상 완료로 처리하며 단일 이미지 번호 숨김. 기존 호출/주입 계약 유지. `tasks/shared-image-viewer-editorial/implementation-plan.md` 참조.
 
 ## 목적

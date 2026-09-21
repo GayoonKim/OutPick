@@ -1,5 +1,7 @@
 # App Entrypoints
 
+- 아바타 세션: `AppCompositionRoot.swift`는 단일 AvatarImageService·사용처별 scoped manager·AvatarObservingPublicProfileRepository·JPEG0.8 승격 encoder를 조립한다. `AppCoordinator.swift`의 인증 후 route/login/deletion reset이 아바타 세션을 전환하고 이전 reset 완료 후 새 계정을 연다. AccountDeletionLocalDataScrubber도 같은 서비스 종료를 호출한다.
+
 ## Development/Production 빌드 환경
 
 - 공유 scheme: `OutPick.xcodeproj/xcshareddata/xcschemes/OutPick-{Development,Production}.xcscheme`.

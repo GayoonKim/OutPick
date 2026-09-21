@@ -1,5 +1,27 @@
 # Test Entrypoints
 
+- 잔여QA 최종 iPhone14 실행: AvatarRouteContractTests3개·AvatarNestedViewportTests1개(XCTest4)와 AvatarImageServiceTests12개(SwiftTesting) 통과. 실제컴포넌트/가짜transport·독립cache로 정책/원본only/중첩요청/연속캐시를 검증하고 전용폴더잔여0 확인. 기기로그 `/private/tmp/outpick-avatar-remaining-device-tests.log`. 기존112개회귀와중복되므로합산금지, [검증방법·한계](../tasks/avatar-image-loading/progress/phase-5.md).
+
+- `AvatarNestedViewportTests.swift`는 실제 ParticipantsSectionParticipantCell 50명과 AvatarCollectionViewport를 UIKit에 올려 최초 요청0, 상단/하단/중간의 화면·선로딩 범위/고유24 제한을 spy로 계측한다. `AvatarImageServiceTests.continuousAvatarViewsPromoteMemoryThenReuseDiskWithoutAnotherFetch`는 실제 AvatarImageView 두 정책과 공용 pipeline을 사용해 메모리→디스크 승격, 같은 프로세스의 메모리 제거 후 디스크→댓글 재사용을 검증한다. test 전용 디스크/가짜 전송으로 실제 서버·계정과 분리한다.
+
+- `AvatarRouteContractTests.swift`: 실제 상세 화면 factory·UIKit 아바타 표시와 spy를 통해 memoryOnly/memoryAndDisk 전달을 검증한다. 참여 상태를 false→true→false로 바꿀 때 같은 scope의 read/load/prefetch 정책과 원본 위임도 확인한다. 상위 탭/화면 이동 전체를 자동 실행한 테스트는 아니며 DI 코드 대조와 함께 사용한다.
+
+- 2026-09-21 정상 소스 최종 회귀: 아바타 서비스/세션/표시/viewport/관찰, 공용 store/revision/coordinator/resource, 룩북 HTTP/viewport, 프로필 mutation, viewer page/state의 Swift Testing102개/13suite+XCTest10개 통과. `/private/tmp/outpick-avatar-final-regression-{build,tests}.log`, [Phase5](../tasks/avatar-image-loading/progress/phase-5.md). 전체 route spy·원본only 자동계약과 실기기 세부 미검증은 [체크리스트](../tasks/avatar-image-loading/qa-checklist.md)에서 구분한다.
+
+- 프로필 원본 제한: `AvatarImageServiceTests.originalTimeoutAllowsImmediateRetryAndRejectsLateTransport`, `closingOriginalBeforeDeadlineRemainsCancellation`, `thumbnailDoesNotStartOriginalDeadline`. 제어 가능한 타이머/전송 gate로 시간 초과·즉시 재시도·화면 취소·썸네일 범위 제외 확인. 기존 `ImageViewerStateTests`의 preview 유지·retry 교체·늦은 결과 차단을 함께 실행한다.
+
+- 즉시 아바타 메모리 조회: `AvatarImageSessionTests.immediateReadIsBlockedThroughoutSessionClear`/`immediateReadCannotRestoreRetiredPhotoDuringInvalidation`, `AvatarImageServiceTests.immediateReadSharesCacheWithoutStoringAndHonorsRemoval`, `AvatarImagePresentationStateTests.memoryImageIsAvailableBeforeAsyncLoaderAndCannotSurviveIdentityChange`. 가짜 비동기 gate로 정리 중 반환 차단을 검증하고, 공용 캐시 동일 이미지·disk 승격·identity 변경 후 늦은 결과 차단을 확인한다.
+
+- 아바타 Phase5: `AvatarViewportPrefetchTests`의 실패 선행 조건은 `AvatarImagePrefetchController.loadingPaths`로 확인한다. 고정 yield 횟수는 작업 완료를 보장하지 않으므로 실패 이후 이벤트 테스트의 완료 대기로 사용하지 않는다. [통합 회귀·실기기 QA](../tasks/avatar-image-loading/progress/phase-5.md).
+
+- 아바타 Phase4: `AvatarViewportPrefetchTests.swift`는 방향·고유24·중복 경로 정책·제어 clock299/300ms·빠른 복귀·새 visible 이벤트·저장 정책 승격·종료 경합을 검증한다. AvatarImagePresentationStateTests에 메시지 token/명시 refresh, AvatarImageServiceTests에 unavailable 서버 요청 억제/해제를 추가했다. [실행 증거](../tasks/avatar-image-loading/progress/phase-4.md).
+
+- 아바타 Phase3: `AvatarImagePresentationStateTests.swift`의 동일 identity·늦은 성공/실패·reset/재등장 경합, `ImageViewerStateTests.swift`의 transient 종료/로컬 provider 우회 차단/취소된 disappearance, `AvatarImageServiceTests.swift`의 오류 분류. [실행 결과·시각 QA 잔여](../tasks/avatar-image-loading/progress/phase-3.md).
+
+- 아바타 Phase2 회귀: `AvatarImageServiceTests.swift`, `AvatarImageSessionTests.swift`, `AvatarObservingPublicProfileRepositoryTests.swift`, `UpdatePublicProfileUseCaseTests.swift`. 사용처 승격·원본 비저장·세션 전환·늦은 성공/실패·authoritative nil·서버 변경 실패 보존·추가 조회 없는 관찰을 확인한다. [검증 증거와 실제 사진 비교](../tasks/avatar-image-loading/progress/phase-2.md).
+
+- 아바타 공용 저장 정책: `OutPickTests/ImageCacheStorePolicyTests.swift` — memory-only→disk 승격, 기존 disk 읽기, transient 캐시 우회·합류·영속 요청 분리·취소 회수, 지연 인코딩 단일화·무효화·재시도·출력 한도. [실행 명령과 결과](../tasks/avatar-image-loading/progress/phase-1.md). JPEG/PNG 제품 형식 비교나 실제 화면 QA를 대신하지 않는다.
+
 - PR 리뷰 보완: `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`은 용량 예약 전 디스크 본문 보유를 방지한다. 예약 대기 중 파일 제거를 제어하며 기존 코드 실패를 확인했다. [공개 QA 요약](../qa-image-loading-concurrency-2026-09-16.md).
 
 - 이미지 Phase5 최종 완료(2026-09-16): 기존 자동90개/UI1개 통과 근거와 iPhone14 Phase0/최신 통합 스크롤 CPU·메모리·OutPick hitch 비교를 [최종 검증 기록](../tasks/image-loading-stage-concurrency/phase-5-validation.md)에 모았다. 사용자가 측정 한계를 수용하고 현 설정을 채택했다. 이번 마무리는 코드 변경 없이 계측/문서 갱신으로 진행해 자동 테스트를 중복 실행하지 않았다.

@@ -1,5 +1,23 @@
 # Active Task Index
 
+> **2026-09-21 아바타 Phase0~5 최종완료:** 잔여4개QA 포함 확인, VoiceOver명시제외. 기존112개회귀와별도iPhone14 16개통과(중복포함), QA자료·진단코드·테스트전용캐시정리, 일반DEV메인탭복구완료. [검증방법·한계](avatar-image-loading/progress/phase-5.md). 다음채팅방대표이미지설계미착수, 커밋/배포없음. 아래아바타미완료상태는과거기록.
+
+> **2026-09-21 아바타 Phase5 후속 QA·정리:** 위임후보/미참여방·스크롤/새메시지재시도·타계정왕복 확인, 정상소스102+10 자동회귀통과. 서버183문서20이미지·기기174행3이미지·임시코드/파일정리 및 정상DEV홈복구완료. 전체Phase5완료아님: route spy·원본only자동계약, 중첩viewport요청계측, 캐시재사용/승격연속기기증거 항목이 남음. VoiceOver는 사용자 요청으로 이번 QA에서 제외. [최신 체크리스트](avatar-image-loading/qa-checklist.md), [검증기록](avatar-image-loading/progress/phase-5.md).
+
+> **2026-09-18 아바타 Phase4 완료:** UIKit/SwiftUI 화면 주변 선로딩·300ms 해제·새 표시/참여 계기 재시도·수동 실패 해제 연결. 통합69개 통과 후 마지막 정책 집중8개 통과(중복 실행 포함). [실제 범위와 검증](avatar-image-loading/progress/phase-4.md). 다음은 Phase5 실기기 스크롤/중첩 참여자/줌/메모리 QA. 기기 설치·서버·커밋 변경 없음. 아래 Phase4 미착수는 과거 기록이다.
+
+> **2026-09-18 아바타 Phase3:** 표시 상태·전체 아바타 화면 수명·확대 종료 구현, 빌드와 Swift Testing54개＋viewer XCTest10개 회귀 통과. [실제 범위](avatar-image-loading/progress/phase-3.md). 다음 Phase4 viewport/추가 표시 계기, Phase5 실기기QA. 기기/서버/커밋 변경 없음.
+
+> **2026-09-18 아바타 Phase2 완료:** 단일 서비스·사용처별 정책/DI·사진/세션 무효화·썸네일3MiB·원본 transient 연결. 실제 DEV 본인 사진 비교 후 JPEG0.8 승격 encoder 적용. 최종48개/10suite 통과, 앱/전체 테스트 target 컴파일·diff check 통과. [구현/표본/검증](avatar-image-loading/progress/phase-2.md). 다음 Phase3 화면 수명, Phase4 viewport/retry, Phase5 기기QA는 미완료. 기기 사진 read-only 외 설치/서버/커밋 변경 없음. 아래 Phase2 미착수/형식 대기보다 우선한다.
+
+> **2026-09-18 아바타 Phase1 공용 구현·회귀 완료:** transient 비저장 원본·옵트인 메모리→디스크 비동기 재인코딩·단일화·무효화 세대 구현, Development Simulator50개/6suite 통과. [실제 범위](avatar-image-loading/progress/phase-1.md). 서비스/화면/세션 연결·실기기 QA는 미착수, PNG/JPEG 실제 비교와3MiB 호출 적용은 다음 단계다. 아래 코드 미착수 상태보다 이 기록을 우선한다.
+
+> **2026-09-18 아바타 착수:** 사용자 구현 승인 후 Phase0 조사 진행. [호출 지도·기술 결정 대기](avatar-image-loading/progress/phase-0.md). 공용 코드 변경 전 디스크 승격 방식·한도 정합성·원본-only 표시 선택을 논의한다. 코드·테스트·기기 변경 없음. 아래 구현 승인 전 기록보다 우선한다.
+
+> **현재 작업 — 아바타 이미지 로딩 설계·계획 작성 완료:** 사용자와 프로필·마이페이지·채팅·룩북 댓글/답글 전체 범위를 합의하고 [설계](avatar-image-loading/design.md)·[세부 계획](avatar-image-loading/plan.md)·[결정](avatar-image-loading/decisions.md)·[QA](avatar-image-loading/qa-checklist.md)를 작성했다. 구현 Phase0~5는 전부 미착수. 일반 썸네일/확대 원본 무캐시, 사용처별 memory-only·disk100/75MiB, viewport1.5/0.5·고유24·300ms, 새 표시 계기 retry(5초 억제 없음), 사진·세션 무효화를 확정했다. 다음은 구현 착수 요청 후 Phase0 기술 계약 확인이다. [현재 상태](avatar-image-loading/progress.md). 아래 이미지 작업 진행/관리자 웹 다음 순서 기록보다 이 현재 상태를 우선한다.
+
+> **작업 순서 갱신:** 완료한 룩북 공용 기반 다음은 아바타 → 방 대표 이미지 → 채팅 사진/공유 카드/영상 썸네일 → GIF → 관리자 preview → 남은 외부 URL → 로컬 미디어 → 확대·저장 잔여 경로 순서로 설계·계획·구현한다. 관리자 웹 전환·iOS 관리자 제거와 Production 미디어 배포는 별도 대기다. 채팅 과거 미디어 첫 표시 task는 첨부 이미지 단계에서 연결한다. 룩북 기반은 PR #31/main `3c162f30` 머지 완료로 남은 구현에서 제외한다.
+
 > **2026-09-16 완료:** `image-loading-stage-concurrency` Phase0~5 구현·자동90개/UI1개·실기기 기능QA·성능 비교 완료. 사용자가 실측 한계를 수용하고 현재 제한값 채택/Phase5 완료를 승인했다. 최적값 탐색 완료 주장은 하지 않는다. 최신 DEV 일반 실행으로 복원했다. [최종 결과](image-loading-stage-concurrency/phase-5-validation.md). 채팅 첫 과거 사진 지연은 [별도 작업](chat-media-first-view-loading/README.md), 커밋/PR/배포는 미수행. 아래 진행/보류 문구는 과거 이력이다.
 
 > 2026-09-16 Phase 5 반복 cold 후속: 두 번째 현재 DEV 아모멘토 로그에서 목록 공개 약 28/92/43ms(홈/브랜드/시즌), 브랜드·시즌 이미지 본문 42건·1,152,606B, 단계 최대 network6/decode2/diskIO2. Activity Monitor는 스크롤 전에 종료됐고 대응 Phase0 앱 콘솔 실행은 CoreDeviceService 오류로 실패해 유효 반복 비교가 아니다. 최신 DEV 재설치 후 사용자 룩북 홈 정상 진입 확인. D07 현재 제한값 유지, D08 반복 쌍·동조건 프레임 비교/허용 기준은 대기. [상세](image-loading-stage-concurrency/phase-5-validation.md).

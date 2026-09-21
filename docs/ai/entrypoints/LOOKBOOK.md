@@ -1,5 +1,18 @@
 # Lookbook Entrypoints
 
+- 댓글 빠른 스크롤 표시: `CommentSafetyAvatarView.displayedImage`는 현재 표시 이미지가 없을 때 보호된 기존 메모리 캐시를 첫 body에서 즉시 확인한다. `AvatarImagePresentationState.configure(initialImage:)`도 UIKit/SwiftUI에 즉시 이미지를 전달하되 기존 async loader는 유지해 disk promotion을 생략하지 않는다. 서비스/메모리 용량을 추가하지 않는다.
+
+- 답글 시트 높이: `PostCommentsSheetView.repliesSheet`는 iOS16+에서 62%와 large 두 detent를 제공해 상단 손잡이로 확장 가능하다. 사용자 실기기 QA의 작은 답글 영역 불편을 반영했으며 원댓글/입력창 구성은 유지한다.
+
+- 댓글 아바타 경로 갱신: `CommentSafetyAvatarView.onChange(of: identity)`는 콜백의 새 identity를 `configure(_:)`에 직접 전달한다. 이전 View의 빈 path 재적용으로 상단 초기 행이 스크롤 전까지 기본 사진에 머물던 실기기 QA 결함 수정이며, 재진입 검증 기록은 Phase5 문서를 참조한다.
+
+- 2026-09-20 재진입 상단 아바타 미표시 수정은 사용자 실기기 정상 및 상단4행 새 identity→start→loaded 로그로 확인했다. 조사용 `avatarSwiftUI.*`/`avatarPresentation.*` 임시 로그는 제거했다. 상세는 avatar-image-loading/progress/phase-5.md.
+
+
+- 아바타 Phase4: `Views/Shared/AvatarViewportObserver.swift`의 row preference·미배치 행 추정·viewport 수요 → PostCommentsSheetView/PostCommentRepliesSheetView/PostDetailView. 기존 PostComments/PostCommentReplies/PostDetailViewModel의 일괄 선로딩·영구 prefetchedAvatarPaths 제거; 앞의 두 VM 이미지 DI도 LookbookContainer에서 제거. 명시 refresh는 서비스 실패 경로를 한 번 해제한 뒤 환경 refreshID로 보이는 avatar와 선로딩을 재시도한다. [구현·제약](../tasks/avatar-image-loading/progress/phase-4.md).
+
+- 댓글·답글·안전 sheet 아바타는 `Views/PostDetail/CommentSafetyAvatarView.swift`로 통일했다. PostCommentCardView와 CommentBlock/Delete/ReportSheet가 사용자ID·경로를 전달하며, StateObject의 AvatarImagePresentationState가 완료/실패와 취소를 관리한다. 요청 전 loadedPath 마킹 없음. 출발 memoryOnly 정책은 Phase2 DI 유지. [Phase3](../tasks/avatar-image-loading/progress/phase-3.md).
+
 - 이미지 로딩 최종 구조·실기기 비교는 [공개 검증 요약](../qa-image-loading-concurrency-2026-09-16.md) 참조. HTTP 디스크 히트도 본문 읽기 전에 디코딩 바이트를 예약한다. 예약 대기 중 캐시 제거는 `LookbookHTTPImageCacheTests.diskBodyWaitsForDecodeBudgetBeforeReadingAndHandlesEviction`에서 검증한다.
 
 - Phase 5 재시도 QA: Debug `LookbookUITestFixtureRepositoryProvider.swift`의 `--uitest-lookbook-image-fail-once`가 브랜드/시즌/포스트 각 Storage 경로의 첫 로드만 실패시킨다. 해당 fixture의 prefetch는 no-op으로 유지해 표시 요청 실패가 확정적으로 보인다. `LookbookSmokeUITests.testImageRetryDoesNotOpenCardDetail`은 재시도가 카드 이동 없이 복구되는지 확인한다. 일반 서버·화면 로딩 정책은 변경하지 않았다. [실행 결과](../tasks/image-loading-stage-concurrency/phase-5-validation.md).
