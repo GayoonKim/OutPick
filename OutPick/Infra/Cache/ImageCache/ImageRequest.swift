@@ -8,11 +8,17 @@ struct ImageRequest: Hashable, Sendable {
         case cache
         // maxBytes는 다운로드 허용량이다. 기존 캐시 히트 계약에는 적용하지 않는다.
         case load(maxBytes: Int)
+        // 원본 비저장 요청은 같은 경로의 썸네일/캐시 요청과 합치지 않는다.
+        case transient(maxBytes: Int)
     }
 
     let path: String
     let work: Work
     var cacheKey: String { "imageCache|\(path)" }
+    var isTransient: Bool {
+        if case .transient = work { return true }
+        return false
+    }
 }
 
 enum ImageRequestPriority: Int, Sendable {

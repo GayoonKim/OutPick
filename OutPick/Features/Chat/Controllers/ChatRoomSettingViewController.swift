@@ -67,10 +67,20 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private let videoResolver: ChatVideoPlaybackResolving
     private let photoLibrarySaver: PhotoLibrarySaving
     private let roomImageManager: RoomImageManaging
+    private lazy var avatarViewport = AvatarCollectionViewport(manager: avatarImageManager)
     private let avatarImageManager: AvatarImageManaging
     private let currentUserProvider: any CurrentUserProviding
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
+    private var hasStartedScrolling = false
+    private lazy var roomActionsStack: UIStackView = {
+        let stack = UIStackView(arrangedSubviews: [floatingLeaveButton, floatingBanButton, floatingNoticeButton])
+        stack.axis = .horizontal
+        stack.distribution = .equalSpacing
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
     /// 끝 근처에서 선로딩을 트리거할 임계값(px)
     private let participantsBottomPrefetchThreshold: CGFloat = 600
     
@@ -86,12 +96,14 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         case roomInfoSection
         case mediaSection
         case participantsSection
+        case actionsSection
     }
     
     enum Item: Hashable {
         case roomInfoItem(ChatRoom)
         case mediaItem
         case participantsItem([ChatRoomParticipant])
+        case actionsItem
     }
     
     typealias DataSourceType = UICollectionViewDiffableDataSource<Section, Item>
@@ -139,6 +151,59 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         print("💧 ChatRoomSettingViewController deinit")
     }
     
+    override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? ParticipantsSectionParticipantCell)?.setAvatarVisible(false)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        avatarViewport.clear()
+        collectionView.visibleCells.compactMap { $0 as? ParticipantsSectionParticipantCell }.forEach { $0.setAvatarVisible(false) }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        avatarViewport.activate()
+        updateAvatarViewport()
+        collectionView.visibleCells.compactMap { $0 as? ParticipantsSectionParticipantCell }.forEach { $0.setAvatarVisible(true) }
+    }
+
+    private func updateAvatarViewport() {
+        avatarViewport.update(collectionView) { index, frame in
+            guard let item = self.dataSource?.itemIdentifier(for: index), case .participantsItem(let participants) = item else { return [] }
+            if let cell = self.collectionView.cellForItem(at: index) as? ParticipantsSectionParticipantCell {
+                return cell.avatarRows(in: self.collectionView)
+            }
+            let stride = max(1, (frame.height - 30) / CGFloat(max(1, participants.count)))
+            return participants.enumerated().compactMap { offset, participant in
+                guard let path = participant.user.profileImagePath else { return nil }
+                return AvatarViewportRow(id: participant.userID, path: path,
+                    frame: CGRect(x: frame.minX, y: frame.minY + 30 + CGFloat(offset) * stride, width: frame.width, height: stride),
+                    policy: self.avatarImageManager.avatarCachePolicy)
+            }
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // 초기 비동기 높이 계산 중에는 방 정보를 맨 위에 유지한다.
+        if !hasStartedScrolling, !collectionView.isTracking, !collectionView.isDecelerating {
+            let top = -collectionView.adjustedContentInset.top
+            if abs(collectionView.contentOffset.y - top) > 0.5 {
+                collectionView.setContentOffset(CGPoint(x: collectionView.contentOffset.x, y: top), animated: false)
+            }
+        }
+        updateAvatarViewport()
+    }
+
+    override func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        hasStartedScrolling = true
+    }
+
+    override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateAvatarViewport()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -147,7 +212,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         configureCollectionView()
         bindViewModel()
         applyInitialSnapshot()
-        configureBottomButtons()
+        floatingBanButton.isHidden = !viewModel.isRoleManagementEnabled
         updateRoomInfoSection()
 
         Task { @MainActor [weak self] in
@@ -157,34 +222,6 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             _ = await (mediaLoad, participantsLoad)
         }
     }
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        updateInsetsForBottomButtons()
-    }
-    private func configureBottomButtons() {
-        let guide = view.safeAreaLayoutGuide
-        view.addSubview(floatingLeaveButton)
-        view.addSubview(floatingNoticeButton)
-        view.addSubview(floatingBanButton)
-        floatingBanButton.isHidden = !viewModel.isRoleManagementEnabled
-
-        NSLayoutConstraint.activate([
-            floatingLeaveButton.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 16),
-            floatingLeaveButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
-            floatingLeaveButton.heightAnchor.constraint(equalToConstant: 44),
-
-            floatingNoticeButton.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
-            floatingNoticeButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
-            floatingNoticeButton.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        NSLayoutConstraint.activate([
-            floatingBanButton.leadingAnchor.constraint(equalTo: floatingLeaveButton.trailingAnchor, constant: 8),
-            floatingBanButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -12),
-            floatingBanButton.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        updateInsetsForBottomButtons()
-    }
-
     @objc private func didTapFloatingLeave() {
         leaveRoomTapped()
     }
@@ -197,15 +234,6 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         onEvent(.requestShowBannedUsers)
     }
 
-    private func updateInsetsForBottomButtons() {
-        let buttonHeight: CGFloat = 44
-        let verticalMargin: CGFloat = 12
-        let safeBottom = view.safeAreaInsets.bottom
-        let neededBottom = buttonHeight + verticalMargin * 2 + safeBottom
-        collectionView.contentInset.bottom = max(collectionView.contentInset.bottom, neededBottom)
-        collectionView.verticalScrollIndicatorInsets.bottom = max(collectionView.verticalScrollIndicatorInsets.bottom, neededBottom)
-    }
-    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
     }
@@ -218,6 +246,12 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private static func configureLayout(_ room: ChatRoom, participantCount: Int, mediaCount: Int) -> UICollectionViewCompositionalLayout {
         return UICollectionViewCompositionalLayout { (sectionIndex: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
             switch Section(rawValue: sectionIndex)! {
+            case .actionsSection:
+                let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(68))
+                let group = NSCollectionLayoutGroup.vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)])
+                let section = NSCollectionLayoutSection(group: group)
+                section.contentInsets = .init(top: 0, leading: 16, bottom: 16, trailing: 16)
+                return section
                 
             case .roomInfoSection:
                 
@@ -317,6 +351,19 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private func configureDataSource() -> DataSourceType {
         dataSource = DataSourceType(collectionView: collectionView) { (collectionView, indexPath, item) -> UICollectionViewCell? in
             switch item {
+            case .actionsItem:
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "RoomActionsCell", for: indexPath)
+                if self.roomActionsStack.superview !== cell.contentView {
+                    self.roomActionsStack.removeFromSuperview()
+                    cell.contentView.addSubview(self.roomActionsStack)
+                    NSLayoutConstraint.activate([
+                        self.roomActionsStack.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+                        self.roomActionsStack.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+                        self.roomActionsStack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 12),
+                        self.roomActionsStack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12)
+                    ])
+                }
+                return cell
             case .roomInfoItem(_):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ChatRoomInfoCell.reuseIdentifier, for: indexPath) as! ChatRoomInfoCell
                 cell.configureCell(
@@ -351,6 +398,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                     currentUserID: self.currentUserProvider.canonicalUserID,
                     avatarImageManager: self.avatarImageManager
                 )
+                cell.onAvatarLayoutChanged = { [weak self] in self?.updateAvatarViewport() }
                 cell.onSelectParticipant = { [weak self] participant in
                     self?.handleParticipantSelection(participant)
                 }
@@ -420,6 +468,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         snapshot.appendItems([.roomInfoItem(self.roomInfo)], toSection: .roomInfoSection)
         snapshot.appendItems([.mediaItem], toSection: .mediaSection)
         snapshot.appendItems([.participantsItem(self.participants)], toSection: .participantsSection)
+        snapshot.appendItems([.actionsItem], toSection: .actionsSection)
         
         dataSource.apply(snapshot, animatingDifferences: false)
     }
@@ -775,6 +824,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         collectionView.register(ChatRoomInfoCell.self, forCellWithReuseIdentifier: ChatRoomInfoCell.reuseIdentifier)
         collectionView.register(ChatRoomMediaCollectionViewCell.self, forCellWithReuseIdentifier: ChatRoomMediaCollectionViewCell.reuseIdentifier)
         collectionView.register(ParticipantsSectionParticipantCell.self, forCellWithReuseIdentifier: ParticipantsSectionParticipantCell.reuseIdentifier)
+        collectionView.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "RoomActionsCell")
         dataSource = configureDataSource()
         collectionView.dataSource = dataSource
     }
@@ -783,6 +833,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     override func collectionView(_ collectionView: UICollectionView,
                                  willDisplay cell: UICollectionViewCell,
                                  forItemAt indexPath: IndexPath) {
+        (cell as? ParticipantsSectionParticipantCell)?.setAvatarVisible(true)
         // 하단 근접 감지: 셀이 표시되기 직전에 한 번씩만 체크
         let distanceToBottom = collectionView.contentSize.height - collectionView.contentOffset.y - collectionView.bounds.height
         if viewModel.participantsHasMore && !viewModel.participantsIsLoading && distanceToBottom < participantsBottomPrefetchThreshold {
@@ -816,8 +867,12 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
 }
 
-private final class OwnershipTransferSelectionViewController: UIViewController {
+private final class OwnershipTransferSelectionViewController: UIViewController, UIScrollViewDelegate {
     private let candidates: [ChatRoomParticipant]
+    private lazy var avatarPrefetch = AvatarImagePrefetchController(manager: avatarImageManager)
+    private var avatarViewportActive = false
+    private var previousAvatarY: CGFloat = 0
+    private var avatarDirection = 1
     private let avatarImageManager: AvatarImageManaging
     private var selectedParticipant: ChatRoomParticipant?
     private var candidateRows: [OwnershipSuccessorRow] = []
@@ -946,6 +1001,7 @@ private final class OwnershipTransferSelectionViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        scrollView.delegate = self
         view.backgroundColor = OutPickTheme.ColorToken.backgroundBase
         configureLayout()
         configureCandidates()
@@ -1008,6 +1064,40 @@ private final class OwnershipTransferSelectionViewController: UIViewController {
         ])
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        avatarViewportActive = true
+        updateAvatarViewport()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        avatarViewportActive = false
+        avatarPrefetch.clear()
+        candidateRows.forEach { $0.setAvatarVisible(false) }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateAvatarViewport()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { updateAvatarViewport() }
+
+    private func updateAvatarViewport() {
+        guard avatarViewportActive else { return }
+        let viewport = scrollView.bounds
+        if abs(viewport.minY - previousAvatarY) > 1 { avatarDirection = viewport.minY > previousAvatarY ? 1 : -1 }
+        previousAvatarY = viewport.minY
+        let rows = candidateRows.compactMap { row -> AvatarViewportRow? in
+            let frame = row.convert(row.bounds, to: scrollView)
+            row.setAvatarVisible(frame.intersects(viewport))
+            guard let path = row.participant.user.profileImagePath else { return nil }
+            return AvatarViewportRow(id: row.participant.userID, path: path, frame: frame, policy: avatarImageManager.avatarCachePolicy)
+        }
+        avatarPrefetch.update(AvatarViewportPrefetchPolicy.select(rows: rows, viewport: viewport, direction: avatarDirection))
+    }
+
     private func configureCandidates() {
         candidateRows = candidates.enumerated().map { index, participant in
             let row = OwnershipSuccessorRow(
@@ -1067,7 +1157,7 @@ private final class OwnershipSuccessorRow: UIControl {
     let participant: ChatRoomParticipant
     private let ordinal: Int
     private let avatarImageManager: AvatarImageManaging
-    private var avatarLoadTask: Task<Void, Never>?
+    private var avatarIsVisible = false
 
     private lazy var ordinalLabel: UILabel = {
         let label = UILabel()
@@ -1089,8 +1179,9 @@ private final class OwnershipSuccessorRow: UIControl {
         return view
     }()
 
-    private lazy var avatarImageView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(named: "Default_Profile"))
+    private lazy var avatarImageView: AvatarImageView = {
+        let imageView = AvatarImageView(image: UIImage(named: "Default_Profile"))
+        imageView.automaticallyLoads = false
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.layer.cornerRadius = 10
@@ -1165,9 +1256,6 @@ private final class OwnershipSuccessorRow: UIControl {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        avatarLoadTask?.cancel()
-    }
 
     private func configureLayout() {
         layer.cornerRadius = 16
@@ -1227,18 +1315,13 @@ private final class OwnershipSuccessorRow: UIControl {
     }
 
     private func loadAvatarIfNeeded() {
-        guard let path = participant.user.profileImagePath, !path.isEmpty else { return }
-        avatarLoadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            if let cached = await avatarImageManager.cachedAvatar(for: path) {
-                guard !Task.isCancelled else { return }
-                avatarImageView.image = cached
-                return
-            }
-            if let image = try? await avatarImageManager.loadAvatar(for: path, maxBytes: 3 * 1024 * 1024),
-               !Task.isCancelled {
-                avatarImageView.image = image
-            }
-        }
+        avatarImageView.configure(userID: participant.userID, path: participant.user.profileImagePath, manager: avatarImageManager)
+    }
+
+    func setAvatarVisible(_ visible: Bool) {
+        if visible {
+            if !avatarIsVisible || avatarImageView.presentation.status == .idle { avatarImageView.presentation.resume() }
+        } else { avatarImageView.presentation.suspend() }
+        avatarIsVisible = visible
     }
 }

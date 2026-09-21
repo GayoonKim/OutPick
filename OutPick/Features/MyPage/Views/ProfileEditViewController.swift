@@ -9,7 +9,7 @@ final class ProfileEditViewController: UIViewController {
     private let contentStack = UIStackView()
     private let headerView = MyPageEditorialHeaderView()
     private let avatarContainer = UIView()
-    private let imageView = UIImageView()
+    private let imageView = AvatarImageView()
     private let nicknameField = UITextField()
     private let nicknameLabel = UILabel()
     private let nicknameRuleLabel = UILabel()
@@ -18,7 +18,6 @@ final class ProfileEditViewController: UIViewController {
     private let saveButton = UIButton(type: .system)
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let errorLabel = UILabel()
-    private var remoteLoadTask: Task<Void, Never>?
 
     init(
         viewModel: ProfileEditViewModel,
@@ -40,7 +39,6 @@ final class ProfileEditViewController: UIViewController {
         super.viewDidLoad()
         configureUI()
         bind()
-        loadRemoteAvatar(path: viewModel.state.remoteAvatarPath)
     }
 
     private func configureUI() {
@@ -165,9 +163,12 @@ final class ProfileEditViewController: UIViewController {
 
     private func apply(_ state: ProfileEditViewModel.State) {
         if let selected = state.selectedThumbnail {
+            imageView.resetAvatar()
             imageView.image = selected
         } else if state.isAvatarRemoved {
-            imageView.image = UIImage(named: "Default_Profile")
+            imageView.resetAvatar()
+        } else {
+            imageView.configure(userID: viewModel.userID, path: state.remoteAvatarPath, manager: avatarImageManager)
         }
         MyPageEditorialStyle.applyPrimaryButtonState(saveButton, isEnabled: state.isSaveEnabled)
         errorLabel.text = state.errorMessage
@@ -179,22 +180,14 @@ final class ProfileEditViewController: UIViewController {
             state.isAvatarRemoved == false
     }
 
-    private func loadRemoteAvatar(path: String?) {
-        guard let path else { return }
-        remoteLoadTask = Task { [weak self] in
-            guard let self else { return }
-            let image = try? await avatarImageManager.loadAvatar(
-                for: path,
-                maxBytes: 5 * 1024 * 1024
-            )
-            guard Task.isCancelled == false else { return }
-            await MainActor.run {
-                if self.viewModel.state.selectedThumbnail == nil &&
-                    self.viewModel.state.isAvatarRemoved == false {
-                    self.imageView.image = image ?? UIImage(named: "Default_Profile")
-                }
-            }
-        }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        imageView.presentation.suspend()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        imageView.presentation.resume()
     }
 
     @objc private func nicknameChanged() {

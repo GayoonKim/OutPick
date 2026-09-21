@@ -83,6 +83,7 @@ struct PostDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)
                 }
+                .avatarViewport(items: viewModel.comments.map { AvatarViewportItem(id: $0.id.value, path: viewModel.displayItem(for: $0).author.avatarPath) }, space: "detailAvatars", manager: avatarImageManager)
                 .opacity(shouldBlockContentWithLoading ? 0 : 1)
 
                 if shouldBlockContentWithLoading {
@@ -283,12 +284,7 @@ struct PostDetailView: View {
                                 }
                             )
                         )
-                        .onAppear {
-                            viewModel.prefetchAuthorAvatars(
-                                for: viewModel.comments,
-                                avatarImageManager: avatarImageManager
-                            )
-                        }
+                        .avatarViewportRow(item.comment.id.value, space: "detailAvatars")
                     }
                 }
             }

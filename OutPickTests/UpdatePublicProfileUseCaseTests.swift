@@ -9,10 +9,12 @@ struct UpdatePublicProfileUseCaseTests {
         let mutation = ProfileEditMutationFake()
         let avatar = ProfileEditAvatarFake()
         let cleanup = ProfileAvatarCleanupStoreFake()
+        let images = ProfileAvatarObservationSpy()
         let useCase = UpdatePublicProfileUseCase(
             mutationRepository: mutation,
             avatarUploader: avatar,
-            cleanupStore: cleanup
+            cleanupStore: cleanup,
+            avatarImages: images
         )
 
         let outcome = try await useCase.execute(
@@ -25,6 +27,8 @@ struct UpdatePublicProfileUseCaseTests {
         #expect(Set(avatar.deletedPaths) == Set(["old-thumb", "old-original"]))
         #expect(outcome.profile.avatarThumbPath == nil)
         #expect(outcome.oldAvatarCleanupFailed == false)
+        #expect(images.observed == [outcome.profile])
+        #expect(images.previous?.avatarThumbPath == "old-thumb")
     }
 
     @Test
@@ -118,10 +122,12 @@ struct UpdatePublicProfileUseCaseTests {
         let mutation = ProfileEditMutationFake(updateError: TestError.failed)
         let avatar = ProfileEditAvatarFake()
         let cleanup = ProfileAvatarCleanupStoreFake()
+        let images = ProfileAvatarObservationSpy()
         let useCase = UpdatePublicProfileUseCase(
             mutationRepository: mutation,
             avatarUploader: avatar,
-            cleanupStore: cleanup
+            cleanupStore: cleanup,
+            avatarImages: images
         )
 
         await #expect(throws: TestError.failed) {
@@ -134,6 +140,7 @@ struct UpdatePublicProfileUseCaseTests {
 
         #expect(Set(avatar.deletedPaths) == Set(["new-thumb", "new-original"]))
         #expect(cleanup.pendingPaths.isEmpty)
+        #expect(images.observed.isEmpty)
     }
 
     @Test
@@ -192,6 +199,21 @@ struct UpdatePublicProfileUseCaseTests {
 
 private final class EventRecorder: @unchecked Sendable {
     var values: [String] = []
+}
+
+private final class ProfileAvatarObservationSpy: AvatarImageManaging {
+    var observed: [UserPublicProfile] = []
+    var previous: UserPublicProfile?
+    func observeAvatarProfile(_ profile: UserPublicProfile, previous: UserPublicProfile?, token: UInt64?) async -> UserPublicProfile? {
+        observed.append(profile)
+        self.previous = previous
+        return profile
+    }
+    func cachedAvatar(for path: String) async -> UIImage? { nil }
+    func loadAvatar(for path: String, maxBytes: Int) async throws -> UIImage { throw URLError(.unknown) }
+    func prefetchAvatars(paths: [String], maxBytes: Int, maxConcurrent: Int) async {}
+    func storeAvatarDataToCache(_ data: Data, for path: String) async throws {}
+    func removeCachedAvatar(for path: String) async {}
 }
 
 private final class ProfileEditMutationFake: ProfileMutationRepositoryProtocol {

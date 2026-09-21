@@ -54,7 +54,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatRoomViewModel.roomRoleSession
     }
     
-    private var avatarWarmupRoomID: String?
     
     enum Section: Hashable {
         case main
@@ -110,6 +109,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private let storageURLResolver: ChatStorageURLResolving
     private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
     let mediaProcessor: MediaProcessingServiceProtocol
+    private lazy var avatarViewport = AvatarCollectionViewport(manager: avatarImageManager)
+    private var visibleAvatarMessageIDs = Set<String>()
     private let avatarImageManager: AvatarImageManaging
     private let profileSyncManager: ChatProfileSyncManaging
     weak var router: ChatRoomRouting?
@@ -352,6 +353,35 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: - Profile sync
     
+    func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? ChatMessageCell)?.setAvatarVisible(false)
+    }
+
+    private func updateAvatarViewport() {
+        guard avatarViewport.isActive else { return }
+        let visibleMessages = chatMessageCollectionView.indexPathsForVisibleItems.compactMap { index -> ChatMessage? in
+            guard let item = dataSource?.itemIdentifier(for: index), case .message(let raw) = item,
+                  let frame = chatMessageCollectionView.layoutAttributesForItem(at: index)?.frame,
+                  frame.intersects(chatMessageCollectionView.bounds) else { return nil }
+            return messageWindowStore.message(for: raw.ID) ?? raw
+        }
+        let newMessages = visibleMessages.filter { !visibleAvatarMessageIDs.contains($0.ID) }
+        visibleAvatarMessageIDs = Set(visibleMessages.map(\.ID))
+        for message in newMessages where message.senderUID != LoginManager.shared.canonicalUserID && message.messageType != .roomRoleEvent {
+            guard let path = message.senderAvatarPath else { continue }
+            chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach {
+                $0.retryAvatar(path: path, eventID: message.ID)
+            }
+        }
+        avatarViewport.update(chatMessageCollectionView) { index, frame in
+            guard let item = self.dataSource?.itemIdentifier(for: index), case .message(let raw) = item else { return [] }
+            let message = self.messageWindowStore.message(for: raw.ID) ?? raw
+            guard message.senderUID != LoginManager.shared.canonicalUserID,
+                  message.messageType != .roomRoleEvent, let path = message.senderAvatarPath else { return [] }
+            return [AvatarViewportRow(id: message.ID, path: path, frame: frame, policy: self.avatarImageManager.avatarCachePolicy)]
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         self.definesPresentationContext = true
@@ -462,6 +492,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        avatarViewport.clear()
+        visibleAvatarMessageIDs.removeAll()
+        chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(false) }
         let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
 
         if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
@@ -473,6 +506,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updateAvatarViewport()
         self.notiView.layer.cornerRadius = 15
     }
     
@@ -532,6 +566,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
                 case .participantSessionReady(_, let bindRealtime):
                     self.isUserInCurrentRoom = true
+                    self.updateAvatarViewport()
                     self.renderLatestMessageJump()
                     if bindRealtime {
                         self.bindMessagePublishers()
@@ -1564,6 +1599,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatRoomViewModel.handleCurrentUserMembershipRemoved()
         chatRoomViewModel.handleRoomWillDisappear()
         isUserInCurrentRoom = false
+        avatarViewport.clear()
+        chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(false) }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
         pendingMediaUploadStore.cancelAndRemove(roomID: roomID)
@@ -1584,6 +1621,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatRoomViewModel.handleCurrentUserMembershipRemoved()
         chatRoomViewModel.handleRoomWillDisappear()
         isUserInCurrentRoom = false
+        avatarViewport.clear()
+        chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(false) }
         convertImagesTask?.cancel()
         convertVideosTask?.cancel()
         pendingMediaUploadStore.cancelAndRemove(roomID: event.roomID)
@@ -1606,6 +1645,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
 
         isUserInCurrentRoom = true
+        updateAvatarViewport()
         scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
         bindMessagePublishers()
         renderLatestMessageJump()
@@ -1881,6 +1921,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        avatarViewport.activate()
+        updateAvatarViewport()
+        chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(true) }
         routeLifecycleState.didAppear(
             isNavigationOwned: navigationController?
                 .viewControllers
@@ -3427,7 +3470,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         return await self.lookbookShareThumbnailImage(for: path)
                     }, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
-                        return await self.avatarImage(for: path)
+                        return try await self.avatarImage(for: path)
                     })
                 } else if latestMessage.hasDisplayableAttachments {
                     cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
@@ -3435,12 +3478,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         return await self.thumbnailImage(for: attachment)
                     }, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
-                        return await self.avatarImage(for: path)
+                        return try await self.avatarImage(for: path)
                     })
                 } else {
                     cell.configureWithMessage(with: latestMessage, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
-                        return await self.avatarImage(for: path)
+                        return try await self.avatarImage(for: path)
                     })
                 }
                 if let state = self.pendingRecoveryState(for: latestMessage.ID) {
@@ -3776,14 +3819,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         return try await storageURLResolver.url(for: path)
     }
 
-    private func avatarImage(for path: String) async -> UIImage? {
+    private func avatarImage(for path: String) async throws -> UIImage? {
         guard !path.isEmpty else { return nil }
 
         if let cached = await avatarImageManager.cachedAvatar(for: path) {
             return cached
         }
 
-        return try? await avatarImageManager.loadAvatar(
+        return try await avatarImageManager.loadAvatar(
             for: path,
             maxBytes: 3 * 1024 * 1024
         )
@@ -4178,6 +4221,7 @@ private extension ChatViewController {
 
 extension ChatViewController: UIScrollViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateAvatarViewport()
         guard scrollView === chatMessageCollectionView else { return }
         Task { @MainActor in
             self.scheduleMediaPrefetchCleanup(
@@ -4285,6 +4329,7 @@ extension ChatViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView,
                         willDisplay cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {
+        (cell as? ChatMessageCell)?.setAvatarVisible(true)
         let itemCount = collectionView.numberOfItems(inSection: 0)
         
         // ✅ Older 메시지 로드

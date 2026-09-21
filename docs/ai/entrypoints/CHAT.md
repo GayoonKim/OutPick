@@ -1,5 +1,17 @@
 # Chat Entrypoints
 
+- PR 리뷰 정리: `ChatMessageCell.failedIconImageView`는 기존 `UIImageView`를 유지한다. 아바타 표시 수명은 프로필 이미지에만 적용한다.
+
+- 2026-09-21 새 메시지 아바타 재시도는 DEV QA 한정 기존 수신 큐 주입→실제 이미지 다운로드→사용자 표시 확인으로 검증했다. 실제 Socket 전송과 구분한다. `RealtimeSocketService`의 임시 주입 코드는 제거되어 이 작업의 diff0이며, [Phase5](../tasks/avatar-image-loading/progress/phase-5.md)에 검증·정리 근거를 남겼다.
+
+- 방 설정 버튼/초기 위치: `ChatRoomSettingViewController`는 사용자가 첫 드래그하기 전 초기 높이 계산 시 adjustedContentInset 기준 상단을 유지한다. 하단 고정 버튼과 추가 inset을 제거하고 마지막 actionsSection 셀 안에 기존 세 버튼을 배치한다. 역할 변경 시 차단 사용자 버튼 표시 조건과 기존 onEvent/퇴장 흐름은 유지한다. 많은 참여자 비동기 로드 후 상단 시작·스크롤 끝 버튼·재진입은 실기기 QA 대상이다.
+
+- 아바타 Phase4: `Services/ImageLoading/AvatarViewportPrefetchPolicy.swift`의 공용 selector/AvatarCollectionViewport → 세 collection controller의 updateAvatarViewport; `AvatarImagePrefetchController.swift`는300ms 해제와 표시 이벤트별 재시도. 중첩 `ParticipantsSectionParticipantCell.avatarRows(in:)`는 바깥 collection 좌표를 사용하며 내부 화면 밖 셀은 자동 로드를 끈다. OwnershipTransferSelectionViewController도 개별 후보 좌표를 쓴다. ChatRoomSettingViewModel의 일괄 선로딩/이미지 DI는 제거(조립: ChatCompositionRoot). 방 커버·첨부 선로딩 보존. [Phase4](../tasks/avatar-image-loading/progress/phase-4.md).
+
+- 아바타 표시 수명: `Services/ImageLoading/AvatarImagePresentationState.swift`가 사용자/경로·요청 revision·실패 상태를, `AvatarImageView.swift`가 UIKit window 수명을 소유한다. ChatMessageCell(+LookbookShare), ParticipantListCell, MessagePreviewView와 controller의 willDisplay/didEndDisplaying·viewDidAppear/Disappear에 연결. 방 목록은 messageID별 preview 뷰 재사용. [Phase3](../tasks/avatar-image-loading/progress/phase-3.md).
+
+- 아바타 정책: `Services/ImageLoading/AvatarImageRequest.swift`, `AvatarImageSessionController.swift`, `ScopedAvatarImageManager.swift` → `ChatContainer.makeAvatarImageManager(roomID:)`. JoinedRoomsSessionStore 참여 상태로 요청 시 저장 정책을 선택하며 ChatCoordinator가 메시지·참여자·프로필 상세에 전달한다. RoomListsCollectionViewController의 행별 factory는 미참여 방과 참여 방의 마지막 발신자를 구분한다. viewport/셀 수명 변경은 Phase3/4 잔여.
+
 - 2026-09-16 범위 분리: 미디어 QA방 과거 사진 첫 표시 지연과 화면 근처 썸네일 선로딩·방문 원본/영상 제한 캐시 방향은 [후속 작업](../tasks/chat-media-first-view-loading/README.md)으로 기록했다. 이미지 로딩 Phase 5에서는 채팅 동작을 더 변경하지 않는다.
 
 - 이미지 Phase 5 미디어 QA방 발견: `ChatViewController.chatThumbnailMaxBytes`는 `ChatPhotoSizePolicy.maximumFileBytes`(300MB)라 `ChatAttachmentImageService`의 썸네일도 `ImagePipelineProcessor.downloadFile`로 진입한다. 이 경로는 전송 중 공용 I/O 쓰기1 슬롯을 점유해 cold 사진 전송이 직렬화된다. `ChatImageTransportSourceNormalizer.makeThumbnailFile`은 원본 해상도·최대300MB를 허용한다. 같은 사진 재진입은 즉시 표시되어 저장 캐시 재사용은 작동. 사용자 선택은 화면 근처 썸네일 우선·방문 원본/영상의 제한 캐시이며 별도 상세 설계·수치 검증 전 임의로 maxBytes를 낮추지 않는다. [근거·QA](../tasks/image-loading-stage-concurrency/phase-5-validation.md).

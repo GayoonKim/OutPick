@@ -19,15 +19,18 @@ struct UpdatePublicProfileUseCase {
     private let mutationRepository: ProfileMutationRepositoryProtocol
     private let avatarUploader: ProfileAvatarUploading
     private let cleanupStore: ProfileAvatarCleanupStoring
+    private let avatarImages: AvatarImageManaging?
 
     init(
         mutationRepository: ProfileMutationRepositoryProtocol,
         avatarUploader: ProfileAvatarUploading,
-        cleanupStore: ProfileAvatarCleanupStoring = UserDefaultsProfileAvatarCleanupStore()
+        cleanupStore: ProfileAvatarCleanupStoring = UserDefaultsProfileAvatarCleanupStore(),
+        avatarImages: AvatarImageManaging? = nil
     ) {
         self.mutationRepository = mutationRepository
         self.avatarUploader = avatarUploader
         self.cleanupStore = cleanupStore
+        self.avatarImages = avatarImages
     }
 
     func retryPendingCleanup() async {
@@ -46,6 +49,7 @@ struct UpdatePublicProfileUseCase {
         nickname: String,
         avatarEdit: ProfileAvatarEdit
     ) async throws -> UpdatePublicProfileOutcome {
+        let avatarSessionToken = await avatarImages?.avatarSessionToken()
         let normalizedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
         let nicknamePatch = normalizedNickname == currentProfile.nickname ? nil : normalizedNickname
 
@@ -85,6 +89,7 @@ struct UpdatePublicProfileUseCase {
                 nickname: nicknamePatch,
                 avatarMutation: avatarMutation
             )
+            _ = await avatarImages?.observeAvatarProfile(profile, previous: currentProfile, token: avatarSessionToken)
             let pathsToDelete = oldPaths.filter { newlyUploadedPaths.contains($0) == false }
             guard avatarEdit.requiresOldPathCleanup, pathsToDelete.isEmpty == false else {
                 return UpdatePublicProfileOutcome(

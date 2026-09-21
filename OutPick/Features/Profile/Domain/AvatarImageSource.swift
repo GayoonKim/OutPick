@@ -45,17 +45,8 @@ struct AvatarImageSource: Equatable, Hashable {
     }
 
     func merged(with profile: UserPublicProfile) -> AvatarImageSource {
-        var merged = self
-
-        if let thumbPath = Self.normalize(profile.avatarThumbPath) {
-            merged.thumbnailPath = thumbPath
-        }
-
-        if let originalPath = Self.normalize(profile.avatarOriginalPath) {
-            merged.originalPath = originalPath
-        }
-
-        return merged
+        // 조회가 성공한 공개 프로필의 nil은 미조회가 아니라 사진 제거다.
+        AvatarImageSource(thumbnailPath: profile.avatarThumbPath, originalPath: profile.avatarOriginalPath)
     }
 
     private static func normalize(_ path: String?) -> String? {

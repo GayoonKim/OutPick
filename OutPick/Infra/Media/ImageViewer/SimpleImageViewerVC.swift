@@ -41,7 +41,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     typealias LoadImageProvider = (String, Int) async -> UIImage?
     typealias LoadImageDataProvider = (String, Int) async -> Data?
 
-    private let pages: [ProgressivePage]
+    private var pages: [ProgressivePage]
+    private let transientImages: Bool
     let startIndex: Int
     private let cachedImageProvider: CachedImageProvider?
     private let loadImageProvider: LoadImageProvider?
@@ -89,9 +90,11 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         loadImageDataProvider: LoadImageDataProvider? = nil,
         photoLibrarySaver: PhotoLibrarySaving,
         onClose: (() -> Void)? = nil,
-        onReport: ((SimpleImageViewerVC) -> Void)? = nil
+        onReport: ((SimpleImageViewerVC) -> Void)? = nil,
+        transientImages: Bool = false
     ) {
         self.pages = pages
+        self.transientImages = transientImages
         self.startIndex = startIndex
         self.cachedImageProvider = cachedImageProvider
         self.loadImageProvider = loadImageProvider
@@ -224,6 +227,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
             viewerClosed = true
             cancelAllPageLoadTasks()
+            releaseTransientImages()
         }
     }
 
@@ -303,11 +307,20 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func closeViewer() {
         viewerClosed = true
         cancelAllPageLoadTasks()
+        releaseTransientImages()
         if let onClose {
             onClose()
             return
         }
         dismiss(animated: true)
+    }
+
+    private func releaseTransientImages() {
+        guard transientImages else { return }
+        imageViews.forEach { $0.stopAnimating(); $0.image = nil }
+        pages.removeAll()
+        loadedPages.removeAll()
+        failedPages.removeAll()
     }
 
     @objc private func handleToggleChrome() {
@@ -586,6 +599,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     private func cachedImageFromPath(_ path: String?) async -> UIImage? {
         guard let path, !path.isEmpty else { return nil }
+        if transientImages { return await cachedImageProvider?(path) }
         if let local = loadLocalImage(from: path) {
             return local
         }
@@ -600,6 +614,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     private func loadImageFromPath(_ path: String?, maxBytes: Int) async -> UIImage? {
         guard let path, !path.isEmpty else { return nil }
+        if transientImages { return await loadImageProvider?(path, maxBytes) }
         if let local = loadLocalImage(from: path) {
             return local
         }

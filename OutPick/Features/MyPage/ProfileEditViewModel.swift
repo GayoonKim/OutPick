@@ -19,6 +19,8 @@ final class ProfileEditViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
+    var userID: String { currentProfile.userID }
+
     private let currentProfile: UserPublicProfile
     private let updateUseCase: UpdatePublicProfileUseCase
     private let onSaved: (UpdatePublicProfileOutcome) -> Void

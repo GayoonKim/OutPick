@@ -20,7 +20,9 @@ enum UserProfileDetailCompositionRoot {
         onBack: @escaping () -> Void
     ) -> UserProfileDetailViewController {
         let repository = UserProfileDetailRepository(
-            publicProfileRepository: publicProfileRepository
+            publicProfileRepository: AvatarObservingPublicProfileRepository(
+                base: publicProfileRepository, images: avatarImageManager
+            )
         )
         let useCase = LoadUserProfileDetailUseCase(repository: repository)
         let viewModel = UserProfileDetailViewModel(

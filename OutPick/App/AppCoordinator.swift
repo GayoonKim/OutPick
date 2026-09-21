@@ -186,12 +186,13 @@ final class AppCoordinator {
 
     private func routeAfterAuthenticated() async {
         print("[AppCoordinator] routeAfterAuthenticated identity=\(LoginManager.shared.canonicalUserID)")
-        sessionResetTask?.cancel()
+        await sessionResetTask?.value
         sessionResetTask = nil
         await MainActor.run { self.setRoot(BootLoadingViewController(), animated: false) }
 
         do {
             let userID = try await LoginManager.shared.ensureUserDocumentID()
+            await avatarImageManager.transitionAvatarSession(to: userID)
             let outcome = try await loadCurrentUserBootstrapUseCase.execute(userID: userID)
 
             if outcome.canEnterUserGeneratedContent {
@@ -302,9 +303,11 @@ final class AppCoordinator {
         self.currentUserStylePreferenceStore.clear()
         self.userBlockSessionController.stop()
 
-        sessionResetTask?.cancel()
+        let previousReset = sessionResetTask
         sessionResetTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            await previousReset?.value
+            await self.avatarImageManager.transitionAvatarSession(to: nil)
             await self.appSessionRuntime.stopAuthenticatedSession()
         }
 
@@ -537,8 +540,10 @@ final class AppCoordinator {
         isShowingLogin = false
         LoginManager.shared.onForceLogout = nil
 
-        sessionResetTask?.cancel()
+        let previousReset = sessionResetTask
         sessionResetTask = Task { @MainActor [weak self] in
+            await previousReset?.value
+            await self?.avatarImageManager.transitionAvatarSession(to: nil)
             await self?.appSessionRuntime.stopAuthenticatedSession()
         }
     }
@@ -596,7 +601,7 @@ final class AppCoordinator {
             currentUserProvider: currentUserProvider,
             stylePreferenceStore: currentUserStylePreferenceStore,
             publicProfileRepository: publicProfileRepository,
-            avatarImageManager: avatarImageManager,
+            avatarImageManager: avatarImageManager.scoped { .memoryOnly },
             blockSessionSynchronizer: userBlockSessionController,
             userBlockVisibilityStore: userBlockVisibilityStore
         )
@@ -622,7 +627,7 @@ final class AppCoordinator {
             sessionStore: currentUserSessionStore,
             stylePreferenceStore: currentUserStylePreferenceStore,
             currentUserProvider: currentUserProvider,
-            avatarImageManager: avatarImageManager,
+            avatarImageManager: avatarImageManager.scoped { .memoryAndDisk },
             userBlockRepository: userBlockRepository,
             userBlockSessionSynchronizer: userBlockSessionController
         )

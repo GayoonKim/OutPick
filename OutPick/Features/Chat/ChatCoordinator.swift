@@ -81,7 +81,8 @@ final class ChatCoordinator {
             viewModel: container.makeRoomListsViewModel(),
             currentUserProvider: container.currentUserProvider,
             roomImageManager: container.makeRoomImageManager(),
-            avatarImageManager: container.makeAvatarImageManager()
+            avatarImageManager: container.makeAvatarImageManager(),
+            avatarImageManagerForRoom: { [container] in container.makeAvatarImageManager(roomID: $0) }
         )
 
         listVC.onSelectRoom = { [weak self, weak listVC] room in
@@ -226,7 +227,7 @@ final class ChatCoordinator {
             storageURLResolver: container.makeStorageURLResolver(),
             videoThumbnailGenerator: container.makeChatVideoThumbnailGenerator(),
             mediaProcessor: container.makeMediaProcessor(),
-            avatarImageManager: container.makeAvatarImageManager(),
+            avatarImageManager: container.makeAvatarImageManager(roomID: room.id),
             profileSyncManager: container.makeProfileSyncManager(),
             viewModel: container.makeChatRoomViewModel(room: room)
         )
@@ -416,11 +417,12 @@ final class ChatCoordinator {
         from source: UIViewController,
         userID: String,
         nickname: String,
-        avatarPath: String?
+        avatarPath: String?,
+        roomID: String?
     ) {
         let coordinator = UserProfileDetailCoordinator(
             presentingViewController: source,
-            avatarImageManager: container.makeAvatarImageManager(),
+            avatarImageManager: container.makeAvatarImageManager(roomID: roomID),
             currentUserProvider: container.currentUserProvider,
             publicProfileRepository: container.publicProfileRepository,
             photoLibrarySaver: container.makePhotoLibrarySaver(),
@@ -491,7 +493,7 @@ extension ChatCoordinator: ChatRoomRouting {
             videoResolver: container.makeChatVideoPlaybackResolver(),
             photoLibrarySaver: container.makePhotoLibrarySaver(),
             roomImageManager: container.makeRoomImageManager(),
-            avatarImageManager: container.makeAvatarImageManager(),
+            avatarImageManager: container.makeAvatarImageManager(roomID: room.id),
             currentUserProvider: container.currentUserProvider,
             networkStatusProvider: container.makeNetworkStatusProvider(),
             exitUseCase: container.makeChatRoomExitUseCase(),
@@ -520,7 +522,8 @@ extension ChatCoordinator: ChatRoomRouting {
                         from: settingVC,
                         userID: user.userID,
                         nickname: user.nickname,
-                        avatarPath: user.profileImagePath
+                        avatarPath: user.profileImagePath,
+                        roomID: room.id
                     )
 
                 case .requestShowBannedUsers:
@@ -534,7 +537,7 @@ extension ChatCoordinator: ChatRoomRouting {
     }
 
     func showUserProfile(from source: ChatViewController, userID: String, nickname: String, avatarPath: String?) {
-        presentUserProfile(from: source, userID: userID, nickname: nickname, avatarPath: avatarPath)
+        presentUserProfile(from: source, userID: userID, nickname: nickname, avatarPath: avatarPath, roomID: source.room?.id)
     }
 
     func showMessageReport(from source: ChatViewController, messageID: String) {
