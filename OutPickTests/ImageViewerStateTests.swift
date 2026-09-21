@@ -18,11 +18,11 @@ final class ImageViewerStateTests: XCTestCase {
         XCTAssertTrue(condition())
     }
 
-    private func makeViewer(image: UIImage? = nil, path: String? = nil, loader: SimpleImageViewerVC.LoadImageProvider? = nil, saver: PhotoLibrarySaving) -> SimpleImageViewerVC {
+    private func makeViewer(image: UIImage? = nil, path: String? = nil, loader: SimpleImageViewerVC.LoadImageProvider? = nil, saver: PhotoLibrarySaving, transient: Bool = false) -> SimpleImageViewerVC {
         let viewer = SimpleImageViewerVC(
             pages: [.init(initialImage: image, thumbnailPath: nil, originalPath: path)],
             startIndex: 0, cachedImageProvider: nil, loadImageProvider: loader,
-            photoLibrarySaver: saver
+            photoLibrarySaver: saver, transientImages: transient
         )
         viewer.loadViewIfNeeded()
         viewer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -121,6 +121,48 @@ final class ImageViewerStateTests: XCTestCase {
         XCTAssertTrue(saver.images[0] === first)
         saver.finish()
         await waitUntil { chrome.saveButton.isEnabled }
+    }
+
+    func testTransientViewerReleasesImagesAndBlocksLateResponseOnClose() async throws {
+        let loader = ViewerLoaderSpy()
+        let viewer = makeViewer(image: UIImage(systemName: "star"), path: "original",
+                                loader: { _, _ in await loader.load() }, saver: ViewerSaverSpy(), transient: true)
+        await waitUntil { loader.pending.count == 1 }
+        let chrome = try XCTUnwrap(descendants(viewer.view, ImageViewerChromeView.self).first)
+        chrome.closeButton.sendActions(for: .touchUpInside)
+        XCTAssertNil(descendants(viewer.view, AnimatedImageView.self).first?.image)
+        loader.finish(UIImage(systemName: "heart"))
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertNil(descendants(viewer.view, AnimatedImageView.self).first?.image)
+    }
+
+    func testTransientLocalPathDoesNotBypassFailedProvider() async throws {
+        let localURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let preview = UIImage(systemName: "star")!
+        try XCTUnwrap(preview.pngData()).write(to: localURL)
+        defer { try? FileManager.default.removeItem(at: localURL) }
+        let loader = ViewerLoaderSpy()
+        let viewer = makeViewer(image: preview, path: localURL.path, loader: { _, _ in await loader.load() },
+                                saver: ViewerSaverSpy(), transient: true)
+        await waitUntil { loader.pending.count == 1 }
+        loader.finish(nil)
+        await waitUntil {
+            self.descendants(viewer.view, UIButton.self).contains {
+                $0.isEnabled && $0.currentTitle == "불러오지 못했어요 · 다시 시도"
+            }
+        }
+        XCTAssertTrue(descendants(viewer.view, AnimatedImageView.self).first?.image === preview)
+    }
+
+    func testInterruptedDisappearanceKeepsTransientViewerRequestAlive() async throws {
+        let loader = ViewerLoaderSpy()
+        let viewer = makeViewer(path: "original", loader: { _, _ in await loader.load() }, saver: ViewerSaverSpy(), transient: true)
+        await waitUntil { loader.pending.count == 1 }
+        viewer.viewWillDisappear(true)
+        viewer.viewDidAppear(true)
+        let image = UIImage(systemName: "heart")!
+        loader.finish(image)
+        await waitUntil { self.descendants(viewer.view, AnimatedImageView.self).first?.image === image }
     }
 
     func testChromeLayoutAndRender() throws {
