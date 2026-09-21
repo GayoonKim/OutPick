@@ -1,5 +1,7 @@
 # Lookbook Entrypoints
 
+- PR 리뷰의 선로딩 경로 갱신: `AvatarViewportObserver.onChange(of: items)` → `update(items:)`에 콜백의 최신 배열을 전달한다. 행 ID/좌표가 그대로인 프로필 경로 변경도 스크롤 없이 요청한다. 재현 테스트는 `AvatarNestedViewportTests.testSwiftUIViewportPrefetchesChangedPathWithoutScrolling`, 근거는 [리뷰 기록](../tasks/avatar-image-loading/review.md).
+
 - 댓글 빠른 스크롤 표시: `CommentSafetyAvatarView.displayedImage`는 현재 표시 이미지가 없을 때 보호된 기존 메모리 캐시를 첫 body에서 즉시 확인한다. `AvatarImagePresentationState.configure(initialImage:)`도 UIKit/SwiftUI에 즉시 이미지를 전달하되 기존 async loader는 유지해 disk promotion을 생략하지 않는다. 서비스/메모리 용량을 추가하지 않는다.
 
 - 답글 시트 높이: `PostCommentsSheetView.repliesSheet`는 iOS16+에서 62%와 large 두 detent를 제공해 상단 손잡이로 확장 가능하다. 사용자 실기기 QA의 작은 답글 영역 불편을 반영했으며 원댓글/입력창 구성은 유지한다.

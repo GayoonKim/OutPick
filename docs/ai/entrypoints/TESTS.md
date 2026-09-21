@@ -1,5 +1,7 @@
 # Test Entrypoints
 
+- PR 리뷰 회귀: `AvatarNestedViewportTests.testSwiftUIViewportPrefetchesChangedPathWithoutScrolling`은 실제 SwiftUI viewport modifier와 spy를 연결해, 같은 행/좌표에서 nil→첫 사진→변경 사진으로 바뀔 때 선로딩 요청을 검증한다. 수정 전 두 경로 모두 실패한 재현과 수정 후 결과는 [리뷰 기록](../tasks/avatar-image-loading/review.md) 참조.
+
 - 잔여QA 최종 iPhone14 실행: AvatarRouteContractTests3개·AvatarNestedViewportTests1개(XCTest4)와 AvatarImageServiceTests12개(SwiftTesting) 통과. 실제컴포넌트/가짜transport·독립cache로 정책/원본only/중첩요청/연속캐시를 검증하고 전용폴더잔여0 확인. 기기로그 `/private/tmp/outpick-avatar-remaining-device-tests.log`. 기존112개회귀와중복되므로합산금지, [검증방법·한계](../tasks/avatar-image-loading/progress/phase-5.md).
 
 - `AvatarNestedViewportTests.swift`는 실제 ParticipantsSectionParticipantCell 50명과 AvatarCollectionViewport를 UIKit에 올려 최초 요청0, 상단/하단/중간의 화면·선로딩 범위/고유24 제한을 spy로 계측한다. `AvatarImageServiceTests.continuousAvatarViewsPromoteMemoryThenReuseDiskWithoutAnotherFetch`는 실제 AvatarImageView 두 정책과 공용 pipeline을 사용해 메모리→디스크 승격, 같은 프로세스의 메모리 제거 후 디스크→댓글 재사용을 검증한다. test 전용 디스크/가짜 전송으로 실제 서버·계정과 분리한다.

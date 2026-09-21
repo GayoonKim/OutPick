@@ -1,5 +1,7 @@
 # OutPick Entrypoints
 
+- 아바타 PR 리뷰 보완: `AvatarViewportObserver`는 items 변경 콜백의 최신 경로를 선로딩에 직접 전달한다. `AvatarNestedViewportTests.testSwiftUIViewportPrefetchesChangedPathWithoutScrolling`이 스크롤 없는 nil→사진→다른 사진 변경을 검증한다. [리뷰 기록](tasks/avatar-image-loading/review.md).
+
 - 아바타 Phase0~5 완료(2026-09-21, VoiceOver사용자제외): 구현·QA·임시자료정리·일반DEV복구완료. 최종 iPhone14 16개검증의 범위/기존112개회귀와중복 여부는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md), 다음작업 진입점은 [현재 상태](tasks/avatar-image-loading/progress.md) 참조.
 
 - 잔여 QA2~4: `AvatarRouteContractTests`의 원본only 상세/확대2회, `AvatarNestedViewportTests`의 중첩 참여자50 UIKit 요청계측, `AvatarImageServiceTests`의 연속 아바타뷰 메모리승격/디스크재사용. 실기기 실행 여부와 결과는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md)에서 구분한다. 서버 fixture 추가와 제품 코드 변경은 없다.

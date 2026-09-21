@@ -1,5 +1,7 @@
 # Chat Entrypoints
 
+- PR 리뷰 정리: `ChatMessageCell.failedIconImageView`는 기존 `UIImageView`를 유지한다. 아바타 표시 수명은 프로필 이미지에만 적용한다.
+
 - 2026-09-21 새 메시지 아바타 재시도는 DEV QA 한정 기존 수신 큐 주입→실제 이미지 다운로드→사용자 표시 확인으로 검증했다. 실제 Socket 전송과 구분한다. `RealtimeSocketService`의 임시 주입 코드는 제거되어 이 작업의 diff0이며, [Phase5](../tasks/avatar-image-loading/progress/phase-5.md)에 검증·정리 근거를 남겼다.
 
 - 방 설정 버튼/초기 위치: `ChatRoomSettingViewController`는 사용자가 첫 드래그하기 전 초기 높이 계산 시 adjustedContentInset 기준 상단을 유지한다. 하단 고정 버튼과 추가 inset을 제거하고 마지막 actionsSection 셀 안에 기존 세 버튼을 배치한다. 역할 변경 시 차단 사용자 버튼 표시 조건과 기존 onEvent/퇴장 흐름은 유지한다. 많은 참여자 비동기 로드 후 상단 시작·스크롤 끝 버튼·재진입은 실기기 QA 대상이다.
