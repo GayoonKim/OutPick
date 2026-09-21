@@ -21,7 +21,9 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     private let viewModel: RoomListsViewModel
     private let currentUserProvider: any CurrentUserProviding
     private let roomImageManager: RoomImageManaging
+    private lazy var avatarViewport = AvatarCollectionViewport(manager: avatarImageManager)
     private let avatarImageManager: AvatarImageManaging
+    private let avatarImageManagerForRoom: ((String) -> AvatarImageManaging)?
     private var imagePrefetchTasks: [IndexPath: Task<Void, Never>] = [:]
 
     // MARK: - Navigation callbacks (Coordinator)
@@ -39,12 +41,14 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
         viewModel: RoomListsViewModel,
         currentUserProvider: any CurrentUserProviding,
         roomImageManager: RoomImageManaging,
-        avatarImageManager: AvatarImageManaging
+        avatarImageManager: AvatarImageManaging,
+        avatarImageManagerForRoom: ((String) -> AvatarImageManaging)? = nil
     ) {
         self.viewModel = viewModel
         self.currentUserProvider = currentUserProvider
         self.roomImageManager = roomImageManager
         self.avatarImageManager = avatarImageManager
+        self.avatarImageManagerForRoom = avatarImageManagerForRoom
         super.init(collectionViewLayout: layout)
     }
 
@@ -54,6 +58,47 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
 
     deinit {
         imagePrefetchTasks.values.forEach { $0.cancel() }
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? RoomListCollectionViewCell)?.setAvatarVisible(false)
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        (cell as? RoomListCollectionViewCell)?.setAvatarVisible(true)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        avatarViewport.clear()
+        collectionView.visibleCells.compactMap { $0 as? RoomListCollectionViewCell }.forEach { $0.setAvatarVisible(false) }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        avatarViewport.activate()
+        updateAvatarViewport()
+        collectionView.visibleCells.compactMap { $0 as? RoomListCollectionViewCell }.forEach { $0.setAvatarVisible(true) }
+    }
+
+    private func updateAvatarViewport() {
+        avatarViewport.update(collectionView) { index, frame in
+            guard let item = self.dataSource?.itemIdentifier(for: index) else { return [] }
+            let manager = self.avatarImageManagerForRoom?(item.room.id) ?? self.avatarImageManager
+            return item.messages.compactMap { message in
+                guard message.senderUID != self.currentUserProvider.canonicalUserID, let path = message.senderAvatarPath else { return nil }
+                return AvatarViewportRow(id: message.ID, path: path, frame: frame, policy: manager.avatarCachePolicy)
+            }
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateAvatarViewport()
+    }
+
+    override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateAvatarViewport()
     }
 
     override func viewDidLoad() {
@@ -90,6 +135,10 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
     
     @objc private func didPullToRefresh() {
         Task {
+            await avatarImageManager.resetAvatarFailures(paths: chatRooms.flatMap { $0.messages.compactMap(\.senderAvatarPath) })
+            avatarViewport.prefetch.clear()
+            collectionView.visibleCells.compactMap { $0 as? RoomListCollectionViewCell }.forEach { $0.refreshAvatarFailures() }
+            updateAvatarViewport()
             await viewModel.refreshTopRooms()
         }
     }
@@ -121,7 +170,7 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
                 messages: item.messages,
                 currentUserUID: self.currentUserProvider.canonicalUserID,
                 roomImageManager: self.roomImageManager,
-                avatarImageManager: self.avatarImageManager
+                avatarImageManager: self.avatarImageManagerForRoom?(item.room.id) ?? self.avatarImageManager
             )
 
             return cell
@@ -168,21 +217,14 @@ class RoomListsCollectionViewController: UICollectionViewController, UIGestureRe
             guard imagePrefetchTasks[indexPath] == nil else { continue }
 
             let roomPaths = roomCoverPaths(from: [item])
-            let avatarPaths = senderAvatarPaths(from: [item])
-            guard !roomPaths.isEmpty || !avatarPaths.isEmpty else { continue }
+            guard !roomPaths.isEmpty else { continue }
 
             let roomImageManager = self.roomImageManager
-            let avatarImageManager = self.avatarImageManager
             imagePrefetchTasks[indexPath] = Task { [weak self] in
                 await roomImageManager.prefetchImages(
                     paths: roomPaths,
                     maxBytes: 3 * 1024 * 1024,
                     maxConcurrent: 2
-                )
-                await avatarImageManager.prefetchAvatars(
-                    paths: avatarPaths,
-                    maxBytes: 2 * 1024 * 1024,
-                    maxConcurrent: 3
                 )
                 await MainActor.run {
                     self?.imagePrefetchTasks[indexPath] = nil

@@ -21,6 +21,7 @@ struct PostCommentsSheetView: View {
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
+    @State private var avatarRefreshID = 0
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
     @State private var pendingBlockItem: CommentDisplayItem?
@@ -69,7 +70,10 @@ struct PostCommentsSheetView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 18)
             }
+            .avatarViewport(items: commentFeedItems.map { AvatarViewportItem(id: $0.id.value, path: $0.displayItem.author.avatarPath) }, space: "commentAvatars", manager: avatarImageManager, refreshID: avatarRefreshID)
             .refreshable {
+                await avatarImageManager.resetAvatarFailures(paths: commentFeedItems.compactMap { $0.displayItem.author.avatarPath })
+                avatarRefreshID += 1
                 await viewModel.refresh()
             }
         }
@@ -137,8 +141,8 @@ struct PostCommentsSheetView: View {
         } else {
             ForEach(commentFeedItems) { item in
                 commentCard(item.displayItem, badges: item.badges)
+                    .avatarViewportRow(item.id.value, space: "commentAvatars")
                     .task(id: item.id) {
-                        viewModel.prefetchAuthorAvatars(around: item.id)
                         guard item.displayItem.comment.id == viewModel.rootComments.last?.id else { return }
                         await viewModel.loadNextPage()
                     }
@@ -328,7 +332,7 @@ struct PostCommentsSheetView: View {
             )
             if #available(iOS 16.0, *) {
                 sheet
-                    .presentationDetents([.fraction(0.62)])
+                    .presentationDetents([.fraction(0.62), .large])
                     .presentationDragIndicator(.visible)
             } else {
                 sheet

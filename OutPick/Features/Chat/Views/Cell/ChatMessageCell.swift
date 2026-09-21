@@ -30,13 +30,11 @@ class ChatMessageCell: UICollectionViewCell {
 
     private var widthConstraint: NSLayoutConstraint?
     private(set) var representedMessageID: String?
-    private var representedAvatarPath: String?
     private var currentHighlightKeyword: String?
-    private var avatarLoadTask: Task<Void, Never>?
     var commands = ChatMessageCellCommands()
     
-    private let profileImageView: UIImageView = {
-        var imageView = UIImageView()
+    private let profileImageView: AvatarImageView = {
+        let imageView = AvatarImageView()
         imageView.layer.cornerRadius = 10
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
@@ -156,7 +154,7 @@ class ChatMessageCell: UICollectionViewCell {
     }()
     
     private let failedIconImageView: UIImageView = {
-        let imageView = UIImageView()
+        let imageView = AvatarImageView()
         imageView.image = UIImage(systemName: "exclamationmark.circle.fill")
         imageView.tintColor = OutPickTheme.ColorToken.destructive
         imageView.contentMode = .scaleAspectFit
@@ -372,11 +370,9 @@ class ChatMessageCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         representedMessageID = nil
-        representedAvatarPath = nil
         currentHighlightKeyword = nil
         commands = ChatMessageCellCommands()
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
+        profileImageView.resetAvatar()
         hideVideoBadge()
         
         messageLabel.attributedText = nil
@@ -455,6 +451,15 @@ class ChatMessageCell: UICollectionViewCell {
         timeLeftOfHostTrailing = nil
         resetMediaUploadRecoveryConstraints()
     }
+
+    func setAvatarVisible(_ visible: Bool) {
+        if visible { profileImageView.presentation.resume() } else { profileImageView.presentation.suspend() }
+    }
+
+    func retryAvatar(path: String, eventID: String) {
+        guard profileImageView.presentation.identity?.path == path else { return }
+        profileImageView.presentation.displayed(eventID: eventID)
+    }
     
     func showVideoBadge(durationText: String?) {
         let host = imagesPreviewCollectionView.isHidden ? bubbleView : imagesPreviewCollectionView
@@ -524,7 +529,7 @@ class ChatMessageCell: UICollectionViewCell {
 
     func configureWithMessage(
         with message: ChatMessage,
-        avatarLoader: ((String) async -> UIImage?)? = nil
+        avatarLoader: ((String) async throws -> UIImage?)? = nil
     ) {
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
@@ -643,7 +648,7 @@ class ChatMessageCell: UICollectionViewCell {
     func configureWithImage(
         with message: ChatMessage,
         thumbnailLoader: ((Attachment) async -> UIImage?)? = nil,
-        avatarLoader: ((String) async -> UIImage?)? = nil
+        avatarLoader: ((String) async throws -> UIImage?)? = nil
     ) {
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
@@ -737,7 +742,7 @@ class ChatMessageCell: UICollectionViewCell {
     func configureLookbookShareMessage(
         _ message: ChatMessage,
         thumbnailLoader: ((String) async -> UIImage?)?,
-        avatarLoader: ((String) async -> UIImage?)?
+        avatarLoader: ((String) async throws -> UIImage?)?
     ) {
         representedMessageID = message.ID
         resetDynamicLayoutConstraintsForReconfigure()
@@ -843,41 +848,20 @@ class ChatMessageCell: UICollectionViewCell {
     private func configureProfileArea(
         with message: ChatMessage,
         isMine: Bool,
-        avatarLoader: ((String) async -> UIImage?)?
+        avatarLoader: ((String) async throws -> UIImage?)?
     ) {
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
-        representedAvatarPath = nil
-        profileImageView.image = UIImage(named: "Default_Profile")
-
-        if isMine {
-            profileImageView.isHidden = true
-            nickNameLabel.isHidden = true
-            return
-        }
-
-        profileImageView.isHidden = false
-        nickNameLabel.isHidden = false
+        profileImageView.isHidden = isMine
+        nickNameLabel.isHidden = isMine
         nickNameLabel.text = message.senderNickname
-
-        guard let avatarPath = message.senderAvatarPath,
-              !avatarPath.isEmpty,
-              let avatarLoader else { return }
-
-        representedAvatarPath = avatarPath
-        let messageID = message.ID
-        avatarLoadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let image = await avatarLoader(avatarPath)
-            guard !Task.isCancelled,
-                  self.representedMessageID == messageID,
-                  self.representedAvatarPath == avatarPath else { return }
-            if let image {
-                self.profileImageView.image = image
-            }
+        guard !isMine, let avatarLoader else { profileImageView.resetAvatar(); return }
+        let identity = AvatarImageIdentity(userID: message.senderUID, path: message.senderAvatarPath)
+        profileImageView.configure(identity: identity) {
+            guard let path = identity.path else { return nil }
+            return try await avatarLoader(path)
         }
+        if window != nil { profileImageView.presentation.displayed(eventID: message.ID) }
     }
-    
+
     private func calculateRowCountWithImage(_ n: Int) -> [Int] {
         guard n > 1 else { return [] }
         

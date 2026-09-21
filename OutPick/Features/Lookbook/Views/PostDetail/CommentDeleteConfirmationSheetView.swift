@@ -18,6 +18,7 @@ struct CommentDeleteConfirmationSheetView: View {
         VStack(spacing: 16) {
             VStack(spacing: 10) {
                 CommentSafetyAvatarView(
+                    userID: author.userID.value,
                     avatarPath: author.avatarPath,
                     size: 52,
                     avatarImageManager: avatarImageManager

@@ -16,6 +16,7 @@ struct PostCommentRepliesSheetView: View {
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
+    @State private var avatarRefreshID = 0
     @State private var profileAuthor: CommentAuthorDisplay?
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
@@ -48,6 +49,7 @@ struct PostCommentRepliesSheetView: View {
             repliesContent
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
+        .environment(\.avatarRefreshID, avatarRefreshID)
         .outpickDismissKeyboardOnTap()
         .safeAreaInset(edge: .bottom) {
             inputBar
@@ -127,9 +129,6 @@ struct PostCommentRepliesSheetView: View {
                         onBlockTap: blockAction(for: item)
                     )
                 )
-                .onAppear {
-                    viewModel.prefetchAuthorAvatars(around: item.id)
-                }
             }
         }
         .padding(.horizontal, 16)
@@ -180,8 +179,8 @@ struct PostCommentRepliesSheetView: View {
                                 onBlockTap: blockAction(for: item)
                             )
                         )
+                        .avatarViewportRow(item.id.value, space: "replyAvatars")
                         .task(id: item.id) {
-                            viewModel.prefetchAuthorAvatars(around: item.id)
                             guard reply.id == viewModel.replies.last?.id else { return }
                             await viewModel.loadNextPage()
                         }
@@ -198,7 +197,10 @@ struct PostCommentRepliesSheetView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 18)
         }
+        .avatarViewport(items: viewModel.replies.map { AvatarViewportItem(id: $0.id.value, path: viewModel.displayItem(for: $0).author.avatarPath) }, space: "replyAvatars", manager: avatarImageManager, refreshID: avatarRefreshID)
         .refreshable {
+            await avatarImageManager.resetAvatarFailures(paths: ([viewModel.parentComment] + viewModel.replies).compactMap { viewModel.displayItem(for: $0).author.avatarPath })
+            avatarRefreshID += 1
             await viewModel.refresh()
         }
     }

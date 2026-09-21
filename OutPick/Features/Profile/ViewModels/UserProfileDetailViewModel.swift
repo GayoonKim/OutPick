@@ -21,7 +21,7 @@ final class UserProfileDetailViewModel {
 
     var onStateChanged: ((State) -> Void)?
 
-    private let userID: String
+    let userID: String
     private let currentUserID: String?
     private let loadUserProfileDetailUseCase: LoadUserProfileDetailUseCaseProtocol
     private let blockUserUseCase: (any BlockUserUseCaseProtocol)?

@@ -21,7 +21,7 @@ final class MyPageViewModel {
     var onOpenBlockedUsers: (() -> Void)?
     var onDeleteAccount: (() -> Void)?
 
-    private let userID: String
+    let userID: String
     private let accountRepository: CurrentUserAccountRepositoryProtocol
     private let publicProfileRepository: UserPublicProfileRepositoryProtocol
     private let moodRepository: StyleMoodRepositoryProtocol

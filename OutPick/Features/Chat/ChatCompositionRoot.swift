@@ -79,7 +79,6 @@ enum ChatCompositionRoot {
             room: room,
             initialParticipants: initialParticipants,
             attachmentImageLoader: attachmentImageLoader,
-            avatarImageManager: avatarImageManager,
             loadParticipantsUseCase: participantsUseCase,
             loadMediaUseCase: mediaUseCase,
             exitUseCase: exitUseCase,

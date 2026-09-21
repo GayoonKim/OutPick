@@ -747,8 +747,7 @@ final class LookbookContainer {
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
-            authorProfileStore: makeCommentAuthorProfileStore(),
-            avatarImageManager: avatarImageManager
+            authorProfileStore: makeCommentAuthorProfileStore()
         )
     }
 
@@ -821,8 +820,7 @@ final class LookbookContainer {
             filterHiddenAuthorsUseCase: filterHiddenCommentAuthorsUseCase,
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
-            authorProfileStore: makeCommentAuthorProfileStore(),
-            avatarImageManager: avatarImageManager
+            authorProfileStore: makeCommentAuthorProfileStore()
         )
     }
 

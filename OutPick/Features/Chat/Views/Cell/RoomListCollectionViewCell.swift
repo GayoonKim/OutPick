@@ -11,6 +11,8 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     static let identifier = "RoomListCollectionViewCell"
     private var imageLoadTask: Task<Void, Never>?
     private var representedImagePath: String?
+    private var previewViews: [String: MessagePreviewView] = [:]
+    private var previewIDs: [String] = []
 
     let roomImageView: UIImageView = {
         let iv = UIImageView()
@@ -70,6 +72,8 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         applyDefaultRoomImage()
         roomNameLabel.text = nil
         roomDescriptionLabel.text = nil
+        previewViews.removeAll()
+        previewIDs.removeAll()
         previewStackView.arrangedSubviews.forEach { view in
             previewStackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -148,9 +152,14 @@ class RoomListCollectionViewCell: UICollectionViewCell {
         roomDescriptionLabel.font = .systemFont(ofSize: 13, weight: .light)
         roomDescriptionLabel.text = room.roomDescription
 
-        previewStackView.arrangedSubviews.forEach { view in
-            previewStackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
+        let newIDs = messages.map(\.ID)
+        if previewIDs != newIDs || messages.isEmpty {
+            previewStackView.arrangedSubviews.forEach { view in
+                previewStackView.removeArrangedSubview(view)
+                view.removeFromSuperview()
+            }
+            previewViews = previewViews.filter { newIDs.contains($0.key) }
+            previewIDs = newIDs
         }
 
         if messages.isEmpty {
@@ -163,14 +172,15 @@ class RoomListCollectionViewCell: UICollectionViewCell {
             previewStackView.addArrangedSubview(placeholder)
         } else {
             for message in messages {
-                let preview = MessagePreviewView()
+                let preview = previewViews[message.ID] ?? MessagePreviewView()
+                previewViews[message.ID] = preview
                 let isMine = message.senderUID == currentUserUID
                 preview.configure(
                     with: message,
                     isMine: isMine,
                     avatarImageManager: avatarImageManager
                 )
-                previewStackView.addArrangedSubview(preview)
+                if preview.superview == nil { previewStackView.addArrangedSubview(preview) }
             }
         }
 
@@ -180,6 +190,12 @@ class RoomListCollectionViewCell: UICollectionViewCell {
     func configureJoined(room: ChatRoom, message: ChatMessage) {
         
     }
+
+    func setAvatarVisible(_ visible: Bool) {
+        previewViews.values.forEach { $0.setAvatarVisible(visible) }
+    }
+
+    func refreshAvatarFailures() { previewViews.values.forEach { $0.refreshAvatarFailure() } }
 
     private func loadRoomImageIfNeeded(for room: ChatRoom, roomImageManager: RoomImageManaging) {
         guard let imagePath = room.coverImagePath, !imagePath.isEmpty else { return }
@@ -223,13 +239,10 @@ class RoomListCollectionViewCell: UICollectionViewCell {
 
 // MARK: - MessagePreviewView
 private class MessagePreviewView: UIView {
-    private let avatarMaxBytes = 2 * 1024 * 1024
-    private var avatarLoadTask: Task<Void, Never>?
     private var representedMessageID: String?
-    private var representedAvatarPath: String?
 
-    private let profileImageView: UIImageView = {
-        let imageView = UIImageView()
+    private let profileImageView: AvatarImageView = {
+        let imageView = AvatarImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
@@ -365,9 +378,6 @@ private class MessagePreviewView: UIView {
         setupLayout()
     }
 
-    deinit {
-        avatarLoadTask?.cancel()
-    }
     
     private func setupLayout() {
         self.backgroundColor = OutPickTheme.ColorToken.backgroundRaised
@@ -446,11 +456,7 @@ private class MessagePreviewView: UIView {
         isMine: Bool,
         avatarImageManager: AvatarImageManaging
     ) {
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
         representedMessageID = message.ID
-        representedAvatarPath = nil
-        profileImageView.image = UIImage(named: "Default_Profile")
 
         // 기본 본문/닉네임 세팅
         nicknameLabel.text = message.senderNickname
@@ -498,6 +504,7 @@ private class MessagePreviewView: UIView {
         }
         
         if isMine {
+            profileImageView.resetAvatar()
             profileImageView.isHidden = true
             nicknameLabel.isHidden = true
             bubbleView.backgroundColor = OutPickTheme.ColorToken.surfaceElevated
@@ -541,45 +548,21 @@ private class MessagePreviewView: UIView {
         for message: ChatMessage,
         avatarImageManager: AvatarImageManaging
     ) {
-        guard let avatarPath = message.senderAvatarPath, !avatarPath.isEmpty else { return }
-
-        representedAvatarPath = avatarPath
-        let messageID = message.ID
-        let avatarMaxBytes = self.avatarMaxBytes
-
-        avatarLoadTask = Task { [weak self] in
-            guard let self else { return }
-
-            if let cached = await avatarImageManager.cachedAvatar(for: avatarPath) {
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard self.representedMessageID == messageID,
-                          self.representedAvatarPath == avatarPath else { return }
-                    self.profileImageView.image = cached
-                }
-                return
-            }
-
-            guard let image = try? await avatarImageManager.loadAvatar(
-                for: avatarPath,
-                maxBytes: avatarMaxBytes
-            ) else { return }
-
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard self.representedMessageID == messageID,
-                      self.representedAvatarPath == avatarPath else { return }
-                self.profileImageView.image = image
-            }
-        }
+        profileImageView.configure(userID: message.senderUID, path: message.senderAvatarPath, manager: avatarImageManager)
     }
-    
+
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         f.locale = Locale.current
         return f
     }()
+
+    func setAvatarVisible(_ visible: Bool) {
+        if visible { profileImageView.presentation.resume() } else { profileImageView.presentation.suspend() }
+    }
+
+    func refreshAvatarFailure() { profileImageView.presentation.refreshFailure() }
     private func formattedTime(_ date: Date?) -> String {
         guard let d = date else { return "" }
         return MessagePreviewView.timeFormatter.string(from: d)

@@ -78,11 +78,9 @@ final class ChatRoomSettingViewModel {
     private let roleSession: ChatRoomRoleSession
     private let currentUserID: String
     private let attachmentImageLoader: ChatAttachmentImageLoading
-    private let avatarImageManager: AvatarImageManaging
     private let networkStatusProvider: NetworkStatusProviding
     private let isModeratorDelegationEnabled: Bool
     private let mediaThumbMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
-    private let avatarPrefetchMaxBytes = 3 * 1024 * 1024
 
     private var participantsIsLoadingStorage: Bool
     private var participantsHasMoreStorage: Bool
@@ -96,7 +94,6 @@ final class ChatRoomSettingViewModel {
         room: ChatRoom,
         initialParticipants: ChatRoomParticipantsLoadResult,
         attachmentImageLoader: ChatAttachmentImageLoading,
-        avatarImageManager: AvatarImageManaging,
         loadParticipantsUseCase: LoadChatRoomParticipantsUseCaseProtocol,
         loadMediaUseCase: LoadChatRoomMediaUseCaseProtocol,
         exitUseCase: ChatRoomExitUseCaseProtocol,
@@ -114,7 +111,6 @@ final class ChatRoomSettingViewModel {
         self.participantsIsLoadingStorage = true
         self.participantsHasMoreStorage = initialParticipants.hasMore
         self.attachmentImageLoader = attachmentImageLoader
-        self.avatarImageManager = avatarImageManager
         self.loadParticipantsUseCase = loadParticipantsUseCase
         self.loadMediaUseCase = loadMediaUseCase
         self.exitUseCase = exitUseCase
@@ -217,14 +213,12 @@ final class ChatRoomSettingViewModel {
             let localResult = try loadParticipantsUseCase.loadLocalInitial(room: room)
             participantsHasMoreStorage = localResult.hasMore
             participants = localResult.participants
-            scheduleAvatarPrefetch(for: localResult.users)
 
             guard networkStatusProvider.currentStatus.isOnline else { return }
 
             let reconciledResult = try await loadParticipantsUseCase.reconcileInitial(room: room)
             participantsHasMoreStorage = reconciledResult.hasMore
             participants = reconciledResult.participants
-            scheduleAvatarPrefetch(for: reconciledResult.users)
         } catch {
             print("❌ 초기 참여자 로드 실패:", error)
         }
@@ -240,7 +234,6 @@ final class ChatRoomSettingViewModel {
             let result = try await loadParticipantsUseCase.reconcileInitial(room: roomInfo)
             participantsHasMoreStorage = result.hasMore
             participants = result.participants
-            scheduleAvatarPrefetch(for: result.users)
         } catch {
             print("❌ 역할 변경 후 참여자 동기화 실패:", error)
         }
@@ -257,7 +250,6 @@ final class ChatRoomSettingViewModel {
 
             if !result.participants.isEmpty {
                 mergeParticipants(result.participants)
-                scheduleAvatarPrefetch(for: result.users)
             }
         } catch {
             print("❌ 참여자 추가 로드 실패:", error)
@@ -373,14 +365,6 @@ final class ChatRoomSettingViewModel {
         galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
     }
 
-    private func scheduleAvatarPrefetch(for users: [LocalChatUser]) {
-        guard !users.isEmpty else { return }
-
-        Task(priority: .utility) { [weak self] in
-            await self?.prefetchProfileAvatars(for: users, topCount: users.count)
-        }
-    }
-
     private func applyCurrentUserRole(_ role: ChatRoomMemberRole?) {
         guard let role else { return }
         updateParticipantRole(
@@ -416,23 +400,6 @@ final class ChatRoomSettingViewModel {
             values,
             currentUserID: currentUserID,
             ownerUID: roomInfo.ownerUID
-        )
-    }
-
-    private func prefetchProfileAvatars(for users: [LocalChatUser], topCount: Int = 50) async {
-        guard !users.isEmpty else { return }
-
-        let sorted = users.sorted {
-            $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending
-        }
-        let slice = sorted.prefix(min(topCount, sorted.count))
-        let paths = Array(Set(slice.compactMap(\.profileImagePath).filter { !$0.isEmpty }))
-        guard !paths.isEmpty else { return }
-
-        await avatarImageManager.prefetchAvatars(
-            paths: paths,
-            maxBytes: avatarPrefetchMaxBytes,
-            maxConcurrent: 4
         )
     }
 

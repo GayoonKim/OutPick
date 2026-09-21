@@ -12,7 +12,7 @@ final class MyPageViewController: UIViewController {
     private let stackView = UIStackView()
     private let editorialHeader = MyPageEditorialHeaderView()
     private let identityRow = UIStackView()
-    private let profileImageView = UIImageView()
+    private let profileImageView = AvatarImageView()
     private let nicknameLabel = UILabel()
     private let moodSectionLabel = UILabel()
     private let moodChipsView = MyPageMoodChipsView()
@@ -32,7 +32,6 @@ final class MyPageViewController: UIViewController {
     )
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let errorLabel = UILabel()
-    private var avatarLoadTask: Task<Void, Never>?
     private var didRouteToLogin = false
 
     init(
@@ -47,10 +46,6 @@ final class MyPageViewController: UIViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    deinit {
-        avatarLoadTask?.cancel()
     }
 
     override func viewDidLoad() {
@@ -199,22 +194,17 @@ final class MyPageViewController: UIViewController {
     }
 
     private func loadAvatar(path: String?) {
-        avatarLoadTask?.cancel()
-        guard let path, !path.isEmpty else {
-            profileImageView.image = UIImage(named: "Default_Profile")
-            return
-        }
-        avatarLoadTask = Task { [weak self] in
-            guard let self else { return }
-            let image = try? await avatarImageManager.loadAvatar(
-                for: path,
-                maxBytes: 5 * 1024 * 1024
-            )
-            guard Task.isCancelled == false else { return }
-            await MainActor.run {
-                self.profileImageView.image = image ?? UIImage(named: "Default_Profile")
-            }
-        }
+        profileImageView.configure(userID: viewModel.userID, path: path, manager: avatarImageManager)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        profileImageView.presentation.suspend()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        profileImageView.presentation.resume()
     }
 
     @objc private func editProfileTapped() {

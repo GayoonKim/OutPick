@@ -24,7 +24,18 @@ enum AppCompositionRoot {
         }
 
         let db = Firestore.firestore()
-        let publicProfileRepository = FirestoreUserPublicProfileRepository(db: db)
+        let avatarImageManager = AvatarImageService(
+            imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository,
+            promotionEncoding: ImageCachePromotionEncoding(
+                maximumBytes: AvatarImageRequest.thumbnailMaximumBytes,
+                encode: { $0.jpegData(compressionQuality: 0.8) }
+            ),
+            requiresSession: true,
+            sessionOwnerDefaults: .standard
+        )
+        let publicProfileRepository = AvatarObservingPublicProfileRepository(
+            base: FirestoreUserPublicProfileRepository(db: db), images: avatarImageManager
+        )
         let userProfileRepository: UserProfileRepositoryProtocol = UserProfileRepository(db: db)
         let currentUserSessionStore = CurrentUserSessionStore()
         let currentUserStylePreferenceStore = CurrentUserStylePreferenceStore()
@@ -55,7 +66,8 @@ enum AppCompositionRoot {
             mutationRepository: profileMutationRepository,
             avatarUploader: FirebaseProfileAvatarUploader(
                 imageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
-            )
+            ),
+            avatarImages: avatarImageManager
         )
         let updateStylePreferencesUseCase = UpdateStylePreferencesUseCase(
             mutationRepository: profileMutationRepository
@@ -71,7 +83,8 @@ enum AppCompositionRoot {
         )
         let accountDeletionReceiptStore = AccountDeletionReceiptStore()
         let accountDeletionLocalDataScrubber = AccountDeletionLocalDataScrubber(
-            database: appDatabase
+            database: appDatabase,
+            avatarImages: avatarImageManager
         )
         let requestAccountDeletionUseCase = RequestAccountDeletionUseCase(
             repository: accountDeletionRepository,
@@ -115,9 +128,6 @@ enum AppCompositionRoot {
             capabilitiesClient: BrandAdminCapabilitiesCloudFunctionsClient(
                 transport: cloudFunctionsTransport
             )
-        )
-        let avatarImageManager = AvatarImageService(
-            imageStorageRepository: FirebaseRepositoryProvider.shared.imageStorageRepository
         )
         let appSessionRuntime = AppSessionRuntime(
             realtimeSocketService: realtimeSocketService,

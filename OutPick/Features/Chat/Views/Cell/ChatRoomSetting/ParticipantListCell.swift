@@ -9,11 +9,12 @@ import UIKit
 
 class ParticipantListCell: UICollectionViewCell {
     static let reuseIdentifier = "ParticipantListCell"
-    private var avatarLoadTask: Task<Void, Never>?
     private var onModerate: (() -> Void)?
+    private var avatarIsVisible = false
+    func useViewportVisibility() { userProfileImageView.automaticallyLoads = false }
     
-    private lazy var userProfileImageView: UIImageView = {
-        let imageView = UIImageView()
+    private lazy var userProfileImageView: AvatarImageView = {
+        let imageView = AvatarImageView()
         imageView.image = UIImage(named: "Default_Profile")
         imageView.tintColor = OutPickTheme.ColorToken.iconSecondary
         imageView.contentMode = .scaleAspectFill
@@ -121,8 +122,7 @@ class ParticipantListCell: UICollectionViewCell {
         print(#function, "불러온 사용자 프로필 => \(userProfile)")
         let nickname = userProfile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
         nickNameLabel.text = nickname.isEmpty ? Self.fallbackDisplayName() : nickname
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
+        userProfileImageView.resetAvatar()
         userProfileImageView.image = UIImage(named: "Default_Profile")
         roleBadgeLabel.isHidden = true
         roleBadgeLabel.text = nil
@@ -159,8 +159,7 @@ class ParticipantListCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
+        userProfileImageView.resetAvatar()
         userProfileImageView.image = UIImage(named: "Default_Profile")
         configureModeration(isVisible: false, onTap: nil)
         roleBadgeLabel.isHidden = true
@@ -168,30 +167,21 @@ class ParticipantListCell: UICollectionViewCell {
     }
 
     func configureCell(userProfile: LocalChatUser, avatarImageManager: AvatarImageManaging) {
-        configureCell(userProfile: userProfile)
-
-        guard let path = userProfile.profileImagePath, !path.isEmpty else { return }
-
-        avatarLoadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            if let cached = await avatarImageManager.cachedAvatar(for: path) {
-                guard !Task.isCancelled else { return }
-                self.userProfileImageView.image = cached
-                return
-            }
-
-            do {
-                let image = try await avatarImageManager.loadAvatar(for: path, maxBytes: 3 * 1024 * 1024)
-                guard !Task.isCancelled else { return }
-                self.userProfileImageView.image = image
-            } catch {
-                self.userProfileImageView.image = UIImage(named: "Default_Profile")
-            }
-        }
+        let nickname = userProfile.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        nickNameLabel.text = nickname.isEmpty ? Self.fallbackDisplayName() : nickname
+        roleBadgeLabel.isHidden = true
+        roleBadgeLabel.text = nil
+        userProfileImageView.configure(userID: userProfile.userID, path: userProfile.profileImagePath, manager: avatarImageManager)
     }
 
     private static func fallbackDisplayName() -> String {
         "알 수 없는 사용자"
+    }
+
+    func setAvatarVisible(_ visible: Bool) {
+        if visible {
+            if !avatarIsVisible || userProfileImageView.presentation.status == .idle { userProfileImageView.presentation.resume() }
+        } else { userProfileImageView.presentation.suspend() }
+        avatarIsVisible = visible
     }
 }

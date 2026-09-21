@@ -45,15 +45,11 @@ final class PostCommentRepliesViewModel: ObservableObject {
     private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
-    private let avatarImageManager: AvatarImageManaging
     private let pageSize: Int
-    private let avatarPrefetchLimit: Int
-    private let avatarThumbnailMaxBytes: Int
 
     private var nextCursor: PageCursor?
     private var loadedKey: String?
     private var isRequestingPage: Bool = false
-    private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
     private var pinnedCommentIDs: Set<CommentID> = []
@@ -96,10 +92,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: AvatarImageManaging,
-        pageSize: Int = 30,
-        avatarPrefetchLimit: Int = 16,
-        avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
+        pageSize: Int = 30
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
@@ -119,10 +112,7 @@ final class PostCommentRepliesViewModel: ObservableObject {
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
             currentUserIDProvider: currentUserIDProvider
         )
-        self.avatarImageManager = avatarImageManager
         self.pageSize = pageSize
-        self.avatarPrefetchLimit = avatarPrefetchLimit
-        self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
         bindInteractionStore()
         updatePinnedCommentIDs()
     }
@@ -310,29 +300,6 @@ final class PostCommentRepliesViewModel: ObservableObject {
         } catch {
             actionErrorMessage = "사용자를 차단하지 못했어요."
             return nil
-        }
-    }
-
-    func prefetchAuthorAvatars(around commentID: CommentID) {
-        let comments = [parentComment] + replies
-        guard let index = comments.firstIndex(where: { $0.id == commentID }) else { return }
-
-        let upperBound = min(comments.count, index + avatarPrefetchLimit)
-        let paths = comments[index..<upperBound]
-            .compactMap { authorDisplays[$0.userID]?.avatarPath }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .filter { prefetchedAvatarPaths.contains($0) == false }
-
-        guard paths.isEmpty == false else { return }
-        prefetchedAvatarPaths.formUnion(paths)
-
-        Task {
-            await avatarImageManager.prefetchAvatars(
-                paths: paths,
-                maxBytes: avatarThumbnailMaxBytes,
-                maxConcurrent: 4
-            )
         }
     }
 

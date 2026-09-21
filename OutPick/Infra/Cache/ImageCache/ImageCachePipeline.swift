@@ -81,6 +81,7 @@ enum ImageCachePipelineError: Error {
 
 /// 프리패치 시점에 어떤 캐시 계층까지 저장할지 결정합니다.
 enum ImageCacheStorePolicy: Equatable {
+    case transient
     case memoryOnly
     case memoryAndDisk
 }
@@ -88,6 +89,8 @@ enum ImageCacheStorePolicy: Equatable {
 private extension ImageCacheStorePolicy {
     var debugLabel: String {
         switch self {
+        case .transient:
+            return "transient"
         case .memoryOnly:
             return "memoryOnly"
         case .memoryAndDisk:
@@ -114,6 +117,7 @@ final class ImageCachePipeline {
         memory: ImageCacheMemoryStore = ImageCacheMemoryStore(),
         disk: ImageCacheDiskStore? = nil,
         resources: ImagePipelineResources = .shared,
+        promotionEncoding: ImageCachePromotionEncoding? = nil,
         decoder: @escaping @Sendable (Data) -> UIImage? = { ImageFileDecoding.image($0) },
         fileDecoder: @escaping @Sendable (URL) -> UIImage? = { ImageFileDecoding.image($0) }
     ) {
@@ -122,7 +126,13 @@ final class ImageCachePipeline {
         self.memory = memory
         self.disk = disk
         self.resources = resources
-        self.coordinator = ImageLoadCoordinator(memory: memory, disk: disk, resources: resources)
+        let processor = self.processor
+        self.coordinator = ImageLoadCoordinator(
+            memory: memory, disk: disk, resources: resources,
+            promotion: promotionEncoding.map { encoding in
+                { image in try await processor.encoded(image, using: encoding) }
+            }
+        )
         Self.registryLock.lock()
         Self.registry.add(self)
         Self.registryLock.unlock()
@@ -130,6 +140,20 @@ final class ImageCachePipeline {
 
     func cachedImage(path: String) async -> UIImage? {
         try? await cachedValue(path: path, priority: .visible).image
+    }
+
+    /// 표시용 메모리 조회만 수행하며 디스크 읽기·저장 승격은 기존 비동기 경로가 담당한다.
+    func cachedMemoryImageImmediately(path: String) -> UIImage? {
+        memory.image(forKey: "imageCache|\(path)")
+    }
+
+    func cachedImage(path: String, storePolicy: ImageCacheStorePolicy) async -> UIImage? {
+        guard storePolicy != .transient else { return nil }
+        guard let image = await cachedImage(path: path), !Task.isCancelled else { return nil }
+        if storePolicy == .memoryAndDisk {
+            _ = await coordinator.cachedMemoryImage(path: path, promote: true)
+        }
+        return image
     }
 
     private func cachedValue(path: String, priority: ImageRequestPriority) async throws -> ImageLoadValue {
@@ -153,12 +177,18 @@ final class ImageCachePipeline {
     func loadImage(path: String, maxBytes: Int, storePolicy: ImageCacheStorePolicy, priority: ImageRequestPriority) async throws -> UIImage {
         try await ImageCacheMetrics.shared.request("pipelineRequest", key: path) {
             try Task.checkCancellation()
-            let request = ImageRequest(path: path, work: .load(maxBytes: maxBytes))
-            if let image = memory.image(forKey: request.cacheKey) {
+            let request = ImageRequest(path: path, work: storePolicy == .transient
+                ? .transient(maxBytes: maxBytes) : .load(maxBytes: maxBytes))
+            if !request.isTransient,
+               let image = await coordinator.cachedMemoryImage(path: path, promote: storePolicy == .memoryAndDisk) {
+                try Task.checkCancellation()
                 ImageCacheMetrics.shared.mark("cache", key: path, outcome: "memory")
                 return image
             }
             let value = try await coordinator.value(for: request, priority: priority, storePolicy: storePolicy) { [self] _ in
+                if request.isTransient {
+                    return try await processor.download(path: path, maxBytes: maxBytes)
+                }
                 let cached = try await cachedValue(path: path, priority: priority)
                 if cached.image != nil {
                     ImageCacheMetrics.shared.mark("cache", key: path, outcome: "local")

@@ -11,12 +11,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     private let avatarImageManager: AvatarImageManaging
     private let photoLibrarySaver: PhotoLibrarySaving
 
-    private var avatarLoadTask: Task<Void, Never>?
-    private var currentAvatarSource = AvatarImageSource()
-    private var displayedAvatarImage: UIImage?
     private var isDismissRequested = false
-    private let avatarThumbnailMaxBytes = 3 * 1024 * 1024
-    private let avatarOriginalMaxBytes = 20 * 1024 * 1024
     private let edgeDismissProgressThreshold: CGFloat = 0.35
     private let edgeDismissVelocityThreshold: CGFloat = 900
 
@@ -37,8 +32,8 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         return button
     }()
 
-    private let profileImageView: UIImageView = {
-        let imageView = UIImageView()
+    private let profileImageView: AvatarImageView = {
+        let imageView = AvatarImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
@@ -143,10 +138,6 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        avatarLoadTask?.cancel()
-    }
-
     override var preferredStatusBarStyle: UIStatusBarStyle {
         .lightContent
     }
@@ -232,19 +223,18 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
     }
 
     private func loadAvatarIfNeeded(source: AvatarImageSource) {
-        guard currentAvatarSource != source else { return }
+        profileImageView.configure(userID: viewModel.userID, path: source.immediateDisplayPath,
+                                   manager: avatarImageManager, original: source.thumbnailPath == nil)
+    }
 
-        avatarLoadTask?.cancel()
-        avatarLoadTask = nil
-        currentAvatarSource = source
-        showPlaceholderAvatar()
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        profileImageView.presentation.suspend()
+    }
 
-        guard source.hasImagePath else { return }
-
-        avatarLoadTask = Task { [weak self] in
-            guard let self else { return }
-            await self.loadAvatarProgressively(source: source)
-        }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        profileImageView.presentation.resume()
     }
 
     @objc private func backTapped() {
@@ -304,7 +294,7 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
 
     private func presentAvatarViewerIfPossible() {
         let avatarSource = viewModel.state.avatarSource
-        let initialViewerImage = displayedAvatarImage ?? profileImageView.image
+        let initialViewerImage = profileImageView.presentation.image ?? profileImageView.image
         guard initialViewerImage != nil || avatarSource.hasImagePath else { return }
 
         let viewer = SimpleImageViewerVC(
@@ -319,63 +309,23 @@ final class UserProfileDetailViewController: UIViewController, ChatModalAnimatab
             ],
             startIndex: 0,
             cachedImageProvider: { [weak self] path in
-                guard let self else { return nil }
+                guard let self, path != avatarSource.viewerOriginalPath else { return nil }
                 return await self.avatarImageManager.cachedAvatar(for: path)
             },
             loadImageProvider: { [weak self] path, maxBytes in
                 guard let self else { return nil }
+                if path == avatarSource.viewerOriginalPath {
+                    await self.avatarImageManager.resetAvatarFailures(paths: [path])
+                    return try? await self.avatarImageManager.loadOriginalAvatar(for: path)
+                }
                 return try? await self.avatarImageManager.loadAvatar(for: path, maxBytes: maxBytes)
             },
-            photoLibrarySaver: photoLibrarySaver
+            photoLibrarySaver: photoLibrarySaver,
+            transientImages: true
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve
         present(viewer, animated: true)
     }
 
-    private func loadAvatarProgressively(source: AvatarImageSource) async {
-        if let originalPath = source.originalPath,
-           let cachedOriginal = await avatarImageManager.cachedAvatar(for: originalPath) {
-            guard !Task.isCancelled, currentAvatarSource == source else { return }
-            setDisplayedAvatar(cachedOriginal)
-            return
-        }
-
-        if let immediatePath = source.immediateDisplayPath {
-            let immediateMaxBytes = source.thumbnailPath != nil
-                ? avatarThumbnailMaxBytes
-                : avatarOriginalMaxBytes
-
-            if let cachedImmediate = await avatarImageManager.cachedAvatar(for: immediatePath) {
-                guard !Task.isCancelled, currentAvatarSource == source else { return }
-                setDisplayedAvatar(cachedImmediate)
-            } else if let immediateImage = try? await avatarImageManager.loadAvatar(
-                for: immediatePath,
-                maxBytes: immediateMaxBytes
-            ) {
-                guard !Task.isCancelled, currentAvatarSource == source else { return }
-                setDisplayedAvatar(immediateImage)
-            }
-        }
-
-        guard let originalPath = source.upgradeOriginalPath else { return }
-
-        if let originalImage = try? await avatarImageManager.loadAvatar(
-            for: originalPath,
-            maxBytes: avatarOriginalMaxBytes
-        ) {
-            guard !Task.isCancelled, currentAvatarSource == source else { return }
-            setDisplayedAvatar(originalImage)
-        }
-    }
-
-    private func showPlaceholderAvatar() {
-        profileImageView.image = UIImage(named: "Default_Profile")
-        displayedAvatarImage = nil
-    }
-
-    private func setDisplayedAvatar(_ image: UIImage) {
-        profileImageView.image = image
-        displayedAvatarImage = image
-    }
 }

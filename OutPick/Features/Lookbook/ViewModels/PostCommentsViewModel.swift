@@ -45,15 +45,11 @@ final class PostCommentsViewModel: ObservableObject {
     private let commentInteractionStore: any CommentInteractionManaging
     private let currentUserIDProvider: any CurrentUserIDProviding
     private let authorProfileStore: CommentAuthorProfileStore
-    private let avatarImageManager: AvatarImageManaging
     private let pageSize: Int
-    private let avatarPrefetchLimit: Int
-    private let avatarThumbnailMaxBytes: Int
 
     private var nextCursor: PageCursor?
     private var loadedKey: String?
     private var isRequestingPage: Bool = false
-    private var prefetchedAvatarPaths: Set<String> = []
     private var hiddenUserIDs: Set<UserID> = []
     private var didLoadHiddenUserIDs: Bool = false
     private var pinnedCommentIDs: Set<CommentID> = []
@@ -90,11 +86,8 @@ final class PostCommentsViewModel: ObservableObject {
         commentInteractionStore: any CommentInteractionManaging,
         currentUserIDProvider: any CurrentUserIDProviding,
         authorProfileStore: CommentAuthorProfileStore? = nil,
-        avatarImageManager: AvatarImageManaging,
         initialSort: CommentSortOption = .latest,
-        pageSize: Int = 30,
-        avatarPrefetchLimit: Int = 16,
-        avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
+        pageSize: Int = 30
     ) {
         self.brandID = brandID
         self.seasonID = seasonID
@@ -113,11 +106,8 @@ final class PostCommentsViewModel: ObservableObject {
         self.authorProfileStore = authorProfileStore ?? CommentAuthorProfileStore(
             currentUserIDProvider: currentUserIDProvider
         )
-        self.avatarImageManager = avatarImageManager
         self.selectedSort = initialSort
         self.pageSize = pageSize
-        self.avatarPrefetchLimit = avatarPrefetchLimit
-        self.avatarThumbnailMaxBytes = avatarThumbnailMaxBytes
         bindInteractionStore()
     }
 
@@ -137,7 +127,6 @@ final class PostCommentsViewModel: ObservableObject {
         await loadPage(reset: true)
         await authorProfileStore.refreshAuthors(for: commentFeedComments)
         syncAuthorDisplays()
-        prefetchInitialAuthorAvatars()
     }
 
     func selectSort(_ sort: CommentSortOption) async {
@@ -318,37 +307,6 @@ final class PostCommentsViewModel: ObservableObject {
         }
     }
 
-    func prefetchAuthorAvatars(around commentID: CommentID) {
-        let items = commentFeedComments
-        guard let index = items.firstIndex(where: { $0.id == commentID }) else { return }
-
-        let upperBound = min(items.count, index + avatarPrefetchLimit)
-        prefetchAuthorAvatars(for: Array(items[index..<upperBound]))
-    }
-
-    func prefetchInitialAuthorAvatars() {
-        prefetchAuthorAvatars(for: Array(commentFeedComments.prefix(avatarPrefetchLimit)))
-    }
-
-    private func prefetchAuthorAvatars(for comments: [Comment]) {
-        let paths = comments
-            .compactMap { authorDisplays[$0.userID]?.avatarPath }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .filter { prefetchedAvatarPaths.contains($0) == false }
-
-        guard paths.isEmpty == false else { return }
-        prefetchedAvatarPaths.formUnion(paths)
-
-        Task {
-            await avatarImageManager.prefetchAvatars(
-                paths: paths,
-                maxBytes: avatarThumbnailMaxBytes,
-                maxConcurrent: 4
-            )
-        }
-    }
-
     @discardableResult
     func submitComment() async -> CommentMutationResult? {
         guard isSubmittingComment == false else { return nil }
@@ -447,7 +405,6 @@ final class PostCommentsViewModel: ObservableObject {
                 syncAuthorDisplays()
                 await seedCommentLikeStates(for: commentFeedComments)
                 updatePinnedCommentIDs()
-                prefetchInitialAuthorAvatars()
             } else {
                 let page = try await useCase.loadRootComments(
                     brandID: brandID,

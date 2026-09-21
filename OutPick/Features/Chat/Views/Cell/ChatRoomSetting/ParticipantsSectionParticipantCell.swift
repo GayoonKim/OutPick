@@ -15,6 +15,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
     private var currentUserID: String = ""
     private var collectionHeightConstraint: NSLayoutConstraint!
     var onSelectParticipant: ((ChatRoomParticipant) -> Void)?
+    var onAvatarLayoutChanged: (() -> Void)?
     var canModerateParticipant: ((ChatRoomParticipant) -> Bool)?
     var onModerateParticipant: ((ChatRoomParticipant) -> Void)?
     
@@ -117,7 +118,9 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        setAvatarVisible(false)
         onSelectParticipant = nil
+        onAvatarLayoutChanged = nil
         canModerateParticipant = nil
         onModerateParticipant = nil
         participants = []
@@ -148,6 +151,7 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
             self.updateCollectionHeightIfNeeded()
             self.setNeedsLayout()
             self.layoutIfNeeded()
+            self.onAvatarLayoutChanged?()
         }
     }
 
@@ -156,6 +160,22 @@ class ParticipantsSectionParticipantCell: UICollectionViewCell {
         guard abs(collectionHeightConstraint.constant - height) > 0.5 else { return }
         collectionHeightConstraint.constant = height
         invalidateIntrinsicContentSize()
+    }
+
+    func setAvatarVisible(_ visible: Bool) {
+        // true의 실제 가시성은 바깥 viewport와 개별 행으로 판정한다.
+        if !visible { verticalCollectionView.visibleCells.compactMap { $0 as? ParticipantListCell }.forEach { $0.setAvatarVisible(false) } }
+    }
+
+    func avatarRows(in parent: UICollectionView) -> [AvatarViewportRow] {
+        guard let avatarImageManager else { return [] }
+        return participants.enumerated().compactMap { index, participant in
+            guard let attributes = verticalCollectionView.layoutAttributesForItem(at: IndexPath(item: index, section: 0)) else { return nil }
+            let frame = verticalCollectionView.convert(attributes.frame, to: parent)
+            (verticalCollectionView.cellForItem(at: attributes.indexPath) as? ParticipantListCell)?.setAvatarVisible(frame.intersects(parent.bounds))
+            guard let path = participant.user.profileImagePath else { return nil }
+            return AvatarViewportRow(id: participant.userID, path: path, frame: frame, policy: avatarImageManager.avatarCachePolicy)
+        }
     }
 }
 
@@ -170,6 +190,7 @@ extension ParticipantsSectionParticipantCell: UICollectionViewDataSource, UIColl
 //        }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ParticipantListCell.reuseIdentifier, for: indexPath) as! ParticipantListCell
         let participant = participants[indexPath.item]
+        cell.useViewportVisibility()
         if let avatarImageManager {
             cell.configureCell(
                 participant: participant,

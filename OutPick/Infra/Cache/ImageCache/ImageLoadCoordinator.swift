@@ -4,6 +4,11 @@ import UIKit
 /// 디스크 조회 전부터 동일 작업을 합치고 소비자마다 독립적으로 결과를 전달한다.
 actor ImageLoadCoordinator {
     typealias DemandObserver = @Sendable (ImageRequest, ImageRequestPriority?, Int) -> Void
+    typealias Promotion = @Sendable (UIImage) async throws -> ImageLoadValue
+    private struct PromotionJob {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
     private struct Consumer {
         let priority: ImageRequestPriority
         let continuation: CheckedContinuation<ImageLoadValue, Error>
@@ -23,16 +28,19 @@ actor ImageLoadCoordinator {
     private let resources: ImagePipelineResources
     private let persistence: ImageCachePersistence
     private let onDemandChange: DemandObserver?
+    private let promotion: Promotion?
+    private var promotions: [String: PromotionJob] = [:]
     private var jobs: [ImageRequest: Job] = [:]
     private var revisions: [String: UInt64] = [:]
     private var globalRevision: UInt64 = 0
 
-    init(memory: ImageCacheMemoryStore, disk: ImageCacheDiskStore, resources: ImagePipelineResources = .shared, onDemandChange: DemandObserver? = nil) {
+    init(memory: ImageCacheMemoryStore, disk: ImageCacheDiskStore, resources: ImagePipelineResources = .shared, promotion: Promotion? = nil, onDemandChange: DemandObserver? = nil) {
         self.memory = memory
         self.disk = disk
         self.resources = resources
         self.persistence = ImageCachePersistence(disk: disk)
         self.onDemandChange = onDemandChange
+        self.promotion = promotion
     }
 
     func value(
@@ -116,11 +124,13 @@ actor ImageLoadCoordinator {
     private func complete(request: ImageRequest, id: UUID, result: Result<ImageLoadValue, Error>) async -> Bool {
         guard let job = jobs[request], job.id == id, job.revision == currentRevision(request.path) else { return false }
         var transferred = false
-        if case .success(let value) = result, let image = value.image {
+        if !request.isTransient, case .success(let value) = result, let image = value.image {
             memory.set(image, forKey: request.cacheKey)
             if job.storesOnDisk, let payload = value.payload {
                 transferred = true
                 await persistence.enqueue(payload, key: request.cacheKey, revision: job.revision, release: value.release)
+            } else if job.storesOnDisk {
+                schedulePromotion(image: image, path: request.path)
             }
         }
         guard let current = jobs[request], current.id == id,
@@ -133,7 +143,53 @@ actor ImageLoadCoordinator {
         return transferred
     }
 
-    func flushPendingWrites() async { await persistence.flush() }
+    func flushPendingWrites() async {
+        let pending = promotions.values.map(\.task)
+        for task in pending { await task.value }
+        await persistence.flush()
+    }
+
+    func cachedMemoryImage(path: String, promote: Bool) -> UIImage? {
+        guard let image = memory.image(forKey: "imageCache|\(path)") else { return nil }
+        if promote { schedulePromotion(image: image, path: path) }
+        return image
+    }
+
+    private func schedulePromotion(image: UIImage, path: String) {
+        guard let promotion, promotions[path] == nil else { return }
+        let revision = currentRevision(path)
+        let id = UUID()
+        let task = Task(priority: .utility) {
+            await ImageWorkContext.$current.withValue(ImageWorkContext(.prefetch)) {
+                await self.promote(image: image, path: path, revision: revision, id: id, using: promotion)
+            }
+        }
+        promotions[path] = PromotionJob(id: id, task: task)
+    }
+
+    private func promote(image: UIImage, path: String, revision: UInt64, id: UUID, using encode: Promotion) async {
+        defer { if promotions[path]?.id == id { promotions.removeValue(forKey: path) } }
+        let key = "imageCache|\(path)"
+        // 진행 중인 원래 다운로드 저장이 있으면 먼저 수렴시킨다.
+        await persistence.flush()
+        guard !Task.isCancelled, revision == currentRevision(path), promotions[path]?.id == id else { return }
+        guard await disk.size(forKey: key, revision: revision) == nil else { return }
+        guard !Task.isCancelled, revision == currentRevision(path), promotions[path]?.id == id else { return }
+        do {
+            let value = try await encode(image)
+            guard !Task.isCancelled, revision == currentRevision(path), promotions[path]?.id == id,
+                  let payload = value.payload else {
+                await value.release?()
+                return
+            }
+            await persistence.enqueue(payload, key: key, revision: revision, release: value.release)
+            // 파일이 기록되기 전 job을 없애면 다음 hit가 같은 변환을 반복할 수 있다.
+            await persistence.flush()
+        } catch {
+            // 저장 실패는 이미 표시한 이미지를 지우지 않는다. 다음 수요에서 다시 시도한다.
+            ImageCacheMetrics.shared.mark("cachePromotion", key: path, outcome: Task.isCancelled ? "cancelled" : "failed")
+        }
+    }
 
     func remove(path: String) async {
         let revision = invalidate(path: path)
@@ -155,6 +211,8 @@ actor ImageLoadCoordinator {
     func removeAll() async {
         globalRevision = ImageCacheRevisionClock.next()
         revisions.removeAll()
+        for job in promotions.values { job.task.cancel() }
+        promotions.removeAll()
         let oldJobs = Array(jobs.values)
         let oldRequests = Array(jobs.keys)
         jobs.removeAll()
@@ -167,6 +225,7 @@ actor ImageLoadCoordinator {
     private func invalidate(path: String) -> UInt64 {
         let revision = ImageCacheRevisionClock.next()
         revisions[path] = revision
+        promotions.removeValue(forKey: path)?.task.cancel()
         let requests = jobs.keys.filter { $0.path == path }
         for request in requests {
             if let job = jobs.removeValue(forKey: request) { cancel(job) }

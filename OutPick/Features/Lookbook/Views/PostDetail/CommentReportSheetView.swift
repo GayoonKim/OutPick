@@ -26,6 +26,7 @@ struct CommentReportSheetView: View {
 
             VStack(spacing: 12) {
                 CommentSafetyAvatarView(
+                    userID: author.userID.value,
                     avatarPath: author.avatarPath,
                     size: 58,
                     avatarImageManager: avatarImageManager

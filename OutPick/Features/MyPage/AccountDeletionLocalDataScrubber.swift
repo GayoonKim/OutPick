@@ -17,17 +17,20 @@ final class AccountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing 
     private let loginManager: LoginManager
     private let defaults: UserDefaults
     private let markerKey: String
+    private let avatarImages: AvatarImageManaging?
 
     init(
         database: AppDatabase,
         loginManager: LoginManager = .shared,
         defaults: UserDefaults = .standard,
-        markerKey: String = "AccountDeletionLocalCleanupPending"
+        markerKey: String = "AccountDeletionLocalCleanupPending",
+        avatarImages: AvatarImageManaging? = nil
     ) {
         self.database = database
         self.loginManager = loginManager
         self.defaults = defaults
         self.markerKey = markerKey
+        self.avatarImages = avatarImages
     }
 
     var requiresRetry: Bool {
@@ -36,6 +39,7 @@ final class AccountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing 
 
     func scrub() async throws {
         defaults.set(true, forKey: markerKey)
+        await avatarImages?.transitionAvatarSession(to: nil)
         var databaseError: Error?
         do {
             try await database.deleteAllUserSessionData()

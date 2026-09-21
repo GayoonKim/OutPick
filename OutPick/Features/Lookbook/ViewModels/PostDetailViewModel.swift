@@ -23,7 +23,6 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     private var loadedKey: String?
     private var isRequesting = false
-    private var prefetchedAvatarPaths: Set<String> = []
     private var interactionPinScope: InteractionPinScope?
     private var pinnedCommentIDs: Set<CommentID> = []
     private var commentPinScopes: [CommentID: InteractionPinScope] = [:]
@@ -31,7 +30,6 @@ final class PostDetailScreenViewModel: ObservableObject {
     private var postStateInvalidationTask: Task<Void, Never>?
     private var representativeCommentInvalidationTask: Task<Void, Never>?
     private var isRefreshingRepresentativeComment: Bool = false
-    private let avatarThumbnailMaxBytes: Int = 3 * 1024 * 1024
     private let brandID: BrandID
     private let seasonID: SeasonID
     private let postID: PostID
@@ -112,25 +110,6 @@ final class PostDetailScreenViewModel: ObservableObject {
 
     func displayLikeCount(for comment: Comment) -> Int {
         commentInteractionStore.likeCount(for: comment)
-    }
-
-    func prefetchAuthorAvatars(for comments: [Comment], avatarImageManager: AvatarImageManaging) {
-        let paths = comments
-            .compactMap { authorDisplays[$0.userID]?.avatarPath }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .filter { prefetchedAvatarPaths.contains($0) == false }
-
-        guard paths.isEmpty == false else { return }
-        prefetchedAvatarPaths.formUnion(paths)
-
-        Task {
-            await avatarImageManager.prefetchAvatars(
-                paths: paths,
-                maxBytes: avatarThumbnailMaxBytes,
-                maxConcurrent: 4
-            )
-        }
     }
 
     func toggleLike() async {

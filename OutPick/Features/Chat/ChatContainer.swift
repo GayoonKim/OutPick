@@ -432,8 +432,11 @@ final class ChatContainer {
         mediaProcessor
     }
 
-    func makeAvatarImageManager() -> AvatarImageManaging {
-        avatarImageManager
+    func makeAvatarImageManager(roomID: String? = nil) -> AvatarImageManaging {
+        avatarImageManager.scoped { [joinedRoomsStore] in
+            guard let roomID, joinedRoomsStore.contains(roomID) else { return .memoryOnly }
+            return .memoryAndDisk
+        }
     }
 
     func makeProfileSyncManager() -> ChatProfileSyncManaging {
