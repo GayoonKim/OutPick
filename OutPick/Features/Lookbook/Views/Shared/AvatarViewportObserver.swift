@@ -61,14 +61,16 @@ private struct AvatarViewportModifier: ViewModifier {
                 }
                 frames = next; update()
             }
-            .onChange(of: items) { _ in update() }
+            .onChange(of: items) { next in update(items: next) }
             .onChange(of: refreshID) { _ in prefetch.clear(); update() }
             .onAppear { active = true; update() }
             .onDisappear { active = false; prefetch.clear() }
     }
 
-    private func update() {
+    private func update(items latestItems: [AvatarViewportItem]? = nil) {
         guard active, height > 0 else { return }
+        // 경로만 바뀐 경우에도 콜백이 받은 최신 값으로 선로딩 수요를 갱신한다.
+        let items = latestItems ?? self.items
         let measured = items.enumerated().compactMap { index, item in frames[item.id].map { (index, $0) } }
         guard let anchor = measured.first else { prefetch.update([]); return }
         // Lazy 행의 미배치 영역은 측정된 행 간격으로만 추정한다.

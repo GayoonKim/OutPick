@@ -154,7 +154,7 @@ class ChatMessageCell: UICollectionViewCell {
     }()
     
     private let failedIconImageView: UIImageView = {
-        let imageView = AvatarImageView()
+        let imageView = UIImageView()
         imageView.image = UIImage(systemName: "exclamationmark.circle.fill")
         imageView.tintColor = OutPickTheme.ColorToken.destructive
         imageView.contentMode = .scaleAspectFit
