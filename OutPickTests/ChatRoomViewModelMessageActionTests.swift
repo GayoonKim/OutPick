@@ -11,6 +11,24 @@ import Testing
 
 @MainActor
 struct ChatRoomViewModelMessageActionTests {
+    @Test func localMediaPreparationIsForwardedWithoutRenderingMessages() async {
+        let window = ChatInitialWindow(messages: [], readBoundarySeq: nil, latestSeq: 10, hasMoreOlder: false, hasMoreNewer: false)
+        let viewModel = makeViewModel(initialLoadUseCase: ChatInitialLoadUseCaseStub(events: [.prepareLocalMedia(window), .completed]))
+        var preparations = 0
+        var renders = 0
+        for await event in viewModel.startInitialLoadEvents(isParticipant: true) {
+            switch event {
+            case .prepareLocalMedia(let received):
+                #expect(received == window)
+                preparations += 1
+            case .render: renders += 1
+            default: break
+            }
+        }
+        #expect(preparations == 1)
+        #expect(renders == 0)
+    }
+
     @Test func stalePageCannotChangeRetryStateAfterGenerationReset() async throws {
         let spy = ChatRoomMessageUseCaseSpy()
         var response: CheckedContinuation<ChatMessagePageResult, Error>?
@@ -428,6 +446,7 @@ struct ChatRoomViewModelMessageActionTests {
 
     private func makeViewModel(
         room: ChatRoom? = nil,
+        initialLoadUseCase: ChatInitialLoadUseCaseProtocol = ChatInitialLoadUseCaseStub(),
         messageUseCase: ChatRoomMessageUseCaseProtocol = ChatRoomMessageUseCaseSpy(),
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol = ChatRoomLifecycleUseCaseSpy(),
         currentUserProvider: CurrentUserProviding = CurrentUserProviderStub(),
@@ -436,7 +455,7 @@ struct ChatRoomViewModelMessageActionTests {
     ) -> ChatRoomViewModel {
         ChatRoomViewModel(
             room: room ?? makeRoom(id: "room-1", creatorUID: "owner@example.com"),
-            initialLoadUseCase: ChatInitialLoadUseCaseStub(),
+            initialLoadUseCase: initialLoadUseCase,
             messageUseCase: messageUseCase,
             searchUseCase: ChatRoomSearchUseCaseStub(),
             lifecycleUseCase: lifecycleUseCase,
@@ -617,11 +636,13 @@ private final class ChatRoomLifecycleUseCaseSpy: ChatRoomLifecycleUseCaseProtoco
 }
 
 private struct ChatInitialLoadUseCaseStub: ChatInitialLoadUseCaseProtocol {
+    var events: [ChatInitialLoadEvent] = []
     func execute(
         room: ChatRoom,
         isParticipant: Bool
     ) -> AsyncStream<ChatInitialLoadEvent> {
         AsyncStream { continuation in
+            events.forEach { continuation.yield($0) }
             continuation.finish()
         }
     }

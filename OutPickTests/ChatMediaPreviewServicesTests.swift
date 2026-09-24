@@ -10,6 +10,42 @@ import Testing
 @testable import OutPick
 
 struct ChatMediaPreviewServicesTests {
+    @Test func scopedPlaybackStreamsWithoutStartingFullDownloadAndSaveUsesLease() async throws {
+        let remote = URL(string: "https://example.com/original.mp4")!
+        let files = VideoOriginalFilesSpy()
+        let legacy = ChatVideoDiskCacheSpy()
+        let downloader = ChatRemoteFileDownloaderSpy()
+        let resolver = DefaultChatVideoPlaybackResolver(
+            storageURLResolver: ChatStorageURLResolverSpy(resolvedURLs: ["rooms/a.mp4": remote]),
+            videoDiskCache: legacy, fileDownloader: downloader, originalFiles: files
+        )
+        let asset = try await resolver.playbackAsset(forPath: "rooms/a.mp4")
+        #expect(asset.url == remote)
+        #expect(files.acquiredPaths.isEmpty)
+        #expect(legacy.cacheCalls.isEmpty)
+        #expect(legacy.existsKeys.isEmpty)
+        #expect(downloader.downloadedURLs.isEmpty)
+        let saved = try await resolver.acquireFileForSaving(asset)
+        #expect(files.acquiredPaths == ["rooms/a.mp4"])
+        #expect(saved.fileURL == files.url)
+        await saved.release()
+    }
+
+    @Test func scopedPlaybackReusesPinnedOriginalWithoutURLResolution() async throws {
+        let files = VideoOriginalFilesSpy()
+        files.hasCached = true
+        let urls = ChatStorageURLResolverSpy()
+        let resolver = DefaultChatVideoPlaybackResolver(
+            storageURLResolver: urls, videoDiskCache: ChatVideoDiskCacheSpy(),
+            fileDownloader: ChatRemoteFileDownloaderSpy(), originalFiles: files
+        )
+        let asset = try await resolver.playbackAsset(forPath: "rooms/a.mp4")
+        #expect(asset.url == files.url)
+        #expect(asset.fileLease?.isValid == true)
+        #expect(urls.requestedPaths.isEmpty)
+        await asset.fileLease?.release()
+    }
+
     @Test func playbackAssetUsesLocalFilePathWithoutStorageLookup() async throws {
         let storageResolver = ChatStorageURLResolverSpy()
         let videoCache = ChatVideoDiskCacheSpy()
@@ -121,6 +157,21 @@ struct ChatMediaPreviewServicesTests {
             fileDownloader: downloader
         )
     }
+}
+
+private final class VideoOriginalFilesSpy: ChatOriginalFileLoading {
+    let url = URL(fileURLWithPath: "/tmp/original-test.mp4")
+    var acquiredPaths: [String] = []
+    var hasCached = false
+    func acquireOriginal(_ resource: ChatOriginalResource, purpose: ChatOriginalPurpose) async throws -> ChatOriginalFileLease {
+        acquiredPaths.append(resource.path)
+        return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
+    }
+    func cachedOriginal(_ resource: ChatOriginalResource) async throws -> ChatOriginalFileLease? {
+        hasCached ? ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {}) : nil
+    }
+    func removeOriginal(path: String) async {}
+    func invalidateSession() {}
 }
 
 private final class ChatStorageURLResolverSpy: ChatStorageURLResolving {
