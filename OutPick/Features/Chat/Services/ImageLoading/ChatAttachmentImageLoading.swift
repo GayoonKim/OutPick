@@ -8,11 +8,13 @@
 import UIKit
 
 protocol ChatAttachmentImageLoading {
-    func cacheImagesIfNeeded(for message: ChatMessage, maxBytes: Int) async -> [UIImage]
+    var canPrepareDiskImage: Bool { get }
+    func prepareDiskImage(for path: String) async
+    func cachedMemoryImageImmediately(for path: String) -> UIImage?
     func cachedImage(for path: String) async -> UIImage?
     func loadImage(for path: String, maxBytes: Int) async throws -> UIImage
+    func loadImage(for path: String, maxBytes: Int, priority: ImageRequestPriority) async throws -> UIImage
     func loadImageData(for path: String, maxBytes: Int) async throws -> Data
-    func prefetchThumbnails(for messages: [ChatMessage], maxBytes: Int, maxConcurrent: Int) async
     func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async
     func storeOutgoingPreview(data: Data, forKey key: String) async
     func cachedOutgoingPreview(forKey key: String) async -> UIImage?
@@ -21,6 +23,9 @@ protocol ChatAttachmentImageLoading {
 }
 
 extension ChatAttachmentImageLoading {
+    var canPrepareDiskImage: Bool { false }
+    func prepareDiskImage(for path: String) async {}
+    func cachedMemoryImageImmediately(for path: String) -> UIImage? { nil }
     func loadImageData(for path: String, maxBytes: Int) async throws -> Data {
         throw URLError(.unsupportedURL)
     }

@@ -15,6 +15,8 @@ final class VideoPlayerOverlayVC: UIViewController {
     private let playerVC = AVPlayerViewController()
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
+    private var saveTask: Task<Void, Never>?
+    private var closed = false
 
     init(
         playbackAsset: ChatVideoPlaybackAsset,
@@ -90,53 +92,51 @@ final class VideoPlayerOverlayVC: UIViewController {
     }
 
     @objc private func closeTapped() {
+        closeMedia()
         playerVC.player?.pause()
         dismiss(animated: true)
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || navigationController?.isBeingDismissed == true { closeMedia() }
+    }
+
+    private func closeMedia() {
+        guard !closed else { return }
+        closed = true
+        saveTask?.cancel()
+        playerVC.player?.pause()
+        playerVC.player = nil
+        if let lease = playbackAsset.fileLease { Task { await lease.release() } }
+    }
+
+    deinit { saveTask?.cancel() }
+
     @objc private func saveTapped() {
-        Task { [weak self] in
+        guard saveTask == nil, !closed else { return }
+        saveButton.isEnabled = false
+        saveTask = Task { [weak self] in
             guard let self = self else { return }
+            defer { self.saveTask = nil; self.saveButton.isEnabled = true }
             do {
-                let fileURL = try await self.videoResolver.localFileURLForSaving(
-                    localURL: self.playbackAsset.url,
-                    storagePath: self.playbackAsset.storagePath,
-                    onProgress: { _ in }
-                )
-                try await self.photoLibrarySaver.saveVideo(fileURL: fileURL)
-                await MainActor.run { self.showToast("저장 완료") }
+                let lease = try await self.videoResolver.acquireFileForSaving(self.playbackAsset)
+                do {
+                    try Task.checkCancellation()
+                    guard !self.closed, lease.isValid else { throw CancellationError() }
+                    try await self.photoLibrarySaver.saveOriginal(lease, isVideo: true)
+                    await lease.release()
+                } catch { await lease.release(); throw error }
+                guard !self.closed, !Task.isCancelled else { return }
+                self.showToast("저장 완료")
             } catch {
-                await MainActor.run { self.showToast("저장 실패: \(error.localizedDescription)") }
+                guard !self.closed, !Task.isCancelled, !(error is CancellationError) else { return }
+                self.showToast("저장 실패")
             }
         }
     }
 
     private func showToast(_ message: String) {
-        let label = UILabel()
-        label.text = message
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        label.layer.cornerRadius = 12
-        label.clipsToBounds = true
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-
-        let guide = view.safeAreaLayoutGuide
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
-            label.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -40),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: guide.leadingAnchor, constant: 24),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: guide.trailingAnchor, constant: -24)
-        ])
-
-        label.alpha = 0
-        UIView.animate(withDuration: 0.2, animations: { label.alpha = 1 }) { _ in
-            UIView.animate(withDuration: 0.2, delay: 1.2, options: [], animations: { label.alpha = 0 }) { _ in
-                label.removeFromSuperview()
-            }
-        }
+        MediaSaveToast.show(message, in: view)
     }
 }

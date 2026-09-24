@@ -65,6 +65,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private let viewModel: ChatRoomSettingViewModel
     private let attachmentImageLoader: ChatAttachmentImageLoading
     private let videoResolver: ChatVideoPlaybackResolving
+    private let originalFiles: (any ChatOriginalFileLoading)?
     private let photoLibrarySaver: PhotoLibrarySaving
     private let roomImageManager: RoomImageManaging
     private lazy var avatarViewport = AvatarCollectionViewport(manager: avatarImageManager)
@@ -126,11 +127,13 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
         avatarImageManager: AvatarImageManaging,
-        currentUserProvider: any CurrentUserProviding
+        currentUserProvider: any CurrentUserProviding,
+        originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
         self.viewModel = viewModel
         self.attachmentImageLoader = attachmentImageLoader
         self.videoResolver = videoResolver
+        self.originalFiles = originalFiles
         self.photoLibrarySaver = photoLibrarySaver
         self.roomImageManager = roomImageManager
         self.avatarImageManager = avatarImageManager
@@ -431,7 +434,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             let vc = MediaGalleryViewController(
                 items: items,
                 photoLibrarySaver: self.photoLibrarySaver,
-                videoResolver: self.videoResolver
+                videoResolver: self.videoResolver,
+                originalFiles: self.originalFiles
             )
             let attachmentImageLoader = self.attachmentImageLoader
             vc.cachedImageProvider = { path in

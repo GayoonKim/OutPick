@@ -1,5 +1,49 @@
 # Test Entrypoints
 
+- `PhotoLibraryOriginalIntegrationTests`는 `photos-add` 권한이 사전 부여된 Simulator에서 합성 JPEG를 실제 Photos에 저장한다. 권한이 없거나 실제 기기이면 skip하므로 실제 executed/skip 결과를 확인해야 한다. `.bin` 직접 제출3302 실패를 재현했고, `PhotoLibraryPreparedResource`의 올바른 확장자 임시 사본으로 같은 제품 API를 검증한다. Simulator Photos에는 합성 작은 테스트 이미지가 생성될 수 있다.
+
+- `PhotoLibraryOriginalResourceTests`: `.bin` JPEG·확장자 없는 GIF 2frame·확장자가 잘못된 PNG의 실제 Photos 타입/파일명, 바이트·frame 불변, 잘못된 이미지 제출 전 거부. 실제 Photos 저장 검증은 실기기 QA와 구분한다. [기록](../tasks/chat-media-first-view-loading/original-media-results.md).
+
+- 원본 Phase3·4: `ChatOriginalFileStoreTests`의 fake SDK barrier로 공유 취소/마지막 취소 permit·임시 파일 유지/계정/세대/삭제/재시작/용량과 pin 검증. `ImageViewerOriginalFileTests`는 실제 UIKit 뷰어의 원본 저장·실패 재시도·닫기 후 차단·±1 수요를 검증한다. `ChatMediaPreviewServicesTests`는 스트리밍 시작의 전체 다운로드0 및 저장/캐시 lease를 검증한다. 실행 근거·실기기 미검증 항목은 [원본 결과](../tasks/chat-media-first-view-loading/original-media-results.md).
+
+- 예측선로딩회귀30개통과(`/private/tmp/outpick-predictive-prefetch-tests.log`): policy4/viewport10/surface3/directdisk3/files10. near/도착24상한과중간전구간제외·빠른이탈유예없음 신규검증. 기기체감은별도QA.
+
+- direct disk 회귀47개통과(XCTest13+SwiftTesting34), `/private/tmp/outpick-direct-disk-tests.log`. 기기파일시스템/체감검증 `/private/tmp/outpick-direct-disk-device.log` 진행중.
+
+- `ImageDirectDiskDecodingTests`: hardlink의교체/삭제중내용보호와해제,Data예산/files슬롯이차도direct캐시진행,기존Data복구3개. `/private/tmp/outpick-direct-disk-tests.log` 공용회귀, 실제기기파일시스템/체감비교는후속QA.
+
+- 1GiB/LRU회귀: 공용57개통과 및 최종집중5개통과(고유58), `/private/tmp/outpick-display-budget-{tests,lru-final-tests}.log`. 기기QA진행 `/private/tmp/outpick-display-budget-device.log`, 실제압박동작검증은자동주입시험과구분.
+
+- `ImageLRUMemoryStoreTests`: LRU조회/교체/삭제·압박해제/재유입상한/정상복귀·단일초과미보관·wrapper NSCache중복보관방지·디스크최근접근파일보호. `/private/tmp/outpick-display-budget-tests.log` 회귀, 실제1GiB QA와시스템경고실측은별도.
+
+- ③ Phase2 통합89개 통과(XCTest22+SwiftTesting67/7suite), `/private/tmp/outpick-cache-reuse-phase2-regression.log`. 기기비교QA 대기이며 중간16/46개와 중복합산하지 않음.
+
+- `ImageFileDownloadSchedulingTests` 추가3개: 메모리퇴거+pending 재조회 중복전송 방지/다른키 독립 조회, 로컬저장 표시준비 후 독립쓰기, 준비 중 삭제에 따른 늦은 저장 차단. Phase2 통합 회귀 `/private/tmp/outpick-cache-reuse-phase2-regression.log`.
+
+- `ChatMediaViewportControllerTests.testMemoryHitOnReentryPublishesImageWithoutLoadingOrAsyncRequest`: 방 재진입 memory hit의 동기 image·loading0·async 요청0. viewport/service/surface 회귀 `/private/tmp/outpick-cache-reuse-immediate-tests.log`, 실행 결과는③ 기록 참고.
+
+- ③ Phase1 계측 회귀25개 통과(XCTest15+SwiftTesting10), 실기기 기준선 QA 진행. `/private/tmp/outpick-cache-reuse-instrumentation-tests.log`; [현재 결과](../tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- **2026-09-23 ③ 계측:** `ImageCacheMetricsTests.cacheIdentityConnectsResourceStorageAndEvictedFilenameWithoutRawPath`가 resource/storage/file hash 연결과 원문 비노출을 검증한다. disabled 테스트에 linkCacheKey 무동작 검증 포함. metrics·file scheduling·revision·viewport 회귀 결과는 [실행 기록](../tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- SDK 취소 회귀: `OutPickTests/FirebaseDownloadCancellationRegressionTests.swift`는 Firebase12.17.0 실제 SDK의 cancel→늦은 enqueue 보호를 고유 fake bucket/HTTP testBlock으로 확인한다. 테스트 전용 `@testable FirebaseStorage` 사용, 운영 전송 구현에 SDK private API 추가 없음. 관련87개 회귀 통과, 구12.3.0 비교/실기기최종QA는 [진행 기록](../tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 2026-09-22 다운로드② 저장 실패 회귀: `OutPickTests/ImageFileDownloadSchedulingTests.swift`의 `testDiskWriteFailurePreservesDisplayAndReleasesFileThenRecovers`. 실제 캐시 쓰기 실패에서 표시/메모리 유지·임시 파일/permit 반환·다음 저장 복구 확인. iPhone14에서 suite7개 실패0. [실행 기록](../tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 다운로드② 실제 기기: 기존 baseline의 file body parent와 network span을 연결해 최대6개 동시 전송 확인. 전용 SDK fixture 없이 사용자 기존 캐시 스크롤을 측정했고 종료 시 network/files/decode/io active/waiting0. 취소 callback/RSS/동일 cold 비교는 별도 미검증. [결과](../tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 다운로드② 실행: `ImageFileDownloadSchedulingTests`6개는 실제 processor/pipeline와 독립 cache·제어 transport로 다운로드/쓰기 분리, 공용 파일 입장, 표시 선반환, 취소·오류 정리를 검증한다. 기존 코드 실패 재현 후 XCTest24＋Swift Testing51=75개 통과. 실SDK/실기기 증거는 [결과](../tasks/chat-media-first-view-loading/download-bottleneck-results.md)에서 구분한다.
+
+- 다운로드② 테스트 설계(미작성/미실행): 예정 `ImageFileDownloadSchedulingTests`에서 A 전송 hold 중 B 시작/캐시 쓰기 진행, 전역 network/files 상한, SDK 종료 전 취소 permit 보존, 저장까지 파일 보유·정리를 검증한다. 기존 resource/coordinator/revision 및 서비스/viewport 회귀와의 경계·실기기 비교는 [세부 계획](../tasks/chat-media-first-view-loading/download-bottleneck-plan.md)에 정리했다.
+
+- 회전 지연 회귀: `ChatMediaViewportSurfaceTests.testMediaCellResizesWithoutReconfigureAndKeepsRenderedImage`는 실제1장/30장 메시지 셀을390→844→390pt로 바꾸며 reconfigure 없는 크기 갱신과 UIImage 보존을 검증한다. 수정 전4assertion 실패, 비율 제약 수정 후 Surface3개/Continuity5개＋기기 회전 UI1개 재실행 통과. 누적 단위/컴포넌트95개·UI3개, 체감 지연은 사용자 QA로 구분. [근거](../tasks/chat-media-first-view-loading/qa-results.md).
+
+- 채팅 미디어 수명 후속: `ChatMediaViewportDevelopmentUITests.testKeyboardSettingsSearchAndCancelledBackRestoreMedia` 및 `testPhotoPickerCancellationAndRotationRestoreMedia` 실행 통과. 회전 직후 XCTest `isHittable` 오류를 피하고 collection viewport 교차 셀의 loaded 상태를 검사한다. `ChatRoomRouteLifecycleStateTests`5개 통과, 누적 단위/컴포넌트94개·UI3개. 가로 캡처 이상은 실제 화면 확인 전까지 시각 통과로 분류하지 않는다. [실행 기록](../tasks/chat-media-first-view-loading/qa-results.md).
+
+- 채팅 미디어① 실행 갱신: iPhone14 단위/컴포넌트89개＋실제 방 UI1개 통과. `ChatMediaViewportSurfaceTests`의 mixed-media thumbnail-only/카드56pt 좌표, controller의 transport 취소·삭제 후 stale 결과 경계를 추가했다. `ChatMediaViewportDevelopmentUITests`는 `TEST_RUNNER_OUTPICK_MEDIA_VIEWPORT_QA=1`을 xcodebuild에 전달해 명시 실행하며 기존 방 읽기/스크롤/확대/복귀만 수행한다. 신규 전송·SDK 오류·cold 성능은 이 결과로 대체하지 않는다. [로그와 잔여 QA](../tasks/chat-media-first-view-loading/qa-results.md). 아래 실행 보류는 구현 직후 기록이다.
+
+- 채팅 미디어 ①: `ChatMediaViewportPolicyTests`는 visible 무상한/offscreen 고유24/방향을, `ChatMediaViewportControllerTests`는 실패 재등장·방 세션·유예·늦은 응답 및 실제 ImageLoadCoordinator 합류/다른 소비자 보존을 검증한다. `ChatImagePreviewContinuityTests`는 표시 연속성·재사용·30장 개별 frame·원본 fallback 차단을 다룬다. `ImageViewerPagePolicyTests`의 본문 preview 경로 기대값을 thumbnail-only로 변경했다. 삭제된 ChatVideoAssetService 전용 테스트는 제거했다. 자동 테스트 실행은 보류이며 빌드와 QA 결과는 [진행](../tasks/chat-media-first-view-loading/progress.md)에 구분한다.
+
 - PR 리뷰 회귀: `AvatarNestedViewportTests.testSwiftUIViewportPrefetchesChangedPathWithoutScrolling`은 실제 SwiftUI viewport modifier와 spy를 연결해, 같은 행/좌표에서 nil→첫 사진→변경 사진으로 바뀔 때 선로딩 요청을 검증한다. 수정 전 두 경로 모두 실패한 재현과 수정 후 결과는 [리뷰 기록](../tasks/avatar-image-loading/review.md) 참조.
 
 - 잔여QA 최종 iPhone14 실행: AvatarRouteContractTests3개·AvatarNestedViewportTests1개(XCTest4)와 AvatarImageServiceTests12개(SwiftTesting) 통과. 실제컴포넌트/가짜transport·독립cache로 정책/원본only/중첩요청/연속캐시를 검증하고 전용폴더잔여0 확인. 기기로그 `/private/tmp/outpick-avatar-remaining-device-tests.log`. 기존112개회귀와중복되므로합산금지, [검증방법·한계](../tasks/avatar-image-loading/progress/phase-5.md).
@@ -606,3 +650,38 @@ xcodebuild -scheme OutPick-Development -destination 'id={simulator-id}' test -on
   - Worker `issue-recorder.test.ts`는 자동 occurrence, terminal 재발, fixed runtime 실제 성공의 verified 전이를 검증한다.
   - iOS `SeasonDiscoveryManagementViewModelTests.swift`, `LookbookExtractionReviewViewModelTests.swift`, `CloudFunctionsSeasonImportRepositoryTests.swift`는 상태 매핑, fixed-only action과 callable 계약을 fake Repository/transport로 검증한다.
   - 2026-08-05 Functions 141개, Worker 102개, iOS 관련 4개 suite 22개와 양 TypeScript lint/build, Development Simulator build가 통과했다.
+# 현재 메시지 전체 디스크 준비 검증
+
+`ChatMediaViewportControllerTests`의 디스크 준비 최신 순서/예산 중단/이탈 취소, `ChatMediaViewportPolicyTests`의 먼 후보 거리순/중복 제거, `ImageDirectDiskDecodingTests`의 cache-only miss/hit, `ImageLRUMemoryStoreTests`의 무퇴거 삽입/압박 차단. 기존 파일 다운로드 회귀 포함 실행 로그 `/private/tmp/outpick-room-disk-preparation-tests.log`. 실기기 빠른 스크롤 체감은 별도 QA.
+# 진입 초기 준비 검증
+
+`ChatMediaViewportControllerTests.testPreparationStartsBeforeViewportResumeAndStopsOnDisappearance`, `ChatMediaViewportPolicyTests.testInitialPreparationStartsAtEntryAnchorWithoutLayout` 추가. 디스크/LRU 관련 회귀 실행 `/private/tmp/outpick-early-disk-preparation-tests.log`. 진입 직후 빠른 스크롤 개선은 실기기 QA로 별도 판정.
+# 디스크 준비 동시성 검증
+
+`ChatMediaViewportControllerTests.testTwoPreparationsRunTogetherButBudgetStopsRefill`: 두 후보 동시 시작/세 번째 상한/예산 중단. viewport+LRU+coordinator 회귀 로그 `/private/tmp/outpick-dual-disk-preparation-tests.log`. 실제 진입 즉시 스크롤 효과는 기기 QA로 별도 확인.
+# 제한 해제 QA 검증
+
+재실행 유지 검증: ChatMediaViewportControllerTests.testUnlimitedPreparationStartsAllCandidatesAndCancelsAll은 실제 viewport 기본 조립으로 5개 동시 시작/전체 취소를 검증한다. 별도 환경변수 설정 없음. ImageDirectDiskDecodingTests는 점유된 decode/IO 게이트 우회·파일 수명을 검증한다. 최종 회귀 로그 `/private/tmp/outpick-unlimited-default-tests.log`, 기기 빌드 `/private/tmp/outpick-unlimited-default-build.log`.
+
+`ChatMediaViewportControllerTests.testUnlimitedPreparationStartsAllCandidatesAndCancelsAll` 및 `ImageDirectDiskDecodingTests.testUnlimitedDiskPathBypassesOccupiedDecodeAndIOGates` 추가. 기존 캐시/세대/메모리/취소 회귀 포함 `/private/tmp/outpick-unlimited-disk-preparation-tests.log`. 일반 경로와 QA 우회 경로를 각각 검증한다.
+# 로컬 단계 준비 및 셀 캐시 표시
+
+`ChatRoomViewModelMessageActionTests.localMediaPreparationIsForwardedWithoutRenderingMessages`는 힌트가 별도 render를 만들지 않는 VM 전달을 검증한다. `ChatMediaViewportSurfaceTests`의 최초 캐시 hit/원격경로 교체 차단/loading 직전 캐시 도착 시험 추가. viewport/continuity/VM 회귀 `/private/tmp/outpick-local-early-media-tests.log`. 실서버 이벤트 순서 및 체감은 코드 대조와 실기기 계측으로 별도 확인.
+# 전환/이탈 픽셀 연속성
+
+ChatImagePreviewContinuityTests의image→loading→idle이미지유지 및reuse해제, ChatMediaViewportSurfaceTests의remote경로변경차단, viewport취소회귀. `/private/tmp/outpick-media-entry-transition-tests.log`. 실제전환애니메이션과빠른스크롤빈칸은실기기QA로검증한다.
+# 실제 스피너 추적 검증
+
+ChatImagePreviewContinuityTests.testSpinnerTracePairsActualStartWithImageAndReuse: injected ImageCacheMetrics sink로중복시작차단/span연결/이미지보유시미시작/reset종료검증. surface+metrics회귀 `/private/tmp/outpick-spinner-trace-tests.log`. 사용자실기기재현과같은key/span대조전원인확정금지.
+# 현재 원본 우선 회귀 — 2026-09-24
+
+`ImageViewerOriginalFileTests`의 지연 fake로 현재 파일 확보 전 인접 요청0, 페이지 이동 후 이전 완료 무시, 현재 확보 후 인접2 요청, 닫기 후 인접0을 검증한다. 기존 저장/닫기/정적 인접 범위 포함7개 통과: `/private/tmp/outpick-original-current-first-tests.log`. 실제 속도 개선 수치는 실기기 QA에서 별도로 확인한다.
+# 영상 원본 저장 회귀 — 2026-09-24
+
+`PhotoLibraryOriginalIntegrationTests`가 AVAssetWriter 합성 MP4/MOV를 `.bin`으로 작성 후 실제 Photos에 저장하고 원본 바이트 보존을 확인한다. Simulator photos-add 허용 때만 실행하며 사용자 기기 영상 사용 없음. 기존 코드 MP4 저장3302 실패 재현 `/private/tmp/outpick-video-save-red.log`, 수정 검증 `/private/tmp/outpick-video-save-green.log`. `PhotoLibraryOriginalResourceTests`에 MOV 내용/잘못된 mp4 확장자·truncated bin 헤더 추가.
+# 캐시 영상 재생 검증 — 2026-09-24
+
+`PhotoLibraryOriginalIntegrationTests`의 합성 MP4/MOV bin에 실제 resolver의 `cachedPlaybackAsset`을 적용해 AVURLAsset.isPlayable, Photos 저장, lease 해제 후 링크 제거와 원본 보존을 확인한다. 기존 캐시 hit/miss resolver 회귀 함께 `/private/tmp/outpick-video-playback-tests.log`. isPlayable은 실제 플레이어 첫 프레임/소리 QA를 대체하지 않는다.
+# 영상 저장 중 닫기 — 2026-09-24
+
+`VideoSaveLifetimeTests` 6개: ChatVideoPlayerViewController/VideoPlayerOverlayVC 각각 준비 중 닫기, 제출 후 성공·실패. 실제 UIWindow/present/dismiss로 수명 콜백 실행, fake 응답을 닫기 뒤 해제한다. 준비 중 닫기는 saver0회, 제출 후에는 callback 전 파일 유지/후 해제, 두 경우 늦은 결과 토스트 없음·player nil·실제 재생 링크 삭제·원본 bytes 보존·lease1회 해제를 확인한다. 로그 `/private/tmp/outpick-video-lifetime-tests.log`. 실제 Photos 저장 취소/첫 프레임 재생 테스트는 아니다.

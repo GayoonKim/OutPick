@@ -9,7 +9,6 @@ import UIKit
 
 class ChatImagePreviewCell: UICollectionViewCell {
     static let reuseIdentifier = "ChatImagePreviewCell"
-    typealias ThumbnailLoader = (ChatImagePreviewItem) async -> UIImage?
     
     private let imageView = UIImageView()
     private let placeholderImageView: UIImageView = {
@@ -72,25 +71,25 @@ class ChatImagePreviewCell: UICollectionViewCell {
     }()
 
     private var representedItemID: String?
-    private var loadTask: Task<Void, Never>?
-    private var loadGeneration = UUID()
-    private var latestItem: ChatImagePreviewItem?
-    private var thumbnailLoader: ThumbnailLoader?
-    private var onImageLoaded: ((UIImage?) -> Void)?
+    private var representedPath = ""
+    private var spinnerSpan: ImageCacheMetrics.Span?
+    var diagnostics = ImageCacheMetrics.shared
 
+    private func stopSpinner(reason: String) {
+        diagnostics.end(spinnerSpan, outcome: reason)
+        spinnerSpan = nil
+        loadingIndicator.stopAnimating()
+    }
     override func prepareForReuse() {
         super.prepareForReuse()
         resetContent()
     }
 
     func resetContent() {
-        loadTask?.cancel()
-        loadTask = nil
-        loadGeneration = UUID()
-        latestItem = nil
-        thumbnailLoader = nil
-        onImageLoaded = nil
+        stopSpinner(reason: "reset")
+        representedPath = ""
         representedItemID = nil
+        accessibilityValue = nil
         imageView.image = nil
         placeholderImageView.isHidden = false
         loadingIndicator.stopAnimating()
@@ -102,6 +101,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
     
     override init(frame: CGRect) {
         super.init(frame: frame)
+        accessibilityIdentifier = "chat.media.preview"
         contentView.layer.cornerRadius = 10
         contentView.layer.masksToBounds = true
         contentView.backgroundColor = OutPickTheme.ColorToken.surfaceBase
@@ -160,70 +160,55 @@ class ChatImagePreviewCell: UICollectionViewCell {
     
     func configure(
         with item: ChatImagePreviewItem,
-        image: UIImage?,
-        thumbnailLoader: ThumbnailLoader?,
-        onImageLoaded: ((UIImage?) -> Void)? = nil
+        image: UIImage?
     ) {
         if representedItemID != item.id {
             resetContent()
             representedItemID = item.id
         }
-        latestItem = item
-        self.thumbnailLoader = thumbnailLoader
-        self.onImageLoaded = onImageLoaded
-        if let image {
-            imageView.image = image
-            loadTask?.cancel()
-            loadTask = nil
-            loadGeneration = UUID()
+        representedPath = item.attachment.thumbResourcePath
+        if let image { imageView.image = image }
+        if imageView.image != nil {
+            diagnostics.mark("chatPreview.imageAssigned", key: representedPath, parent: spinnerSpan?.id, outcome: "configure")
         }
         placeholderImageView.isHidden = imageView.image != nil
-
-        if item.isVideo {
-            videoBadgeView.isHidden = false
-            videoDurationLabel.text = item.durationText
-            videoDurationLabel.isHidden = item.durationText == nil
-        } else {
-            videoBadgeView.isHidden = true
-            videoDurationLabel.text = nil
-            videoDurationLabel.isHidden = true
-        }
+        videoBadgeView.isHidden = !item.isVideo
+        videoDurationLabel.text = item.isVideo ? item.durationText : nil
+        videoDurationLabel.isHidden = !item.isVideo || item.durationText == nil
         gifBadgeLabel.isHidden = !item.isAnimatedGIF
-
-        if imageView.image != nil {
-            loadingIndicator.stopAnimating()
-            return
-        }
-        guard loadTask == nil else { return }
-        startLoadingLatestItem()
+        stopSpinner(reason: imageView.image == nil ? "configureEmpty" : "configureImage")
     }
 
-    private func startLoadingLatestItem() {
-        guard let item = latestItem, let thumbnailLoader else {
-            loadingIndicator.stopAnimating()
-            return
-        }
-        let generation = UUID()
-        loadGeneration = generation
-        loadingIndicator.startAnimating()
-
-        loadTask = Task { @MainActor [weak self] in
-            let loadedImage = await thumbnailLoader(item)
-            guard !Task.isCancelled, let self,
-                  self.loadGeneration == generation,
-                  self.representedItemID == item.id else { return }
-            self.loadTask = nil
-            // 로컬 로딩 중 서버 확정이 도착했으면 실패한 경우에만 최신 경로로 복구한다.
-            if loadedImage == nil, self.latestItem?.previewPaths != item.previewPaths {
-                self.startLoadingLatestItem()
-                return
+    func render(_ state: ChatMediaViewportController.Presentation, memoryCacheHit: Bool? = nil) {
+        switch state {
+        case .image(let image):
+            if imageView.image !== image { imageView.image = image }
+            diagnostics.mark("chatPreview.imageAssigned", key: representedPath, parent: spinnerSpan?.id, outcome: "render")
+            stopSpinner(reason: "image")
+        case .loading:
+            if imageView.image == nil {
+                if !loadingIndicator.isAnimating {
+                    spinnerSpan = diagnostics.begin("chatPreview.spinner", key: representedPath)
+                    let cache = memoryCacheHit.map { $0 ? "memoryHit" : "memoryMiss" } ?? "memoryUnknown"
+                    diagnostics.mark("chatPreview.spinnerState", key: representedPath, parent: spinnerSpan?.id,
+                                     outcome: "\(cache)_\(window == nil ? "offWindow" : "inWindow")")
+                }
+                loadingIndicator.startAnimating()
             }
-            self.imageView.image = loadedImage
-            self.placeholderImageView.isHidden = loadedImage != nil
-            self.loadingIndicator.stopAnimating()
-            self.onImageLoaded?(loadedImage)
+        case .idle:
+            // 수요 이탈은 작업 취소다. 이미 표시한 픽셀은 재사용/경로 변경 때 정리한다.
+            ImageCacheMetrics.shared.mark("chatPreview.cellIdle", outcome: imageView.image == nil ? "empty" : "retained")
+            stopSpinner(reason: "idle")
+        case .failed:
+            stopSpinner(reason: "failed")
         }
+        placeholderImageView.isHidden = imageView.image != nil
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ChatMediaViewportQA") {
+            accessibilityValue = imageView.image == nil ? "placeholder" : "loaded"
+        }
+        #endif
     }
-    
-    
+
+    deinit { diagnostics.end(spinnerSpan, outcome: "deinit") }
 }

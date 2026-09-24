@@ -55,6 +55,7 @@ final class AccountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing 
         UserDefaultsUserBlockSnapshotStore(defaults: defaults).removeAllSnapshots()
 
         await ImageCachePipeline.removeAllRegisteredCaches()
+        await ChatOriginalFileStore.shared.removeAll()
         for folderName in [
             "ImageCache",
             "LookbookRemotePreviewImageCache",

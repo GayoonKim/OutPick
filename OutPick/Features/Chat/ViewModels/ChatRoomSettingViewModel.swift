@@ -410,8 +410,8 @@ final class ChatRoomSettingViewModel {
             isVideo: media.item.isVideo,
             sentAt: media.item.sentAt,
             thumbnailPath: media.item.thumbnailPath,
-            originalPath: media.item.originalPath,
-            videoPath: media.item.videoPath
+            originalPath: media.item.originalURL,
+            videoPath: media.item.isVideo ? media.item.originalURL : nil
         )
     }
 

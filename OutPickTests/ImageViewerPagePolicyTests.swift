@@ -13,7 +13,7 @@ import Kingfisher
 @testable import OutPick
 
 struct ImageViewerPagePolicyTests {
-    @Test func previewItemPathsPreferThumbnailThenOriginalAndRemoveDuplicates() {
+    @Test func previewItemPathsUseOnlyThumbnailAndKeepLocalPreview() {
         let item = ChatImagePreviewItem(
             id: "message-1#0#image",
             displayIndex: 0,
@@ -25,8 +25,7 @@ struct ImageViewerPagePolicyTests {
         )
 
         #expect(item.previewPaths == [
-            "rooms/room-1/messages/message-1/images/image-sha/thumb.jpg",
-            "rooms/room-1/messages/message-1/images/image-sha/original.jpg"
+            "rooms/room-1/messages/message-1/images/image-sha/thumb.jpg"
         ])
 
         let duplicateItem = ChatImagePreviewItem(

@@ -4,6 +4,7 @@ import CryptoKit
 /// Caches 디렉터리에 이미지 Data를 저장/조회하는 디스크 스토어
 /// - Note: 쓰기는 tmp 파일 후 move로 원자적으로 반영합니다.
 actor ImageCacheDiskStore {
+    enum WriteOutcome: String, Sendable { case success, failure, cancelled, stale }
     private struct DiskEntry {
         let url: URL
         let size: Int64
@@ -44,6 +45,25 @@ actor ImageCacheDiskStore {
         try? await resources.io.withPermit(kind: .read) { await self.readNow(key: key, revision: revision, maxBytes: maxBytes) }
     }
 
+    func readLease(forKey key: String, revision: UInt64, bypassIOLimit: Bool = false) async throws -> ImageCacheReadLease? {
+        if bypassIOLimit { return try readLeaseNow(key: key, revision: revision) }
+        return try await resources.io.withPermit(kind: .write) { try await self.readLeaseNow(key: key, revision: revision) }
+    }
+
+    private func readLeaseNow(key: String, revision: UInt64) throws -> ImageCacheReadLease? {
+        try Task.checkCancellation()
+        guard accept(revision: revision, forKey: key) else { return nil }
+        let url = fileURL(forKey: key)
+        guard let size = fileSize(at: url) else {
+            ImageCacheMetrics.shared.mark("disk.lookup", key: key, outcome: "miss")
+            return nil
+        }
+        let lease = try ImageCacheReadLease(source: url)
+        touch(url)
+        ImageCacheMetrics.shared.mark("disk.lookup", key: key, outcome: "hit", bytes: Int(size))
+        return lease
+    }
+
     private func readNow(key: String, revision: UInt64, maxBytes: Int) -> Data? {
         guard !Task.isCancelled else { return nil }
         guard accept(revision: revision, forKey: key) else { return nil }
@@ -60,18 +80,25 @@ actor ImageCacheDiskStore {
         await write(payload: .data(data), forKey: key, revision: revision)
     }
 
-    func write(payload: ImageCachePayload, forKey key: String, revision: UInt64 = 0) async {
-        _ = try? await resources.io.withPermit(kind: .write) { await self.writeNow(payload: payload, key: key, revision: revision) }
+    @discardableResult
+    func write(payload: ImageCachePayload, forKey key: String, revision: UInt64 = 0) async -> WriteOutcome {
+        let metric = ImageCacheMetrics.shared.begin("diskWrite.total", key: key)
+        let result: WriteOutcome
+        do {
+            result = try await resources.io.withPermit(kind: .write) { await self.writeNow(payload: payload, key: key, revision: revision) }
+        } catch { result = Task.isCancelled || error is CancellationError ? .cancelled : .failure }
+        ImageCacheMetrics.shared.end(metric, outcome: result.rawValue)
+        return result
     }
 
-    private func writeNow(payload: ImageCachePayload, key: String, revision: UInt64) {
-        guard !Task.isCancelled else { return }
+    private func writeNow(payload: ImageCachePayload, key: String, revision: UInt64) -> WriteOutcome {
+        guard !Task.isCancelled else { return .cancelled }
         let byteCount: Int
         switch payload {
         case .data(let data): byteCount = data.count
         case .file(let file): byteCount = Int(fileSize(at: file.url) ?? 0)
         }
-        guard accept(revision: revision, forKey: key) else { return }
+        guard accept(revision: revision, forKey: key) else { return .stale }
         let metric = ImageCacheMetrics.shared.begin("diskWrite.execution", key: key)
         var outcome = "failure"
         defer { ImageCacheMetrics.shared.end(metric, outcome: outcome, bytes: byteCount) }
@@ -98,9 +125,10 @@ actor ImageCacheDiskStore {
             currentSizeBytes = max(0, currentSizeBytes - oldSize + newSize)
             trimIfNeeded()
             outcome = "success"
+            return .success
         } catch {
             try? fileManager.removeItem(at: tmp)
-            // 필요 시 로깅 확장
+            return .failure
         }
     }
 
@@ -166,7 +194,9 @@ actor ImageCacheDiskStore {
 
     private func sizeNow(key: String, revision: UInt64) -> Int? {
         guard accept(revision: revision, forKey: key) else { return nil }
-        return fileSize(at: fileURL(forKey: key)).map(Int.init)
+        let size = fileSize(at: fileURL(forKey: key)).map(Int.init)
+        ImageCacheMetrics.shared.mark("disk.lookup", key: key, outcome: size == nil ? "miss" : "hit", bytes: size ?? 0)
+        return size
     }
 
     func copy(forKey key: String, revision: UInt64, to target: URL) async -> Bool {
@@ -187,6 +217,7 @@ actor ImageCacheDiskStore {
     }
 
     private func fileURL(forKey key: String) -> URL {
+        ImageCacheMetrics.shared.linkCacheKey(key)
         let hashed = key.sha256Hex
         return baseDir.appendingPathComponent("\(hashed).bin")
     }
@@ -220,7 +251,12 @@ actor ImageCacheDiskStore {
         entries.sort { lhs, rhs in lhs.modifiedAt < rhs.modifiedAt }
 
         for entry in entries {
-            try? fileManager.removeItem(at: entry.url)
+            do {
+                try fileManager.removeItem(at: entry.url)
+                ImageCacheMetrics.shared.mark("disk.eviction", key: entry.url.lastPathComponent, outcome: "capacity", bytes: Int(entry.size))
+            } catch {
+                ImageCacheMetrics.shared.mark("disk.eviction", key: entry.url.lastPathComponent, outcome: "removeFailed")
+            }
             currentSizeBytes = max(0, currentSizeBytes - entry.size)
             if currentSizeBytes <= trimTargetBytes {
                 break

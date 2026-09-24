@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CryptoKit
 @testable import OutPick
 
 struct ImageCacheMetricsTests {
@@ -11,9 +12,30 @@ struct ImageCacheMetricsTests {
         }, sink: recorder.append)
         let span = metrics.begin("decode", key: "private-url")
         metrics.end(span)
+        metrics.linkCacheKey("imageCache|private-url")
         #expect(span == nil)
         #expect(recorder.events.isEmpty)
         #expect(recorder.clockReads == 0)
+    }
+
+    @Test func cacheIdentityConnectsResourceStorageAndEvictedFilenameWithoutRawPath() {
+        let recorder = ImageMetricRecorder()
+        let metrics = ImageCacheMetrics(enabled: true, sink: recorder.append)
+        let resource = "gs://private-bucket/photo?token=secret"
+        let key = "imageCache|" + resource
+        let filename = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".bin"
+        metrics.linkCacheKey(key)
+        metrics.mark("lookup", key: resource)
+        metrics.mark("disk.eviction", key: filename, outcome: "capacity")
+        let events = recorder.events
+        let root = events.first { $0.stage == "cacheIdentity.resource" }
+        let storage = events.first { $0.stage == "cacheIdentity.storage" }
+        let file = events.first { $0.stage == "cacheIdentity.file" }
+        #expect(root != nil && storage != nil && file != nil)
+        #expect(storage?.parent == root?.id && file?.parent == root?.id)
+        #expect(root?.key == events.first { $0.stage == "lookup" }?.key)
+        #expect(file?.key == events.first { $0.stage == "disk.eviction" }?.key)
+        #expect(events.allSatisfy { !$0.key.contains("secret") && !$0.key.contains("private") && $0.key.count == 24 })
     }
 
     @Test func duplicateEndDoesNotReleaseAnotherSpansBytes() {

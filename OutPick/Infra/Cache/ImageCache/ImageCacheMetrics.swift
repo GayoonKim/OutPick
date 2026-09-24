@@ -96,6 +96,18 @@ final class ImageCacheMetrics: @unchecked Sendable {
         end(span, outcome: outcome, bytes: bytes)
     }
 
+    /// 리소스·캐시 키·디스크 파일명은 서로 다르므로 원문 없이 공통 span으로 연결한다.
+    func linkCacheKey(_ key: String) {
+        guard enabled else { return }
+        let prefix = "imageCache|"
+        let resource = key.hasPrefix(prefix) ? String(key.dropFirst(prefix.count)) : key
+        let span = begin("cacheIdentity.resource", key: resource)
+        mark("cacheIdentity.storage", key: key, parent: span?.id)
+        let filename = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined() + ".bin"
+        mark("cacheIdentity.file", key: filename, parent: span?.id)
+        end(span)
+    }
+
     private func makeEvent(id: UUID, entry: Entry, time: TimeInterval, action: String, outcome: String, bytes: Int) -> Event {
         sequence += 1
         return Event(sequence: sequence, time: time, id: id, parent: entry.parent, key: entry.key, stage: entry.stage, action: action, outcome: outcome, milliseconds: (time - entry.started) * 1000, active: counts[entry.stage, default: 0], bytes: bytes, heldBytes: heldBytes)

@@ -9,8 +9,18 @@ final class ImageTemporaryFile: @unchecked Sendable {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("outpick-image-loading", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         url = directory.appendingPathComponent(UUID().uuidString)
+        ImageCacheMetrics.shared.mark("temporaryFile.created", key: url.path)
     }
-    deinit { try? FileManager.default.removeItem(at: url) }
+    deinit {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            ImageCacheMetrics.shared.mark("temporaryFile.released", key: url.path, outcome: "absent")
+        } catch {
+            ImageCacheMetrics.shared.mark("temporaryFile.released", key: url.path, outcome: "removeFailed")
+        }
+    }
 }
 
 enum ImageCachePayload: Sendable {

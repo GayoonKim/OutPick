@@ -58,7 +58,6 @@ final class LookbookShareMessageContentView: UIControl {
     }()
 
     private var representedThumbnailPath: String?
-    private var imageLoadTask: Task<Void, Never>?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -69,15 +68,10 @@ final class LookbookShareMessageContentView: UIControl {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        imageLoadTask?.cancel()
-    }
-
     func prepareForReuse() {
-        imageLoadTask?.cancel()
-        imageLoadTask = nil
         representedThumbnailPath = nil
-        thumbnailView.image = UIImage(systemName: "photo")
+        // SF Symbol의 alignment inset이 썸네일 frame을 바꾸지 않게 한다.
+        thumbnailView.image = UIImage(systemName: "photo")?.withAlignmentRectInsets(.zero)
         thumbnailView.contentMode = .center
         thumbnailView.isHidden = false
         chevronView.isHidden = false
@@ -88,10 +82,9 @@ final class LookbookShareMessageContentView: UIControl {
     }
 
     func configure(
-        with content: LookbookSharedContent?,
-        thumbnailLoader: ((String) async -> UIImage?)?
+        with content: LookbookSharedContent?
     ) {
-        prepareForReuse()
+        if representedThumbnailPath != content?.thumbnailPathSnapshot { prepareForReuse() }
 
         guard let content else {
             configureUnavailable()
@@ -103,15 +96,17 @@ final class LookbookShareMessageContentView: UIControl {
 
         guard let path = content.thumbnailPathSnapshot, !path.isEmpty else { return }
         representedThumbnailPath = path
-        imageLoadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let image = await thumbnailLoader?(path)
-            guard !Task.isCancelled,
-                  self.representedThumbnailPath == path else { return }
-            if let image {
-                self.thumbnailView.contentMode = .scaleAspectFill
-                self.thumbnailView.image = image
-            }
+    }
+
+    func thumbnailFrame(in view: UIView) -> CGRect {
+        thumbnailView.convert(thumbnailView.bounds, to: view)
+    }
+
+    func render(path: String, state: ChatMediaViewportController.Presentation) {
+        guard representedThumbnailPath == path else { return }
+        if case .image(let image) = state {
+            if thumbnailView.image !== image { thumbnailView.image = image }
+            thumbnailView.contentMode = .scaleAspectFill
         }
     }
 
@@ -162,7 +157,7 @@ final class LookbookShareMessageContentView: UIControl {
         titleLabel.text = nil
         subtitleLabel.text = nil
         unavailableLabel.isHidden = false
-        thumbnailView.image = UIImage(systemName: "exclamationmark.triangle")
+        thumbnailView.image = UIImage(systemName: "exclamationmark.triangle")?.withAlignmentRectInsets(.zero)
         thumbnailView.contentMode = .center
         chevronView.isHidden = true
         isEnabled = false

@@ -1160,12 +1160,14 @@ private final class ChatMediaForegroundUploaderFake: ChatMediaForegroundUploadin
 private actor ChatAttachmentImageLoaderSpy: ChatAttachmentImageLoading {
     private var outgoingPreviewEntries: [(data: Data, key: String)] = []
 
-    func cacheImagesIfNeeded(for message: ChatMessage, maxBytes: Int) async -> [UIImage] { [] }
     func cachedImage(for path: String) async -> UIImage? { nil }
+    func loadImage(for path: String, maxBytes: Int, priority: ImageRequestPriority) async throws -> UIImage {
+        try await loadImage(for: path, maxBytes: maxBytes)
+    }
+
     func loadImage(for path: String, maxBytes: Int) async throws -> UIImage {
         throw TestError.unimplemented
     }
-    func prefetchThumbnails(for messages: [ChatMessage], maxBytes: Int, maxConcurrent: Int) async {}
     func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async {}
 
     func storeOutgoingPreview(data: Data, forKey key: String) async {

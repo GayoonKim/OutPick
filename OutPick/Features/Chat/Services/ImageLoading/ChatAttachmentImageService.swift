@@ -42,28 +42,17 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         imageDataCache.totalCostLimit = 45 * 1024 * 1024
     }
 
-    func cacheImagesIfNeeded(for message: ChatMessage, maxBytes: Int) async -> [UIImage] {
-        let thumbPaths = thumbnailPaths(for: message)
-        guard !thumbPaths.isEmpty else { return [] }
+    func cachedMemoryImageImmediately(for path: String) -> UIImage? {
+        // 메인 스레드 즉시 조회에 로컬 파일 읽기·디코딩을 숨기지 않는다.
+        guard isStoragePath(path) else { return nil }
+        return pipelines.remote.cachedMemoryImageImmediately(path: path)
+    }
 
-        var images: [UIImage] = []
-        images.reserveCapacity(thumbPaths.count)
+    var canPrepareDiskImage: Bool { pipelines.remote.canPrepareDiskImage }
 
-        for thumbPath in thumbPaths {
-            if let localURL = thumbPath.localFileURL,
-               !FileManager.default.fileExists(atPath: localURL.path) {
-                continue
-            }
-
-            do {
-                let image = try await loadImage(for: thumbPath, maxBytes: maxBytes)
-                images.append(image)
-            } catch {
-                print("이미지 캐시 실패: \(error)")
-            }
-        }
-
-        return images
+    func prepareDiskImage(for path: String) async {
+        guard isStoragePath(path) else { return }
+        await pipelines.remote.prepareDiskImage(path: path)
     }
 
     func cachedImage(for path: String) async -> UIImage? {
@@ -78,6 +67,10 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
     }
 
     func loadImage(for path: String, maxBytes: Int) async throws -> UIImage {
+        try await loadImage(for: path, maxBytes: maxBytes, priority: .visible)
+    }
+
+    func loadImage(for path: String, maxBytes: Int, priority: ImageRequestPriority) async throws -> UIImage {
         if let local = loadLocalImage(from: path) {
             return local
         }
@@ -86,7 +79,7 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
             throw URLError(.badURL)
         }
 
-        return try await pipelines.remote.loadImage(path: path, maxBytes: maxBytes)
+        return try await pipelines.remote.loadImage(path: path, maxBytes: maxBytes, storePolicy: .memoryAndDisk, priority: priority)
     }
 
     func loadImageData(for path: String, maxBytes: Int) async throws -> Data {
@@ -113,11 +106,6 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
         return data
     }
 
-    func prefetchThumbnails(for messages: [ChatMessage], maxBytes: Int, maxConcurrent: Int) async {
-        let paths = messages.flatMap { thumbnailPaths(for: $0) }
-        await prefetchImages(paths: paths, maxBytes: maxBytes, maxConcurrent: maxConcurrent)
-    }
-
     func prefetchImages(paths: [String], maxBytes: Int, maxConcurrent: Int) async {
         let normalized = Array(Set(paths.filter { isStoragePath($0) }))
         guard !normalized.isEmpty else { return }
@@ -134,10 +122,17 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
     }
 
     func preserveLocalPreview(from localPath: String, for remotePath: String) async {
+        let metric = ImageCacheMetrics.shared.begin("chatPreview.preserveLocal", key: remotePath)
+        var outcome = "preparationFailed"
+        defer { ImageCacheMetrics.shared.end(metric, outcome: outcome) }
         guard let local = loadLocalImage(from: localPath),
               let data = local.jpegData(compressionQuality: 0.7) else { return }
         // 서버 파일은 수정하지 않는다. 정상 버블의 작은 로컬 cache만 먼저 연결한다.
-        try? await pipelines.remote.storeImageData(data, path: remotePath)
+        do {
+            try await pipelines.remote.storeImageData(data, path: remotePath)
+            // 실제 쓰기 결과는 diskWrite.total로 구분한다. 이 반환은 저장 성공 보장이 아니다.
+            outcome = "returned"
+        } catch { outcome = Task.isCancelled || error is CancellationError ? "cancelled" : "failed" }
     }
 
     private static func decodePreview(_ data: Data) -> UIImage? {
@@ -165,16 +160,6 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
     func removeCachedImage(for path: String) async {
         imageDataCache.removeObject(forKey: path as NSString)
         await pipelines.remote.removeImage(path: path)
-    }
-
-    private func thumbnailPaths(for message: ChatMessage) -> [String] {
-        var seen = Set<String>()
-        return message.displayableAttachments
-            .compactMap { attachment in
-                let path = attachment.thumbResourcePath
-                guard !path.isEmpty, seen.insert(path).inserted else { return nil }
-                return path
-            }
     }
 
     private func isStoragePath(_ path: String) -> Bool {
@@ -217,11 +202,14 @@ final class ChatAttachmentImageService: ChatAttachmentImageLoading {
                 fileFetcher: { path, maxBytes, url in
                     try await imageStorageRepository.fetchImageFileFromStorage(image: path, location: .roomImage, maxBytes: maxBytes, to: url)
                 },
+                memory: ImageCacheMemoryStore(totalCostLimitBytes: 1024 * 1024 * 1024, usesLRU: true),
                 disk: ImageCacheDiskStore(
                     folderName: "ChatImageCache",
-                    maxSizeBytes: 350 * 1024 * 1024,
-                    trimTargetBytes: 280 * 1024 * 1024
+                    maxSizeBytes: 1024 * 1024 * 1024,
+                    trimTargetBytes: 900 * 1024 * 1024
                 ),
+                usesDirectDiskFileDecoding: true,
+                bypassDirectDiskLimits: true,
                 decoder: { decodePreview($0) },
                 fileDecoder: { decodePreview($0) }
             ),

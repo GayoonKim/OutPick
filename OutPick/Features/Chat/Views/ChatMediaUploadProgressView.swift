@@ -64,6 +64,7 @@ final class ChatMediaUploadProgressView: UIView {
             accessibilityLabel = "전송 완료 확인 중"
             accessibilityValue = nil
             if ring.animation(forKey: "pending") == nil, !UIAccessibility.isReduceMotionEnabled {
+                ImageCacheMetrics.shared.mark("chatSpinner.uploadConfirmation", outcome: "start")
                 let animation = CABasicAnimation(keyPath: "transform.rotation.z")
                 animation.fromValue = 0
                 animation.toValue = CGFloat.pi * 2

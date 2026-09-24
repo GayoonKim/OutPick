@@ -10,12 +10,10 @@ import UIKit
 extension ChatMessageCell {
     func configureWithLookbookShare(
         with message: ChatMessage,
-        thumbnailLoader: ((String) async -> UIImage?)? = nil,
         avatarLoader: ((String) async throws -> UIImage?)? = nil
     ) {
         configureLookbookShareMessage(
             message,
-            thumbnailLoader: thumbnailLoader,
             avatarLoader: avatarLoader
         )
     }

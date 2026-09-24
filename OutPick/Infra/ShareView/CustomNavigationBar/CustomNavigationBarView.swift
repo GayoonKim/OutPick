@@ -114,6 +114,7 @@ class CustomNavigationBarView: UIView {
     
     private lazy var backBtn: UIButton = {
         let button = UIButton(type: .system)
+        button.accessibilityIdentifier = "navigation.back"
         button.translatesAutoresizingMaskIntoConstraints = false
         
         var config = UIButton.Configuration.plain()

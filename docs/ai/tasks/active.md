@@ -1,5 +1,89 @@
 # Active Task Index
 
+> **다음 핵심 작업 확정:** [전송 시점+7일 만료 설계·구현 인계](chat-media-first-view-loading/retention-next-handoff.md)를 먼저 읽는다. 이번 완료 미디어 개선 커밋/PR/자체리뷰/머지 진행, [리뷰 기록](chat-media-first-view-loading/review.md). 아래 QA 진행 문구는 당시 이력이다.
+
+> **최신 — 계정 왕복 QA 완료:** B에서 A사진오표시없음 사용자 확인. 동일resource B miss/별도 namespace, A복귀 hit/재다운로드0. A80파일 보존+B1파일 생성/temporary0. 일반실행복원. 전송시점+7일 만료는 확정 정책/별도 미구현 후속. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 같은 계정 재로그인 통과:** 사용자 완료+로그 동일현재/인접2 cache hit, 원본 재다운로드0 확인. 다음 다른 계정 왕복 QA. baseline console70763 유지. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 계정 재사용 QA:** store 자동10개 통과/로그아웃·계정교체 DI 연결 확인. baseline console70763 `/private/tmp/outpick-original-account-console.log`. 사용자 같은 사진 확대→로그아웃→같은 계정 로그인→동일 사진 확대 확인 대기, 이후 다른 계정 왕복. 전송시점+7일 공통 만료는 확정/별도 미구현. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 영상 저장 중 닫기6개 통과:** 실제 UIKit dismiss+지연 fake로 두 화면 준비/제출 후 성공/실패 검증 완료. 늦은 UI 차단·파일/lease 해제·원본 보존 확인, 제품 코드 변경 없음. 다음 계정 전환/재로그인 수동 QA. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 영상 저장 결과 UX:** 사용자 요청으로 두 영상 화면의 중앙 결과 알림/기술 오류를 하단 “저장 완료”/“저장 실패” 토스트로 변경. 기기 build 후 설치·일반 실행/시각 확인. 영상 최종 재생·저장본 화면/소리 및 닫기·계정 QA는 잔여. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 같은 영상 재생 회귀 보완:** 원본 cache hit의 bin 직접 재생 경로에 MP4/MOV 확장자 링크와 수명 lease 적용. 실제 AVURLAsset 재생 가능/Photos 저장/원본 보존 및 resolver 회귀 통과. 기기 수정본 설치 후 같은 영상 재생·저장 재확인 우선. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 영상 저장 보완:** 사용자 재생 시작 짧은 지연/저장 실패. 합성 MP4 bin의 Photos3302 재현 후 MP4/MOV 헤더 식별·확장자 사본 제출 수정. 실제 Photos 통합/형식 회귀 및 기기 build 통과. 수정본 설치 후 같은 영상 저장 사용자 확인 우선, 닫기·계정 QA는 이후. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — GIF 실기기 통과:** 사용자 확대 재생·저장·사진 앱 애니메이션 확인 완료. 다음 영상 재생·저장→저장 중 닫기→계정 왕복. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 순차 QA:** 현재 우선 실기기 기록 분석 완료, current miss3건에서 현재 다운로드 종료 뒤 인접2 시작 확인(표시 준비1.06~1.16초, 이전과 다른 사진으로 개선율 미확정). 로딩 문구 변경 사용자 확인 완료. 다음 GIF 재생·Photos 저장→영상→닫기·계정 수명 검증. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 확대 로딩 문구 숨김:** 사용자 승인대로 미리보기 위 “불러오는 중…” 제거, 빈 화면 spinner/실패 retry/저장 안내 유지. 기기 build 성공, 업데이트 설치 후 일반 실행으로 확인. 단순 표시 조건 변경으로 자동 테스트 추가/재실행 없음. 현재 우선 다운로드 정책 실기기 로그는 `/private/tmp/outpick-original-current-first-console.log`에 보존(성공 다운로드20건, 분석 잔여).
+
+> **최신 — 현재 원본 우선 구현 완료:** 사용자 승인 정책 적용, 뷰어7개 테스트·기기 build 성공. 현재 파일 확보 후 인접 시작/현재 decode 병행, 페이지 전환·닫기 회귀 확인. 실기기 순서/체감 QA 대기. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 첫 로딩 실측 완료:** 현재 사진 다운로드1.92초/전체2.02초, 같은 사진 재열기0.10초. gate <1ms. 인접2장 동시 전송의 경합 영향은 미확정. 현재 사진 우선 후 인접 시작 vs 기존 동시 정책 논의 대기, 아직 속도 정책 변경 없음. 측정 종료 후 일반 실행 복원. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **최신 — 원본 첫 로딩 조사:** 사용자 사진 저장 성공 확인 후 속도 조사 승인. store cache/gate/download/bytes와 viewer acquire/decode를 기존 ImageCacheMetrics에 연결. 기기 build/install 성공, baseline 실행 console96393 `/private/tmp/outpick-original-latency-console.log`. 미확대 사진 실측 대기이며 속도 개선은 아직 미확정. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **원본 사진 저장 두 번째 보완:** 형식 옵션만 전달한 첫 수정도 실기기3302로 실패. Simulator 실제 Photos에 `.bin` JPEG 제출 시 같은 오류 재현→실제 확장자 임시 사본 제출로 실제 저장 성공. 통합 포함21개·기기 build 통과(`/private/tmp/outpick-original-photos-staged-{tests,device-build}.log`). 수정본 기기 설치 후 같은 사진 저장 사용자 확인 우선, GIF/영상 후속. 최초 로딩만 지연/재열기 즉시·화질 정상은 사용자 확인 완료. [결과](chat-media-first-view-loading/original-media-results.md).
+
+> **원본 실기기 QA 시작:** 사용자 iPhone14 연결 완료. DEV 업데이트 설치/일반 실행/main tab 확인, console96030 `/private/tmp/outpick-original-device-console.log`. 사진 묶음 확대·왕복·재열기·사진 앱 저장 결과 대기. 첫 파일 관찰은 cache4개/18,383,128bytes·temporary0(`/private/tmp/outpick-original-qa-start-files.json`)이며 사용자가 이미 조작한 뒤일 수 있어 빈 캐시 기준선으로 취급하지 않는다. GIF/영상/닫기·계정 QA 후속.
+
+> **2026-09-24 원본 Phase3·4 구현/자동83개 통과:** 계정별 보관/같은 계정 재로그인 재사용 사용자 확정. 원본512MiB store·lease·삭제/세대, 사진±1/GIF 활성·원본 저장/닫기 취소, 영상 스트리밍/저장 연결. [원본 결과·검증 한계](chat-media-first-view-loading/original-media-results.md). Simulator/실기기 build·diff check 성공, iPhone14 disconnected로 연결 요청(설치/실행 전). ③ 전체 QA와 7일 만료는 완료 아님. 아래 정리만/미착수 기록보다 이 기록이 우선한다.
+
+> **현재 인계/정리만 완료:** 새 스레드는 [③ 확대 원본·저장·파일 수명 인계](chat-media-first-view-loading/original-media-handoff.md)부터 읽고 기존 계획 Phase3→4→통합 QA를 진행한다. 현 스레드는 구현 중단 상태이며 사용자 새 진행 요청 후 재개. 아래 오래된 QA 대기/최대2개/옵션 전용 문구는 역사 기록이다.
+
+> **최신 최종 QA 완료:** 채팅 디스크 준비·직접 decode/IO 세 동시 제한을 환경변수 없이 기본 해제. 자동26개·기기 빌드/설치/일반 실행 통과. 사용자 직접 앱 재실행 후 빠른 스크롤도 이미 로딩된 것처럼 표시됨 확인. 표시 준비 개선 완료, ③ 원본/저장 후속 범위는 별도. [최종 기록](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **최신 예측선로딩QA:** direct-only 빠른스크롤loading잔여→속도/도착구간선로딩·빠른이탈즉시취소구현,자동30개통과. `/private/tmp/outpick-predictive-prefetch-device.log` session40665실행,사용자이동중loading/정지화면즉시표시QA답변대기. [기록](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **최신 direct disk QA:** 사용자파일URL준비+속도/도착선로딩확정. direct disk만먼저구현·자동47개통과·기기실행성공. `/private/tmp/outpick-direct-disk-device.log` session13182에서사용자과거사진빠른스크롤/왕복답변대기. 선로딩변경아직전이며다음순차진행. [기록](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **최신:** 1GiB예산대량왕복·재실행QA 완료. 재실행network완료0/diskhit358/miss0, 짧은표시대기는decode/압축data입장후보. 다음승인순서2단계디스크표시대기→3단계선로딩, 원본분리는그뒤. [실측](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **1GiB 장거리QA 완료/재실행검증중:** 사용자반복로딩·버벅임·발열·빈사진없음. 메모리즉시표시2043,고유다운로드85/반복완료0,용량퇴거·압박0. 캐시339개계산929MiB/앱footprint최고126.35MiB 별도지표. 재실행진단session53004 `/private/tmp/outpick-display-budget-relaunch-device.log`에서사용자QA답변대기. [기록](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **최신 1GiB QA:** 사용자확정에따라채팅메모리1GiB LRU/압박축소·디스크1GiB/정리900MiB 구현, 고유자동58개통과·기기실행성공. `/private/tmp/outpick-display-budget-device.log` 계측, 사용자장거리왕복/방재진입답변대기. 앱재실행QA후속. [계획/근거](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **최신 순서 변경:** 사용자 표시파일·예산→디스크표시대기→스크롤선로딩 순서승인. 원본분리보다앞당김. 고유275개398.29MiB 근거로 파일유지/채팅공용디스크1GiB·정리900MiB QA제안 답변대기, 아직 정책코드변경없음. [계획](chat-media-first-view-loading/display-readiness-plan.md).
+
+> **③ Phase1·2 최종:** 자동89개+기기QA완료, 사용자 가까운왕복이미지유지/미표시잔류없음 확인. memoryImmediate140회/저장282success, 일반DEV복원성공. 첫진입대기·용량퇴거는 잔여, Phase3~5 미완료. [기록](chat-media-first-view-loading/cache-reuse-results.md).
+
+> **③ 최신:** Phase1 반복/재실행 기준선 완료, 반복다운로드28중27건 용량퇴거 연결. Phase2 즉시메모리표시·pending합류·독립저장/삭제세대차단 구현, 통합89개 통과. 개선DEV실행/사용자 비교QA 답변 대기(`/private/tmp/outpick-cache-reuse-phase2-device.log`). 크기/용량/계정정책 유지,③전체완료아님. [기록](chat-media-first-view-loading/cache-reuse-results.md).
+
+> **2026-09-23 최신:**③ 원인 계측→캐시 재사용 개선 사용자 승인. Phase1 hash 연결/저장·퇴거·표시 계측 구현, 자동 회귀/기기 빌드 진행. 기존 정책 유지하고 기준선 QA 후 Phase2. [진행](chat-media-first-view-loading/cache-reuse-results.md).
+
+> **2026-09-22 최종:**② 취소·파일 수명 필수 회귀 완료. Firebase12.17.0 공식수정, 구SDK 재현실패/신SDK 통과·공용87개통과, 기기 취소87·파일90개정리·신규잔여0. 사용자 지속빈화면아닌 빠른스크롤직전 로딩으로 확인. 일반DEV복원 요청. 다음③은 [캐시 재사용 계획](chat-media-first-view-loading/cache-reuse-implementation-plan.md), 아직 구현 전. [검증 근거·한계](chat-media-first-view-loading/download-bottleneck-results.md).
+
+> **2026-09-22 취소 수정 진행:** Firebase Storage 공식 취소 경합 수정이 포함된12.17.0 적용, 공용 회귀87개 통과. 구12.3.0 비교 재현 진행 중. 기존 DerivedData의 Firestore bridge 컴파일 실패는 새 DerivedData 실기기 빌드에서 해소(BUILD SUCCEEDED). 최종 기기 반복 QA 전이므로② 완료/③ 착수는 보류. [근거](chat-media-first-view-loading/download-bottleneck-results.md).
+
+> **2026-09-22 최신:** 다운로드② 잔여 검증에서 저장 실패 자동7개 통과, 실기기 취소/대량 반복 수행. 신규 임시 파일3개 잔존으로 완료 보류, SDK 취소 callback/실제 파일 수명 경계 추가 조사 필요. 일반 DEV 복원 완료(18:03). [판정](chat-media-first-view-loading/download-bottleneck-results.md).③ 구현 보류.
+
+> **2026-09-22:** [③ 세부 구현 계획](chat-media-first-view-loading/cache-reuse-implementation-plan.md) 작성·구현 보류. 크기·용량·표시 파일 정책은 QA 결정. 현재 [② 병렬 다운로드 재점검](chat-media-first-view-loading/download-bottleneck-plan.md)으로 복귀, 제품 변경 없음.
+
+> **2026-09-21 ③ 핵심 정책 확정:** 앱 표시 캐시/원본 분리 우선. 확대 사진 원본 현재+앞뒤1장, GIF·영상은 열 때만, 원본 파일 저장·실패 재시도 확정. [설계 초안](chat-media-first-view-loading/display-original-cache-design.md)에 반영했고 크기/메모리/migration 세부 점검 중. 코드 구현 전이다.
+
+> **2026-09-21 ③ 설계 진행:** 앱 캐시 분리 우선 확정, [설계 초안](chat-media-first-view-loading/display-original-cache-design.md) 작성. 작은 preview 저장/원본 경쟁 분리와 재등장 관측 설계. 원본 선로딩·저장 UX 답변 대기. 제품 코드 변경·세부 구현 계획 확정 없음.
+
+> **2026-09-21 다운로드② 검증 결과:** 자동75개 통과, 기존 캐시 실기기 QA에서 파일 최대6개 병렬 전송 확인. 사용자 체감 개선 있으나 반복 로딩 잔여. 완료241건/고유188경로/추가53건, 캐시 정리5회 관찰. 일반 DEV 복원.③ 표시 캐시/원본 분리 미착수. [근거·한계](chat-media-first-view-loading/download-bottleneck-results.md).
+
+> **2026-09-21 다운로드② 구현·자동75개 통과:** 파일 전송의 io(write) 점유 제거, network/files·수치 유지. 기존 직렬화 실패 재현 및 공용 회귀 통과. 기기 baseline을 켜고 사용자 과거 미디어 왕복 QA 진행 중. 실제 overlap/체감 확인 전이며③ 미착수. [현재 결과](chat-media-first-view-loading/download-bottleneck-results.md).
+
+> **2026-09-21 다운로드② 세부 계획 완료·구현 전:** [계획](chat-media-first-view-loading/download-bottleneck-plan.md)의4개 Phase(병목 재현→분리→회귀→실기기 검증) 순차 진행 예정. 기본 수치 유지, SDK 파일 쓰기는 network/files로 제한, 앱 캐시 쓰기는 기존 io로 제한한다. 이번 작업은 문서만 변경했으며 코드/테스트 실행/기기 조작 없음.
+
+> **2026-09-21 ① 사용자 수용·② 설계 착수:** 회전 체감 개선 확인 및 다음 단계 동의. 누적95개/UI3개·사진/영상/GIF 실기기 QA 수용.②는 공용 파일 다운로드가 network 전송 중 diskWrites1을 점유하는 경계 분리부터 설계한다. 구현 전 영향/취소/저장 계약 검토. [현재 진행](chat-media-first-view-loading/progress.md). 아래 체감 확인 대기와② 보류는 이전 기록이다.
+
+> **2026-09-21 회전 지연 수정:** 사용자 가로/세로 크기 복원 지연 보고→미디어 셀 고정 제약 재현→부모 폭70%·배열 비율 제약으로 수정. 관련8개＋기기 회전 UI1개 재검증 통과, 누적95개/UI3개. 일반 DEV 복원·사용자 체감 확인 대기,② 미착수. [최신 기록](chat-media-first-view-loading/qa-results.md).
+
+> **2026-09-21 화면 수명 후속:** 키보드/검색 종료/설정 패널/사진 선택 취소/세로 복귀 확인. 단위·컴포넌트94개/UI3개 통과. 가로는 좌표·loaded 검사 통과하나 캡처가 잘려 보여 사용자 육안 대조 대기. 일반 DEV 복원,② 미착수. [최신 근거](chat-media-first-view-loading/qa-results.md). 아래 수명 미검증 표기는 이전 기록이다.
+
+> **2026-09-21 채팅 미디어① QA 진행:** iPhone14 단위/컴포넌트89개와 기존 미디어 방 UI1개 통과. 공유 카드 좌표 오류 수정·재검증, 일반 DEV 실행 복원. 신규 사진·영상·GIF 전송 후 스크롤 복귀/방 재진입 표시·확대/재생 사용자 QA 통과. 키보드/설정 등 잔여 검증으로① 전체 완료 전이며②다운로드 병목 미착수. [검증 근거·한계](chat-media-first-view-loading/qa-results.md). 아래 자동 테스트 미실시 상태는 이전 기록이다.
+
+> **2026-09-21 현재 우선순위 변경 — 채팅 미디어 첫 표시:** 사용자와①화면 주변 로딩·이탈 취소→②다운로드 병목→③표시 캐시/원본 분리를 먼저 진행하기로 합의.①요청 조정자·개별 좌표/화면 수명·일괄 로딩 제거 로컬 구현 및 Development Simulator 앱/테스트 빌드 완료. 자동 테스트 실행·실기기 QA 미실시. [설계](chat-media-first-view-loading/design.md)·[계획](chat-media-first-view-loading/plan.md)·[현재 상태](chat-media-first-view-loading/progress.md). 아래 '다음 채팅방 대표 이미지'는 이전 순서다. 실패는 방 재진입/실제 화면 재등장 때 재시도하며 단순 네트워크/앱 복귀 자동 반복을 추가하지 않는다.
+
 > **2026-09-21 아바타 Phase0~5 최종완료:** 잔여4개QA 포함 확인, VoiceOver명시제외. 기존112개회귀와별도iPhone14 16개통과(중복포함), QA자료·진단코드·테스트전용캐시정리, 일반DEV메인탭복구완료. [검증방법·한계](avatar-image-loading/progress/phase-5.md). 다음채팅방대표이미지설계미착수, 커밋/배포없음. 아래아바타미완료상태는과거기록.
 
 > **2026-09-21 아바타 Phase5 후속 QA·정리:** 위임후보/미참여방·스크롤/새메시지재시도·타계정왕복 확인, 정상소스102+10 자동회귀통과. 서버183문서20이미지·기기174행3이미지·임시코드/파일정리 및 정상DEV홈복구완료. 전체Phase5완료아님: route spy·원본only자동계약, 중첩viewport요청계측, 캐시재사용/승격연속기기증거 항목이 남음. VoiceOver는 사용자 요청으로 이번 QA에서 제외. [최신 체크리스트](avatar-image-loading/qa-checklist.md), [검증기록](avatar-image-loading/progress/phase-5.md).
@@ -204,3 +288,24 @@
 2. 오래된 완료 이력은 각 task의 `progress.md`와 `docs/ai/ADR.md`에서 확인한다.
 3. 코드 진입점이 바뀌면 `docs/ai/ENTRYPOINTS.md`와 관련 `entrypoints/*.md`를 함께 갱신한다.
 4. 외부 배포·운영 데이터 변경·파괴 작업은 사용자 명시 승인 없이 진행하지 않는다.
+# 최신: 채팅 전체 디스크 준비 QA
+
+현재 불러온 메시지 전체를 거리순으로 한 장씩 준비하되 메모리 여유까지만 처리. cache-only/최저 우선순위/무퇴거 삽입/화면 이탈 취소 구현, 자동45개 및 기기 빌드·설치 통과. 서버 만료 별도. [최신 진행](chat-media-first-view-loading/display-readiness-plan.md).
+# 최신: 진입 초기 디스크 준비 QA
+
+현재 메시지 확보 직후 snapshot/layout 전 준비 시작으로 앞당김. 최신/unread 순서 유지 후 실제 화면 거리순 전환, 화면 이탈 조기취소. 자동29개 및 최종 기기 빌드 통과. 진입 직후 스크롤 QA는 [최신 계획](chat-media-first-view-loading/display-readiness-plan.md)과 `/private/tmp/outpick-early-disk-preparation-device.log` 참조.
+# 최신: 초기 준비 동시성 QA
+
+초기 시작 앞당김 후에도 즉시 스크롤에는 준비 전 loading이 남아, 기존 decode2 한도 내에서 먼 디스크 준비 작업을1→2로 조정. 자동28개/기기빌드 통과. 기존 캐시 유지, `/private/tmp/outpick-dual-disk-preparation-device.log`로 실기기 효과 확인 전. [최신 계획](chat-media-first-view-loading/display-readiness-plan.md).
+# 최신: 세 동시 실행 제한 해제 QA
+
+사용자 명시 승인으로 DEBUG 옵션 OUTPICK_UNLIMITED_DISK_PREPARATION=1에서 준비 요청/decode/IO 상한을 함께 우회. 일반실행은 기존제한 유지, 메모리보관/취소/파일보호 유지. 실제decode active 및CPU(getrusage)/phys_footprint/thermal 계측 추가. 검증 최종로그 `/private/tmp/outpick-unlimited-disk-preparation-tests-final.log`, 기기빌드 `/private/tmp/outpick-unlimited-disk-preparation-device-build-final.log`. [계약/결과](chat-media-first-view-loading/display-readiness-plan.md).
+# 최신: 로컬 단계 준비/셀 최초 표시 QA
+
+온라인 로컬창 확보 후 서버창 조회 전 prepareLocalMedia 힌트로 준비 시작. 실제 메시지 표시는 서버/삭제 확인 이후 유지. 사진/GIF/영상썸네일 셀 첫구성 및loading 이벤트에서 공용메모리 즉시조회 연결. 자동44개/기기빌드 통과. 기존 캐시 및 제한해제 QA 옵션 유지, `/private/tmp/outpick-local-early-media-device.log` 예정. [최신 기록](chat-media-first-view-loading/display-readiness-plan.md).
+# 최신: 전환 중 표시와 이탈 픽셀 유지 QA
+
+직전계측은cellCache540모두hit/로딩시작0. viewport활성을willAppear로앞당기고snapshot완료즉시초기위치조정,셀idle에서표시이미지유지(reuse/경로교체제거유지). 자동25개/기기빌드통과. `/private/tmp/outpick-media-entry-transition-device.log`에서체감검증예정. [최신계획](chat-media-first-view-loading/display-readiness-plan.md).
+# 최신: 실제 회전 표시 원인 추적
+
+사용자 분석지시. 전체캐시hit로표시문제를단정하지않고ChatImagePreviewCell 실제스피너span/캐시결과/셀할당/종료이유계측추가. 다른회전표시도분리. 자동16개/기기빌드통과, `/private/tmp/outpick-spinner-trace-device.log`로재현대기. 기존캐시와제한해제QA조건유지. [진단계획](chat-media-first-view-loading/display-readiness-plan.md).

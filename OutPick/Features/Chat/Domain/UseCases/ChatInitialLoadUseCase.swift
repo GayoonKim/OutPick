@@ -26,9 +26,10 @@ enum ChatInitialLoadRenderCommand {
 }
 
 enum ChatInitialLoadEvent {
+    // 표시 허가와 분리된 캐시 준비 힌트. 서버/삭제 확인 전 UI에 메시지를 넣지 않는다.
+    case prepareLocalMedia(ChatInitialWindow)
     case phaseChanged(ChatInitialLoadPhase)
     case render(ChatInitialLoadRenderCommand)
-    case warmMedia(messages: [ChatMessage], maxConcurrent: Int)
     case participantSessionReady(ChatInitialSessionState, bindRealtime: Bool)
     case completed
 }
@@ -43,8 +44,7 @@ struct DefaultChatInitialLoadPolicyResolver: ChatInitialLoadPolicyResolving {
             return ChatInitialLoadPolicy(
                 latestTailSize: 80,
                 unreadAfterSize: 80,
-                unreadBeforeContextSize: 20,
-                mediaPrefetchConcurrency: 1
+                unreadBeforeContextSize: 20
             )
         }
 
@@ -52,8 +52,7 @@ struct DefaultChatInitialLoadPolicyResolver: ChatInitialLoadPolicyResolving {
             return ChatInitialLoadPolicy(
                 latestTailSize: 60,
                 unreadAfterSize: 60,
-                unreadBeforeContextSize: 15,
-                mediaPrefetchConcurrency: 2
+                unreadBeforeContextSize: 15
             )
         }
 
@@ -61,16 +60,14 @@ struct DefaultChatInitialLoadPolicyResolver: ChatInitialLoadPolicyResolving {
             return ChatInitialLoadPolicy(
                 latestTailSize: 60,
                 unreadAfterSize: 60,
-                unreadBeforeContextSize: 15,
-                mediaPrefetchConcurrency: 3
+                unreadBeforeContextSize: 15
             )
         }
 
         return ChatInitialLoadPolicy(
             latestTailSize: 80,
             unreadAfterSize: 80,
-            unreadBeforeContextSize: 20,
-            mediaPrefetchConcurrency: 6
+            unreadBeforeContextSize: 20
         )
     }
 }
@@ -154,9 +151,6 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         if Task.isCancelled { return }
 
                         continuation.yield(.render(.replaceWindow(preview)))
-                        if !preview.messages.isEmpty {
-                            continuation.yield(.warmMedia(messages: preview.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
-                        }
                         continuation.yield(.phaseChanged(.ready))
                         continuation.yield(.completed)
                         return
@@ -187,7 +181,6 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         } else {
                             continuation.yield(.render(.hideCenteredMessage))
                             continuation.yield(.render(.replaceWindow(localWindow)))
-                            continuation.yield(.warmMedia(messages: localWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
                             continuation.yield(.phaseChanged(.ready))
                         }
                         continuation.yield(.participantSessionReady(ChatInitialSessionState(window: localWindow), bindRealtime: false))
@@ -195,6 +188,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         return
                     }
 
+                    continuation.yield(.prepareLocalMedia(localWindow))
                     continuation.yield(.render(.hideCenteredMessage))
                     continuation.yield(.phaseChanged(.serverSyncing))
 
@@ -221,9 +215,6 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                     if Task.isCancelled { return }
 
                     continuation.yield(.render(.replaceWindow(serverWindow)))
-                    if !serverWindow.messages.isEmpty {
-                        continuation.yield(.warmMedia(messages: serverWindow.messages, maxConcurrent: policy.mediaPrefetchConcurrency))
-                    }
 
                     continuation.yield(.phaseChanged(.ready))
                     continuation.yield(.participantSessionReady(ChatInitialSessionState(window: serverWindow), bindRealtime: true))

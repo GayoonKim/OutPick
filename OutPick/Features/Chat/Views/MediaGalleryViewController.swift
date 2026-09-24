@@ -34,15 +34,18 @@ class MediaGalleryViewController: UICollectionViewController {
     var loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
     private let photoLibrarySaver: PhotoLibrarySaving
     private let videoResolver: ChatVideoPlaybackResolving
+    private let originalFiles: (any ChatOriginalFileLoading)?
 
     init(
         items: [GalleryItem],
         photoLibrarySaver: PhotoLibrarySaving,
-        videoResolver: ChatVideoPlaybackResolving
+        videoResolver: ChatVideoPlaybackResolving,
+        originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
         self.items = Self.uniqueItems(items)
         self.photoLibrarySaver = photoLibrarySaver
         self.videoResolver = videoResolver
+        self.originalFiles = originalFiles
         let layout = MediaGalleryViewController.makeLayout()
         super.init(collectionViewLayout: layout)
         self.title = "미디어"
@@ -287,7 +290,7 @@ extension MediaGalleryViewController {
         Task { [weak self] in
             guard let self = self else { return }
             if g.isVideo {
-                let playbackPath = g.videoPath ?? g.originalPath ?? g.thumbnailPath
+                let playbackPath = self.originalFiles == nil ? (g.videoPath ?? g.originalPath ?? g.thumbnailPath) : (g.videoPath ?? g.originalPath)
                 if let path = playbackPath {
                     do {
                         let playbackAsset = try await self.videoResolver.playbackAsset(forPath: path)
@@ -322,19 +325,21 @@ extension MediaGalleryViewController {
             }
 
             let thumbnailPath = g.thumbnailPath
-            let originalPath = g.originalPath ?? g.thumbnailPath
+            let originalPath = self.originalFiles == nil ? (g.originalPath ?? g.thumbnailPath) : g.originalPath
             await MainActor.run {
                 let page = ImageViewerPage(
                     initialImage: g.image,
                     thumbnailPath: thumbnailPath,
-                    originalPath: originalPath
+                    originalPath: originalPath,
+                    isAnimated: URL(string: originalPath ?? "")?.pathExtension.lowercased() == "gif"
                 )
                 let viewer = SimpleImageViewerVC(
                     pages: [page],
                     startIndex: 0,
                     cachedImageProvider: self.cachedImageProvider,
                     loadImageProvider: self.loadImageProvider,
-                    photoLibrarySaver: self.photoLibrarySaver
+                    photoLibrarySaver: self.photoLibrarySaver,
+                    originalFiles: self.originalFiles
                 )
                 viewer.modalPresentationCapturesStatusBarAppearance = true
                 viewer.modalPresentationStyle = .fullScreen

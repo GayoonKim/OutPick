@@ -12,7 +12,12 @@ import Foundation
 final class ChatContainer {
     private let messageCacheSession = ChatMessageCacheSession()
 
-    func invalidateMessageCacheSession() { messageCacheSession.invalidate() }
+    func invalidateMessageCacheSession() {
+        messageCacheSession.invalidate()
+        originalFiles.invalidateSession()
+    }
+    private let originalFiles: ChatOriginalFileService
+    let originalFileAccountID: String
     let persistence: ChatPersistenceProvider
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
@@ -50,7 +55,6 @@ final class ChatContainer {
     let mediaSelectionUseCase: ChatMediaSelectionUseCase
     private let chatOutgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol
     private let attachmentImageLoader: ChatAttachmentImageLoading
-    private let chatVideoAssetLoader: ChatVideoAssetLoading
     private let chatVideoThumbnailGenerator: ChatVideoThumbnailGenerating
     private let storageDownloadURLCache: ChatStorageURLResolving
     private let chatVideoDiskCache: ChatVideoDiskCaching
@@ -93,6 +97,13 @@ final class ChatContainer {
             imageStorageRepository: repositories.imageStorageRepository
         )
         self.attachmentImageLoader = attachmentImageLoader
+        self.originalFileAccountID = currentUserProvider.canonicalUserID
+        let originalFiles = ChatOriginalFileService(
+            accountID: currentUserProvider.canonicalUserID,
+            store: .shared,
+            transport: FirebaseChatOriginalFileTransport(repository: repositories.imageStorageRepository)
+        )
+        self.originalFiles = originalFiles
         let deletionSyncUseCase = ChatDeletionSyncUseCase(
             repository: FirebaseChatDeletionSyncRepository(
                 messageRepository: repositories.messageRepository
@@ -101,7 +112,8 @@ final class ChatContainer {
             mediaCleaner: DefaultChatDeletionMediaCleaner(
                 imageLoader: attachmentImageLoader,
                 videoDiskCache: OPVideoDiskCache.shared,
-                storageURLResolver: StorageDownloadURLCache.shared
+                storageURLResolver: StorageDownloadURLCache.shared,
+                originalFiles: originalFiles
             )
         )
         self.chatDeletionSyncUseCase = deletionSyncUseCase
@@ -265,15 +277,12 @@ final class ChatContainer {
         self.storageDownloadURLCache = StorageDownloadURLCache.shared
         self.chatVideoDiskCache = OPVideoDiskCache.shared
         self.chatRemoteFileDownloader = URLSessionChatRemoteFileDownloader()
-        self.chatVideoAssetLoader = ChatVideoAssetService(
-            attachmentImageLoader: attachmentImageLoader,
-            storageURLResolver: storageDownloadURLCache
-        )
         self.chatVideoThumbnailGenerator = DefaultChatVideoThumbnailGenerator()
         self.chatVideoPlaybackResolver = DefaultChatVideoPlaybackResolver(
             storageURLResolver: storageDownloadURLCache,
             videoDiskCache: chatVideoDiskCache,
-            fileDownloader: chatRemoteFileDownloader
+            fileDownloader: chatRemoteFileDownloader,
+            originalFiles: originalFiles
         )
         self.photoLibrarySaver = DefaultPhotoLibrarySaver()
         self.mediaProcessor = DefaultMediaProcessingService()
@@ -404,12 +413,15 @@ final class ChatContainer {
         persistence.mediaStore
     }
 
-    func makeAttachmentImageLoader() -> ChatAttachmentImageLoading {
-        attachmentImageLoader
+    func makeChatMediaViewportController() -> ChatMediaViewportController {
+        let loader = attachmentImageLoader
+        return ChatMediaViewportController(cached: { loader.cachedMemoryImageImmediately(for: $0) }, load: { path, priority in
+            try await loader.loadImage(for: path, maxBytes: ChatPhotoSizePolicy.maximumFileBytes, priority: priority)
+        }, canPrepareDisk: { loader.canPrepareDiskImage }, prepareDisk: { await loader.prepareDiskImage(for: $0) })
     }
 
-    func makeChatVideoAssetLoader() -> ChatVideoAssetLoading {
-        chatVideoAssetLoader
+    func makeAttachmentImageLoader() -> ChatAttachmentImageLoading {
+        attachmentImageLoader
     }
 
     func makeChatVideoThumbnailGenerator() -> ChatVideoThumbnailGenerating {
@@ -423,6 +435,8 @@ final class ChatContainer {
     func makeChatVideoPlaybackResolver() -> ChatVideoPlaybackResolving {
         chatVideoPlaybackResolver
     }
+
+    func makeChatOriginalFiles() -> any ChatOriginalFileLoading { originalFiles }
 
     func makePhotoLibrarySaver() -> PhotoLibrarySaving {
         photoLibrarySaver

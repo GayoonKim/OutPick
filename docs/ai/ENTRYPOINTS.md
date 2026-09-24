@@ -1,5 +1,79 @@
 # OutPick Entrypoints
 
+- **다음 핵심 작업:** [전송 시점+7일 만료 인계](tasks/chat-media-first-view-loading/retention-next-handoff.md). Storage 썸네일/원본·앱 디스크/메모리 공통 만료, 로그인/다운로드로 기한 연장 없음. 정책 확정/구현 전. 완료한 미디어 작업의 [리뷰·최종 검증](tasks/chat-media-first-view-loading/review.md).
+
+- **영상 저장 중 닫기 검증:** `OutPickTests/VideoSaveLifetimeTests.swift`가 실제 UIKit present/dismiss와 지연 resolver/saver를 사용해 두 영상 VC의 준비 중 닫기·제출 후 성공/실패·늦은 UI 차단·재생 링크/저장 파일 해제를 확인한다. 사용자 영상/Photos/서버 자료 없이 전용 임시 파일만 사용.
+
+- **영상 저장 결과 UX:** `Infra/Media/MediaSaveToast`를 두 영상 VC가 사용한다. 사진과 같은 하단 위치/여백/1.2초 유지 후 사라지는 토스트에 “저장 완료”/“저장 실패”만 표시. 중앙 결과 alert와 localizedDescription 노출 제거. 저장 중 진행 UI는 기존 유지.
+
+- **저장 이후 영상 캐시 재생:** `DefaultChatVideoPlaybackResolver.cachedPlaybackAsset`는 bin 캐시를 MP4/MOV 확장자 hardlink(불가 시 사본)로 제공하고 래핑 lease가 재생 링크와 원본 pin을 함께 해제한다. `PhotoLibraryOriginalIntegrationTests`에서 합성 MP4/MOV의 AVURLAsset 재생 가능·Photos 저장·링크 정리/원본 보존 검증.
+
+- **영상 Photos 저장 보완:** `PhotoLibraryOriginalResource.videoType`가 최상위 ftyp major brand로 MP4/MOV를 구분하고 `PhotoLibraryPreparedResource`로 확장자 사본을 제출한다. Photos 실제 합성 MP4/MOV 통합은 `PhotoLibraryOriginalIntegrationTests`, 바이트/잘못된 확장자/손상 헤더는 `PhotoLibraryOriginalResourceTests`. 원본 변환 없음.
+
+- **확대 로딩 표시:** `SimpleImageViewerVC.renderLoadStatus`는 이미지가 보이면 로딩 문구 없이 원본으로 교체한다. 이미지가 없는 로딩은 스피너, 실패는 재시도 버튼을 유지한다. 저장 상태 안내는 별도 기존 흐름 유지.
+
+- **현재 원본 우선:** `SimpleImageViewerVC.scheduleProgressiveLoads`는 현재 lease 확보 전 인접 신규 요청을 보류한다. `startOriginalFileLoad`에서 파일 확보 후 현재 decode와 인접 다운로드를 겹친다. 페이지 전환 시 다른 미확보 요청 취소, 확보 파일 유지. `ImageViewerOriginalFileTests`에 보류/페이지 전환/닫기 회귀 추가.
+
+- **원본 첫 로딩 계측:** `ChatOriginalFileStore`의 `original.cache/transfer/fileGate/networkGate/download/downloadBytes`, `SimpleImageViewerVC`의 `original.viewer/viewerRole/acquire/decode`를 기존 `ImageCacheMetrics`로 수집한다. DEBUG `OUTPICK_IMAGE_BASELINE=1`일 때만 출력하며 key는 해시다. viewer 종료는 이미지 할당·로딩 상태 갱신까지이며 실제 화면 프레임 표시 완료는 아니다.
+
+- **Photos3302 실제 재현/보완:** `PhotoLibraryPreparedResource`가 원본 캐시를 올바른 확장자 고유 임시 사본으로 복사하고 Photos callback 후 정리한다. 형식 옵션만으로는 `.bin` 직접 제출 실패를 해결하지 못했다. 실제 Simulator Photos 검증은 `PhotoLibraryOriginalIntegrationTests`, [결과](tasks/chat-media-first-view-loading/original-media-results.md).
+
+- **원본 Photos 포맷 보완:** `Infra/Media/PhotoLibraryOriginalResource.creationOptions`가 `.bin`/확장자 없는 사진도 ImageIO 실제 타입과 올바른 파일명을 전달한다. `DefaultPhotoLibrarySaver.saveOriginal`에서 사용하며 재인코딩하지 않는다. [실기기 저장 실패·재검증](tasks/chat-media-first-view-loading/original-media-results.md).
+
+- **③ 원본 Phase3·4:** `Chat/Services/OriginalMedia/{ChatOriginalFile,ChatOriginalFileStore,ChatOriginalFileDisk,ChatOriginalFileTransport}` → Container 계정별 service → 뷰어/영상/삭제. 계정별 보관·합산512MiB·lease/SDK 취소 수명, 사진 현재±1/GIF 활성만·원본 파일 저장·영상 스트리밍. `AppCoordinator.ensureChatContainer` 계정 교체와 탈퇴 scrub 연결. [구현·검증/QA 잔여](tasks/chat-media-first-view-loading/original-media-results.md).
+
+- **실제 스피너 추적:** ChatImagePreviewCell.spinner span/state/imageAssigned/종료이유↔collection.loadingResolution/Delivery. 전송확인/최신이동/공용overlay 별도계측. 동일hash key+span+seq/time으로연결,전체캐시hit만으로원인확정금지. [진단계획](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **전환/이탈 픽셀 유지:** ChatViewController.viewWillAppear부터viewport활성, applyInitialWindowSnapshotAndWait 완료콜백에서첫위치즉시조정. ChatImagePreviewCell.render(.idle)는픽셀유지,reset/reuse/remote경로교체는제거. chatEntry 전환시점 및cellIdle 계측. [검증/한계](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **로컬 단계 준비/셀 즉시 표시:** ChatInitialLoadUseCase.prepareLocalMedia→VM 세대검사→VC 별도 준비(서버확인 전 렌더없음). VC cachedMemoryImageImmediately→ChatMessageCell.configureWithImage→ChatImagePreviewCollectionView의 최초configure/loading 캐시조회. chatEntry.localMedia/renderWindow 및 chatPreview.cellCache 계측. [검증](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **채팅 디스크 준비 제한 해제:** `ChatMediaViewportController` maxConcurrent:nil / `ChatAttachmentImageService` remote pipeline bypassDirectDiskLimits:true를 일반 실행·Release에 동일 적용. 환경변수 의존 제거, 재실행 유지. processor directDiskValue/readLease에서 decode/IO 게이트 우회. 실제 decode/CPU·메모리 계측은 ImageCacheMetrics/ChatMediaQAMetrics. [계약](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **먼 디스크 준비 동시성:** ChatMediaViewportController→ChatDiskPreparationController(maxConcurrent:nil), 경로별 Task 취소·병합, 메모리 여유 검사·무퇴거 삽입 유지. [최신 근거](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **채팅 진입 초기 준비:** `ChatViewController.setMessageWindow`→snapshot 전 `+MediaViewport.prepareInitialDiskImages`→policy.initialDiskPreparationPaths→viewport.prepareDiskBeforeLayout. 최신/unread 메시지 순서로 먼저 시작, 초기 위치 안정화 후 실제 프레임 순서로 전환. willAppear/willDisappear와 활성 guard로 수명 관리. [검증](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **방 전체 디스크 준비:** `ChatMediaViewportPolicy.diskPreparationPaths`→`ChatMediaViewportController` 내부 `ChatDiskPreparationController`→Container 주입 service→pipeline.prepareDiskImage. 현재 snapshot 전체 거리순으로 동시 제출, cache-only/최저 우선순위, LRU 여유·압박 검사와 setIfRoom 무퇴거 삽입. 기존 주변 다운로드는 유지. [진행/QA](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **빠른스크롤 예측선로딩:** ChatMediaViewportPolicy의속도기반최대4화면+UIKit예상도착/0.35초구간,near/destination교대선택24상한. ChatViewController delegate→+MediaViewport의속도/target수명관리→controller.cancelOutsideImmediately. 빠른범위밖300ms유예제거/캐시유지. 자동30통과,기기체감QA전. [상세](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **채팅 disk 직접준비:** `ImageCachePipeline`/`ImagePipelineProcessor.usesDirectDiskFileDecoding` opt-in→`ImageCacheDiskStore.readLease`→`ImageCacheReadLease` hardlink→ImageIO fileDecoder. 채팅 remote는 Data예산/파일내용복사 및 decode/IO 게이트 대기 없이 처리. 교체/삭제중 파일 보호·세대 차단·실패 legacy 복구 유지. [검증/후속선로딩](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **채팅 표시 1GiB QA:** `ChatAttachmentImageService.makePipelines` remote 메모리1GiB/LRU, 디스크1GiB/trim900MiB. `ImageCacheMemoryStore` opt-in→`ImageLRUMemoryStore` 최근사용정리·stride비용·압박warning/critical/normal. 다른기능NSCache 기본유지, 파일규격동일. [계획·검증](tasks/chat-media-first-view-loading/display-readiness-plan.md).
+
+- **③ Phase1·2 완료:** 자동89개 및 기기근접재방문QA 통과, memoryImmediate140회/저장282success/관측gate종료0. 일반DEV복원. 첫진입대기·용량퇴거 및 원본분리(Phase3~5)는 잔여. [결과·검증한계](tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- **③ Phase2 저장 재사용:** `ImageCachePersistence.wait(forKey:revision:)`→coordinator.waitForPendingWrite→pipeline.cachedValue의 같은키 pending 합류. `storeImageData`는 beginPreparedStore 세대확보 후 storePrepared로 독립 persistence에 payload/lease 인계. 준비 중 삭제는 거절. [검증·기준선](tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- **③ Phase2 첫 개선:** `ChatAttachmentImageLoading.cachedMemoryImageImmediately`→service remote 메모리 조회→`ChatContainer.makeChatMediaViewportController` 주입. viewport는 memory hit일 때 loading 없이 image 전달. 로컬 파일 읽기는 제외. 기준선 반복28건 중27건 용량퇴거 연결, pending 저장합류는 다음. [결과](tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- **2026-09-23 최신:③ Phase1 계측 착수.** `ImageCacheMetrics.linkCacheKey`가 resource/storage/file hash를 연결하고 memory.lookup/store·disk.lookup/eviction·diskWrite.total·persistence.pending·chatPreview.presentation/load/preserveLocal을 기록한다. 정책/재사용 행동은 아직 유지, Phase2 전 기준선 QA. [실행 기록](tasks/chat-media-first-view-loading/cache-reuse-results.md).
+
+- 다운로드② SDK 취소 경합: Firebase12.3.0→12.17.0 공식 상태 보호 적용(`project.pbxproj`, `Package.resolved`), SDK 직접 재현 포함87개 회귀 통과. 구버전 비교와 실기기 최종QA 진행,③ 미착수. [근거·의존성 영향](tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 2026-09-22 다운로드② QA **잔여 발견**: 저장 실패 suite7개 통과·실제 병렬6 유지, 대량 반복 후 신규 임시 파일3개 잔존. Firebase cancel callback의 완전 종료 가정을 재검토해야 한다. [최신 판정](tasks/chat-media-first-view-loading/download-bottleneck-results.md),③ 구현 보류.
+
+- 2026-09-22 다운로드② 저장 실패 자동 검증7개 통과. `FirebaseImageDownload.file` opt-in SDK 취소/callback 계측 추가, 실기기 QA 진행 중. [검증 진입점](entrypoints/TESTS.md), [진행·한계](tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 2026-09-22 채팅 미디어: [③ 캐시 재사용 구현 계획](tasks/chat-media-first-view-loading/cache-reuse-implementation-plan.md) 작성·구현 전. 닫기 저장 취소·영상 즉시 재생, 수치/표시 파일 정책은 QA 결정. 현재 [② 병렬 다운로드 재점검](tasks/chat-media-first-view-loading/download-bottleneck-plan.md)으로 복귀했다.
+
+- 채팅 미디어③ [표시 캐시/원본 설계 초안](tasks/chat-media-first-view-loading/display-original-cache-design.md): 앱 캐시 분리 우선 사용자 확정. `ChatAttachmentImageService`의 원문 저장·1024px decode, `ChatViewController`의 확대 원본 선로딩, `SimpleImageViewerVC.saveTapped`의 표시 이미지 우선 저장이 주요 경계. 구현 전 설계 논의 중이다.
+
+- 다운로드② 실기기 결과: 파일 전송 최대6개 동시 확인, 자동75개 통과. 기존 캐시 QA에서 반복 완료53건/캐시 정리5회 관찰; 표시 속도 전체 해결 아님. 원인별 한계·일반 DEV 복원·③ 잔여는 [실행 기록](tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 다운로드② 구현: `ImagePipelineProcessor.downloadFile`은 network/files로 SDK 파일 전송을 제한하고 앱 io(write)를 전송 동안 점유하지 않는다. 기본 수치 유지. `ImageFileDownloadSchedulingTests`6개 및 관련75개 회귀 통과, 실제 기기 계측 QA 진행. [결과·한계](tasks/chat-media-first-view-loading/download-bottleneck-results.md).
+
+- 채팅 미디어② [세부 구현 계획](tasks/chat-media-first-view-loading/download-bottleneck-plan.md) 작성 완료·구현 전: ImagePipelineProcessor의 파일 전송을 앱 io(write)에서 분리, 기존 network/files 상한 및 취소/저장 소유권 유지.4개 Phase·자동 경계/실기기 비교·공용 경로 영향 명시. 최신 상태는 [진행](tasks/chat-media-first-view-loading/progress.md).
+
+- 채팅 회전 지연 수정: `ChatMessageCell.configureWithImage`는 미디어 폭을 contentView의70%, 높이를 공유 배열 비율 제약으로 연결해 reconfigure 전의 고정 크기를 없앤다. `ChatMediaViewportSurfaceTests`의1장/30장 폭 왕복·이미지 보존 회귀 및 실기기 회전 재검증 통과. 누적95개/UI3개, 체감 QA 대기. [최신 기록](tasks/chat-media-first-view-loading/qa-results.md).
+
+- 채팅 미디어 화면 수명 QA: 단위/컴포넌트 누적94개·UI3개 통과. 키보드/검색 종료/설정/사진 선택 취소/세로 복귀 확인, 가로 캡처와 실제 화면 대조 대기. 테스트 확장은 `ChatMediaViewportDevelopmentUITests`; [실행 기록](tasks/chat-media-first-view-loading/qa-results.md)이 아래 이전 상태보다 우선한다.
+
+- 채팅 미디어① 검증: iPhone14 단위/컴포넌트89개＋기존 미디어 방 UI1개 통과. 공유 카드56pt 좌표 보정. 신규 사진·영상·GIF 전송/스크롤 복귀/방 재진입/확대·재생 사용자 QA 통과. 키보드/설정 등 잔여 검증이 있으며② 미착수. [실행 근거와 잔여](tasks/chat-media-first-view-loading/qa-results.md), [테스트 진입점](entrypoints/TESTS.md).
+
+- 채팅 과거 미디어 첫 표시 ① 로컬 구현: `ChatMediaViewportPolicy`/`ChatMediaViewportController`→`ChatViewController+MediaViewport`→사진·공유 카드 표시 연결. 초기/수신/최신 이동/스크롤 전체 warmup을 제거했다. 실제 frame·재등장 재시도·취소·DI/QA 진입점은 [채팅](entrypoints/CHAT.md), 구현/검증 한계는 [진행](tasks/chat-media-first-view-loading/progress.md).②다운로드 병목·③캐시/원본 관리는 후속이다.
+
 - 아바타 PR 리뷰 보완: `AvatarViewportObserver`는 items 변경 콜백의 최신 경로를 선로딩에 직접 전달한다. `AvatarNestedViewportTests.testSwiftUIViewportPrefetchesChangedPathWithoutScrolling`이 스크롤 없는 nil→사진→다른 사진 변경을 검증한다. [리뷰 기록](tasks/avatar-image-loading/review.md).
 
 - 아바타 Phase0~5 완료(2026-09-21, VoiceOver사용자제외): 구현·QA·임시자료정리·일반DEV복구완료. 최종 iPhone14 16개검증의 범위/기존112개회귀와중복 여부는 [Phase5](tasks/avatar-image-loading/progress/phase-5.md), 다음작업 진입점은 [현재 상태](tasks/avatar-image-loading/progress.md) 참조.
@@ -266,3 +340,6 @@
 | Chat 대규모 unread/read frontier | `tasks/active.md` → `tasks/socket-ingress-ordering-hardening/phase-6-unread-catch-up-read-frontier.md` → `CHAT.md` read frontier/realtime-only 3초 preview·즉시 persistence 및 진단 계측 진입점 → `TESTS.md` Phase 6-A~C 회귀·Phase 6-D QA |
 
 작업 시작 시 이 문서와 `docs/ai/tasks/active.md`만 먼저 읽고, 표가 가리키는 세부 문서만 추가로 확인한다.
+# 2026-09-22 다운로드② 최종 검증
+
+취소·파일 수명 필수 잔여 완료: Firebase12.17.0 공식수정, 구SDK 취소 후 재시작/파일생성 재현 및 수정SDK 통과, 공용87개 회귀. 실기기 취소87건·임시파일90개정리·신규잔여0, 사용자 지속빈화면아닌 빠른스크롤직전 로딩으로 확인. 진단 없는 일반DEV 복원 성공. `docs/ai/tasks/chat-media-first-view-loading/download-bottleneck-results.md`에 근거와 한계, 다음③은 `cache-reuse-implementation-plan.md`에 있으며 구현 전.

@@ -44,6 +44,7 @@ enum ChatCompositionRoot {
         participantsRepository: ChatRoomParticipantsRepositoryProtocol,
         localMediaRepository: ChatRoomMediaIndexRepositoryProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
+        originalFiles: (any ChatOriginalFileLoading)? = nil,
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving,
         roomImageManager: RoomImageManaging,
@@ -96,7 +97,8 @@ enum ChatCompositionRoot {
             photoLibrarySaver: photoLibrarySaver,
             roomImageManager: roomImageManager,
             avatarImageManager: avatarImageManager,
-            currentUserProvider: currentUserProvider
+            currentUserProvider: currentUserProvider,
+            originalFiles: originalFiles
         )
         settingVC.onEvent = onEvent
         return settingVC

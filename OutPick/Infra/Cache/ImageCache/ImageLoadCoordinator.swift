@@ -125,7 +125,11 @@ actor ImageLoadCoordinator {
         guard let job = jobs[request], job.id == id, job.revision == currentRevision(request.path) else { return false }
         var transferred = false
         if !request.isTransient, case .success(let value) = result, let image = value.image {
-            memory.set(image, forKey: request.cacheKey)
+            if priority(for: request) == .diskPreparation {
+                memory.setIfRoom(image, forKey: request.cacheKey)
+            } else {
+                memory.set(image, forKey: request.cacheKey)
+            }
             if job.storesOnDisk, let payload = value.payload {
                 transferred = true
                 await persistence.enqueue(payload, key: request.cacheKey, revision: job.revision, release: value.release)
@@ -147,6 +151,11 @@ actor ImageLoadCoordinator {
         let pending = promotions.values.map(\.task)
         for task in pending { await task.value }
         await persistence.flush()
+    }
+
+    func waitForPendingWrite(path: String, revision: UInt64) async throws {
+        try await persistence.wait(forKey: "imageCache|\(path)", revision: revision)
+        guard revision == currentRevision(path) else { throw CancellationError() }
     }
 
     func cachedMemoryImage(path: String, promote: Bool) -> UIImage? {
@@ -206,6 +215,21 @@ actor ImageLoadCoordinator {
         let revision = invalidate(path: path)
         memory.set(image, forKey: "imageCache|\(path)")
         await disk.write(payload: payload, forKey: "imageCache|\(path)", revision: revision)
+    }
+
+    /// 변환 전에 세대를 확보해 변환 중 삭제된 이미지가 다시 저장되지 않게 한다.
+    func beginPreparedStore(path: String) throws -> UInt64 {
+        try Task.checkCancellation()
+        return invalidate(path: path)
+    }
+
+    func storePrepared(_ value: ImageLoadValue, path: String, revision: UInt64) async throws {
+        try Task.checkCancellation()
+        guard revision == currentRevision(path) else { throw CancellationError() }
+        guard let image = value.image, let payload = value.payload else { throw ImageCachePipelineError.invalidImageData }
+        memory.set(image, forKey: "imageCache|\(path)")
+        // 준비가 끝난 payload와 예약은 화면 호출자가 아닌 persistence가 해제한다.
+        await persistence.enqueue(payload, key: "imageCache|\(path)", revision: revision, release: value.release)
     }
 
     func removeAll() async {

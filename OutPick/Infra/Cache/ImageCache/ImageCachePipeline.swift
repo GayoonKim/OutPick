@@ -47,28 +47,46 @@ enum LookbookImageLoadDebugLog {
     }
 }
 
-/// NSCache 기반 공용 메모리 이미지 캐시
+/// 기본 NSCache를 유지하고 채팅 표시 캐시만 명시적 LRU를 선택한다.
 final class ImageCacheMemoryStore {
     private let cache = NSCache<NSString, UIImage>()
+    private let lru: ImageLRUMemoryStore?
 
-    init(totalCostLimitBytes: Int = 120 * 1024 * 1024) {
+    init(totalCostLimitBytes: Int = 120 * 1024 * 1024, usesLRU: Bool = false) {
+        lru = usesLRU ? ImageLRUMemoryStore(maximumBytes: totalCostLimitBytes) : nil
         cache.totalCostLimit = totalCostLimitBytes
     }
 
     func image(forKey key: String) -> UIImage? {
-        cache.object(forKey: key as NSString)
+        let image = lru != nil ? lru?.image(forKey: key) : cache.object(forKey: key as NSString)
+        ImageCacheMetrics.shared.linkCacheKey(key)
+        ImageCacheMetrics.shared.mark("memory.lookup", key: key, outcome: image == nil ? "miss" : "hit")
+        return image
     }
 
     func set(_ image: UIImage, forKey key: String) {
-        cache.setObject(image, forKey: key as NSString, cost: image.estimatedBytes)
+        if let lru { lru.set(image, forKey: key) }
+        else { cache.setObject(image, forKey: key as NSString, cost: image.estimatedBytes) }
+        ImageCacheMetrics.shared.linkCacheKey(key)
+        ImageCacheMetrics.shared.mark("memory.store", key: key, bytes: image.estimatedBytes)
     }
 
     func remove(forKey key: String) {
+        lru?.remove(forKey: key)
         cache.removeObject(forKey: key as NSString)
+        ImageCacheMetrics.shared.mark("memory.remove", key: key, outcome: "explicit")
+    }
+
+    var canPrepareDiskImage: Bool { lru?.canPrepareDiskImage ?? false }
+
+    func setIfRoom(_ image: UIImage, forKey key: String) {
+        lru?.setIfRoom(image, forKey: key)
     }
 
     func removeAll() {
+        lru?.removeAll()
         cache.removeAllObjects()
+        ImageCacheMetrics.shared.mark("memory.removeAll", outcome: "explicit")
     }
 }
 
@@ -117,12 +135,14 @@ final class ImageCachePipeline {
         memory: ImageCacheMemoryStore = ImageCacheMemoryStore(),
         disk: ImageCacheDiskStore? = nil,
         resources: ImagePipelineResources = .shared,
+        usesDirectDiskFileDecoding: Bool = false,
+        bypassDirectDiskLimits: Bool = false,
         promotionEncoding: ImageCachePromotionEncoding? = nil,
         decoder: @escaping @Sendable (Data) -> UIImage? = { ImageFileDecoding.image($0) },
         fileDecoder: @escaping @Sendable (URL) -> UIImage? = { ImageFileDecoding.image($0) }
     ) {
         let disk = disk ?? ImageCacheDiskStore(resources: resources)
-        self.processor = ImagePipelineProcessor(resources: resources, fetcher: fetcher, fileFetcher: fileFetcher, decoder: decoder, fileDecoder: fileDecoder)
+        self.processor = ImagePipelineProcessor(resources: resources, fetcher: fetcher, fileFetcher: fileFetcher, decoder: decoder, fileDecoder: fileDecoder, usesDirectDiskFileDecoding: usesDirectDiskFileDecoding, bypassDirectDiskLimits: bypassDirectDiskLimits)
         self.memory = memory
         self.disk = disk
         self.resources = resources
@@ -140,6 +160,15 @@ final class ImageCachePipeline {
 
     func cachedImage(path: String) async -> UIImage? {
         try? await cachedValue(path: path, priority: .visible).image
+    }
+
+    var canPrepareDiskImage: Bool { memory.canPrepareDiskImage }
+
+    func prepareDiskImage(path: String) async {
+        guard canPrepareDiskImage, !Task.isCancelled else { return }
+        let metric = ImageCacheMetrics.shared.begin("chatDiskPreparation", key: path)
+        let value = try? await cachedValue(path: path, priority: .diskPreparation)
+        ImageCacheMetrics.shared.end(metric, outcome: Task.isCancelled ? "cancelled" : value?.image == nil ? "miss" : "ready")
     }
 
     /// 표시용 메모리 조회만 수행하며 디스크 읽기·저장 승격은 기존 비동기 경로가 담당한다.
@@ -164,6 +193,9 @@ final class ImageCachePipeline {
             return ImageLoadValue(image: image)
         }
         return try await coordinator.value(for: request, priority: priority, storePolicy: .memoryOnly) { [self] revision in
+            // 아직 저장 중인 같은 파일을 miss로 판단해 다시 다운로드하지 않는다.
+            // 여기서는 파일/디코드/IO 슬롯을 보유하지 않으므로 저장과 교착하지 않는다.
+            try await coordinator.waitForPendingWrite(path: path, revision: revision)
             // fast path 이후 다른 작업이 채운 메모리도 재사용한다.
             if let image = memory.image(forKey: request.cacheKey) { return ImageLoadValue(image: image) }
             return try await processor.cached(disk: disk, key: request.cacheKey, revision: revision)
@@ -204,11 +236,10 @@ final class ImageCachePipeline {
     }
 
     func storeImageData(_ data: Data, path: String) async throws {
+        let revision = try await coordinator.beginPreparedStore(path: path)
         let value = try await processor.stored(data)
         do {
-            guard let image = value.image, let payload = value.payload else { throw ImageCachePipelineError.invalidImageData }
-            try await coordinator.store(image: image, payload: payload, path: path)
-            await value.release?()
+            try await coordinator.storePrepared(value, path: path, revision: revision)
         } catch { await value.release?(); throw error }
     }
 
