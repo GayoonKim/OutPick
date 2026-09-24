@@ -223,9 +223,7 @@ final class ChatCoordinator {
             mediaUploadUseCase: container.makeChatMediaUploadUseCase(),
             outgoingOutboxUseCase: container.makeChatOutgoingOutboxUseCase(),
             attachmentImageLoader: container.makeAttachmentImageLoader(),
-            videoAssetLoader: container.makeChatVideoAssetLoader(),
-            storageURLResolver: container.makeStorageURLResolver(),
-            videoThumbnailGenerator: container.makeChatVideoThumbnailGenerator(),
+            mediaViewport: container.makeChatMediaViewportController(),
             mediaProcessor: container.makeMediaProcessor(),
             avatarImageManager: container.makeAvatarImageManager(roomID: room.id),
             profileSyncManager: container.makeProfileSyncManager(),
@@ -490,6 +488,7 @@ extension ChatCoordinator: ChatRoomRouting {
             participantsRepository: container.makeLocalParticipantsRepository(),
             localMediaRepository: container.makeLocalMediaRepository(),
             attachmentImageLoader: container.makeAttachmentImageLoader(),
+            originalFiles: container.makeChatOriginalFiles(),
             videoResolver: container.makeChatVideoPlaybackResolver(),
             photoLibrarySaver: container.makePhotoLibrarySaver(),
             roomImageManager: container.makeRoomImageManager(),
@@ -590,7 +589,8 @@ extension ChatCoordinator: ChatRoomRouting {
                         messageID: messageID,
                         isMediaContext: true
                     )
-                } : nil
+                } : nil,
+            originalFiles: container.makeChatOriginalFiles()
         )
         viewer.modalPresentationStyle = .fullScreen
         viewer.modalTransitionStyle = .crossDissolve

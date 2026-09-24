@@ -635,9 +635,11 @@ final class AppCoordinator {
 
     @MainActor
     private func ensureChatContainer() -> ChatContainer {
-        if let chatContainer {
+        if let chatContainer, chatContainer.originalFileAccountID == currentUserProvider.canonicalUserID {
             return chatContainer
         }
+
+        chatContainer?.invalidateMessageCacheSession()
 
         let created = ChatContainer(
             persistence: chatPersistence,

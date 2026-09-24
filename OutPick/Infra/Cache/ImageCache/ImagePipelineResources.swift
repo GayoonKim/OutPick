@@ -6,6 +6,7 @@ final class ImagePipelineResources {
     let limits: ImagePipelineLimits
     let network: ImageStageGate
     let decode: ImageStageGate
+    // 앱의 캐시/로컬 I/O 제한이다. SDK 다운로드의 임시 파일 쓰기는 network/files가 제한한다.
     let io: ImageStageGate
     let decodeBytes: ImageStageGate
     let writeBytes: ImageStageGate
@@ -18,7 +19,7 @@ final class ImagePipelineResources {
         io = ImageStageGate(limits.diskOperations, name: "diskIO", maxWrites: limits.diskWrites)
         decodeBytes = ImageStageGate(limits.decodeBytes, name: "decodeBytes")
         writeBytes = ImageStageGate(limits.writeBytes, name: "writeBytes")
-        // 임시 파일도 무제한 누적하지 않는다. 파일 경로의 총 입장 수는 다운로드 폭과 같다.
+        // 전송·디코딩·저장 대기까지 포함한 파일 입장 수를 제한해 임시 파일 누적을 막는다.
         files = ImageStageGate(limits.downloads, name: "temporaryFiles")
     }
 

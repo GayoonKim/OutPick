@@ -9,13 +9,17 @@ final class ImagePipelineProcessor {
     private let fileFetcher: FileFetcher?
     private let decoder: @Sendable (Data) -> UIImage?
     private let fileDecoder: @Sendable (URL) -> UIImage?
+    private let usesDirectDiskFileDecoding: Bool
+    private let bypassDirectDiskLimits: Bool
 
-    init(resources: ImagePipelineResources, fetcher: @escaping ImageCachePipeline.Fetcher, fileFetcher: FileFetcher?, decoder: @escaping @Sendable (Data) -> UIImage?, fileDecoder: @escaping @Sendable (URL) -> UIImage?) {
+    init(resources: ImagePipelineResources, fetcher: @escaping ImageCachePipeline.Fetcher, fileFetcher: FileFetcher?, decoder: @escaping @Sendable (Data) -> UIImage?, fileDecoder: @escaping @Sendable (URL) -> UIImage?, usesDirectDiskFileDecoding: Bool = false, bypassDirectDiskLimits: Bool = false) {
         self.resources = resources
         self.fetcher = fetcher
         self.fileFetcher = fileFetcher
         self.decoder = decoder
         self.fileDecoder = fileDecoder
+        self.usesDirectDiskFileDecoding = usesDirectDiskFileDecoding
+        self.bypassDirectDiskLimits = bypassDirectDiskLimits
     }
 
     func download(path: String, maxBytes: Int) async throws -> ImageLoadValue {
@@ -48,10 +52,9 @@ final class ImagePipelineProcessor {
         let lease = try await resources.files.acquire()
         do {
             let file = try ImageTemporaryFile()
-            // 파일 다운로드의 쓰기도 I/O 예산에 포함한다. I/O 대기 중 network slot은 잡지 않는다.
-            try await resources.io.withPermit(kind: .write) { [resources] in
-                try await resources.network.withPermit { try await fileFetcher(path, maxBytes, file.url) }
-            }
+            // SDK 임시 파일 쓰기는 network/files로 제한한다. 전송 대기가 앱 캐시 쓰기를 막지 않는다.
+            // network는 SDK 종료 뒤 반환하고 files는 디코딩·비동기 저장까지 유지한다.
+            try await resources.network.withPermit { try await fileFetcher(path, maxBytes, file.url) }
             let size = try file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size <= maxBytes else { throw ImageCachePipelineError.imageTooLarge }
             ImageCacheMetrics.shared.mark("network.body.received", key: path, outcome: "file", bytes: size)
@@ -61,6 +64,20 @@ final class ImagePipelineProcessor {
     }
 
     func cached(disk: ImageCacheDiskStore, key: String, revision: UInt64) async throws -> ImageLoadValue {
+        if usesDirectDiskFileDecoding {
+            do {
+                if bypassDirectDiskLimits {
+                    return try await directDiskValue(disk: disk, key: key, revision: revision)
+                }
+                return try await resources.decode.withPermit { [self] in
+                    try await directDiskValue(disk: disk, key: key, revision: revision)
+                }
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                // 파일 시스템의 링크 지원/이미지 처리 차이가 있어도 기존 경로로 복구한다.
+                ImageCacheMetrics.shared.mark("diskFile.fallback", key: key, outcome: "legacy")
+            }
+        }
         guard let size = await disk.size(forKey: key, revision: revision) else {
             ImageCacheMetrics.shared.mark("cache", key: key, outcome: "miss")
             return ImageLoadValue(image: nil)
@@ -99,6 +116,29 @@ final class ImagePipelineProcessor {
             // 손상된 캐시 데이터는 네트워크 재요청으로 복구한다.
             return ImageLoadValue(image: nil)
         }
+    }
+
+    private func directDiskValue(disk: ImageCacheDiskStore, key: String, revision: UInt64) async throws -> ImageLoadValue {
+        guard let lease = try await disk.readLease(forKey: key, revision: revision, bypassIOLimit: bypassDirectDiskLimits) else {
+            return ImageLoadValue(image: nil)
+        }
+        try Task.checkCancellation()
+        let metric = ImageCacheMetrics.shared.begin("diskFile.prepare", key: key)
+        var outcome = "failure"
+        defer { ImageCacheMetrics.shared.end(metric, outcome: Task.isCancelled ? "cancelled" : outcome) }
+        let decode: @Sendable () -> UIImage? = { [lease, fileDecoder] in
+            let metric = ImageCacheMetrics.shared.begin("diskFile.decode", key: key)
+            defer { ImageCacheMetrics.shared.end(metric) }
+            return fileDecoder(lease.url)
+        }
+        let image: UIImage?
+        if bypassDirectDiskLimits { image = decode() }
+        else { image = try await resources.io.withPermit(kind: .read) { decode() } }
+        try Task.checkCancellation()
+        guard let image else { throw ImageCachePipelineError.invalidImageData }
+        outcome = "success"
+        ImageCacheMetrics.shared.mark("cache", key: key, outcome: "diskDirect")
+        return ImageLoadValue(image: image)
     }
 
     func stored(_ data: Data) async throws -> ImageLoadValue {

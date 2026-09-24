@@ -102,6 +102,7 @@ final class ChatLatestMessageJumpView: UIControl {
         previewImageView.contentMode = .center
 
         if presentation.isLoading {
+            if !loadingIndicator.isAnimating { ImageCacheMetrics.shared.mark("chatSpinner.latestJump", outcome: "start") }
             loadingIndicator.startAnimating()
             arrowView.isHidden = true
         } else {

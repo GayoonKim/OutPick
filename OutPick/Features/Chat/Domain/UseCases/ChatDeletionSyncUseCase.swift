@@ -9,25 +9,30 @@ final class DefaultChatDeletionMediaCleaner: ChatDeletionMediaCleaning {
     private let videoDiskCache: ChatVideoDiskCaching
     private let storageURLResolver: ChatStorageURLResolving
     private let fileManager: FileManager
+    private let originalFiles: (any ChatOriginalFileLoading)?
 
     init(
         imageLoader: ChatAttachmentImageLoading,
         videoDiskCache: ChatVideoDiskCaching,
         storageURLResolver: ChatStorageURLResolving,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
         self.imageLoader = imageLoader
         self.videoDiskCache = videoDiskCache
         self.storageURLResolver = storageURLResolver
         self.fileManager = fileManager
+        self.originalFiles = originalFiles
     }
 
     func clean(_ item: ChatDeletionCleanupItem) async throws {
         switch item.kind {
         case .image:
+            await originalFiles?.removeOriginal(path: item.path)
             await imageLoader.removeCachedImage(for: item.path)
             await storageURLResolver.removeCachedURL(for: item.path)
         case .video:
+            await originalFiles?.removeOriginal(path: item.path)
             await videoDiskCache.remove(forKey: item.path)
             await storageURLResolver.removeCachedURL(for: item.path)
         case .localFile:

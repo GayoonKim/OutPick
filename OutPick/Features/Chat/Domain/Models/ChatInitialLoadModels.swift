@@ -60,5 +60,4 @@ struct ChatInitialLoadPolicy: Equatable {
     let latestTailSize: Int
     let unreadAfterSize: Int
     let unreadBeforeContextSize: Int
-    let mediaPrefetchConcurrency: Int
 }

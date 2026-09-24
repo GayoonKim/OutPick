@@ -4,6 +4,7 @@ import Foundation
 struct ImagePipelineLimits: Sendable {
     var downloads = 6
     var decodes = 2
+    // SDK 다운로드 중 파일 기록을 제외한 앱 관리 I/O의 제한이다.
     var diskOperations = 2
     var diskWrites = 1
     var decodeBytes = 16 * 1024 * 1024

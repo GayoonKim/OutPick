@@ -394,7 +394,7 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.layer.borderWidth = 0
         bubbleView.layer.borderColor = nil
         imagesPreviewCollectionView.isHidden = true
-        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        imagesPreviewCollectionView.updateCollectionView([], 0, [])
 
         bubbleView.isHidden = false
         messageLabel.isHidden = false
@@ -517,7 +517,6 @@ class ChatMessageCell: UICollectionViewCell {
         lookbookShareTopConstraint = nil
         lookbookShareBottomConstraint = nil
         lookbookShareWidthConstraint = nil
-        lookbookShareContentView.prepareForReuse()
         lookbookShareContentView.isHidden = true
         representedLookbookSharedContent = nil
 
@@ -539,7 +538,7 @@ class ChatMessageCell: UICollectionViewCell {
         messageLabel.isHidden = true ? false : false // ensure visible (no-op but explicit)
         messageLabel.isHidden = false
         imagesPreviewCollectionView.isHidden = true
-        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        imagesPreviewCollectionView.updateCollectionView([], 0, [])
         lookbookShareContentView.prepareForReuse()
         lookbookShareContentView.isHidden = true
         representedLookbookSharedContent = nil
@@ -647,7 +646,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     func configureWithImage(
         with message: ChatMessage,
-        thumbnailLoader: ((Attachment) async -> UIImage?)? = nil,
+        cachedImage: @escaping (String) -> UIImage? = { _ in nil },
         avatarLoader: ((String) async throws -> UIImage?)? = nil
     ) {
         representedMessageID = message.ID
@@ -671,13 +670,9 @@ class ChatMessageCell: UICollectionViewCell {
         let displayableAttachments = message.displayableAttachments
         let rows = calculateRowCountWithImage(displayableAttachments.count)
 
-        var contentHeight: CGFloat {
-            if displayableAttachments.count == 1 {
-                return contentView.frame.width * 0.7
-            } else {
-                return rows.reduce(0) { $0 + (containerWidth / CGFloat($1)) }
-            }
-        }
+        // 회전 시 reconfigure를 기다리지 않고 부모 폭과 함께 크기가 바뀌도록 비율로 연결한다.
+        let heightRatio = ChatMediaPreviewLayout.height(count: displayableAttachments.count, width: 1)
+        let contentHeight = containerWidth * heightRatio
 
         let isMine = LoginManager.shared.canonicalUserID == message.senderUID
         configureProfileArea(with: message, isMine: isMine, avatarLoader: avatarLoader)
@@ -686,8 +681,8 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
             imagePreviewCollectionViewTrailingConstraint = imagesPreviewCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8)
             imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
-            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalTo: contentView.widthAnchor, multiplier: 0.7)
+            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalTo: imagesPreviewCollectionView.widthAnchor, multiplier: heightRatio)
 
             if message.isFailed {
                 failedIconImageView.isHidden = false
@@ -700,8 +695,8 @@ class ChatMessageCell: UICollectionViewCell {
             imagePreviewCollectionViewTopConstraint = imagesPreviewCollectionView.topAnchor.constraint(equalTo: nickNameLabel.bottomAnchor, constant: 5)
             imagePreviewCollectionViewLeadingConstraint = imagesPreviewCollectionView.leadingAnchor.constraint(equalTo: profileImageView.trailingAnchor, constant: 5)
             imagePreviewCollectionViewBottomConstraint = imagesPreviewCollectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8)
-            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalToConstant: containerWidth)
-            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalToConstant: contentHeight)
+            imagePreviewCollectionViewWidthConstraint = imagesPreviewCollectionView.widthAnchor.constraint(equalTo: contentView.widthAnchor, multiplier: 0.7)
+            imagePreviewCollectionViewHeightConstraint = imagesPreviewCollectionView.heightAnchor.constraint(equalTo: imagesPreviewCollectionView.widthAnchor, multiplier: heightRatio)
         }
 
         NSLayoutConstraint.activate([
@@ -721,10 +716,7 @@ class ChatMessageCell: UICollectionViewCell {
             previewItems,
             contentHeight,
             rows,
-            thumbnailLoader: { item in
-                guard let thumbnailLoader else { return nil }
-                return await thumbnailLoader(item.attachment)
-            }
+            cachedImage: cachedImage
         )
 
         // 보낸 시간 (실패 메시지는 숨김)
@@ -741,7 +733,6 @@ class ChatMessageCell: UICollectionViewCell {
 
     func configureLookbookShareMessage(
         _ message: ChatMessage,
-        thumbnailLoader: ((String) async -> UIImage?)?,
         avatarLoader: ((String) async throws -> UIImage?)?
     ) {
         representedMessageID = message.ID
@@ -750,7 +741,7 @@ class ChatMessageCell: UICollectionViewCell {
         bubbleView.isHidden = true
         messageLabel.isHidden = true
         imagesPreviewCollectionView.isHidden = true
-        imagesPreviewCollectionView.updateCollectionView([], 0, [], thumbnailLoader: nil)
+        imagesPreviewCollectionView.updateCollectionView([], 0, [])
         hideVideoBadge()
         applyMediaUploadRecoveryState(.none)
 
@@ -765,8 +756,7 @@ class ChatMessageCell: UICollectionViewCell {
         representedLookbookSharedContent = message.sharedContent
         lookbookShareContentView.isHidden = false
         lookbookShareContentView.configure(
-            with: message.sharedContent,
-            thumbnailLoader: thumbnailLoader
+            with: message.sharedContent
         )
 
         let containerWidth = contentView.frame.width > 0
@@ -862,19 +852,27 @@ class ChatMessageCell: UICollectionViewCell {
         if window != nil { profileImageView.presentation.displayed(eventID: message.ID) }
     }
 
-    private func calculateRowCountWithImage(_ n: Int) -> [Int] {
-        guard n > 1 else { return [] }
-        
-        let maxThreeCount = n / 3
-        for i in stride(from: maxThreeCount, to: 0, by: -1) {
-            let remaining = n - (3 * i)
-            if remaining % 2 == 0 {
-                let j = remaining / 2
-                return Array(repeating: 3, count: i) + Array(repeating: 2, count: j)
-            }
+    func mediaViewportItems(in view: UIView) -> [ChatMediaViewportItem] {
+        if !imagesPreviewCollectionView.isHidden {
+            return imagesPreviewCollectionView.viewportItems(in: view)
         }
-        
-        return n % 2 == 0 ? Array(repeating: 2, count: n / 2) : []
+        guard !lookbookShareContentView.isHidden,
+              let id = representedMessageID,
+              let path = representedLookbookSharedContent?.thumbnailPathSnapshot else { return [] }
+        return [ChatMediaViewportItem(id: id + "#share", path: path,
+                                     frame: lookbookShareContentView.thumbnailFrame(in: view))]
+    }
+
+    func renderMedia(id: String, path: String, state: ChatMediaViewportController.Presentation) {
+        if id == (representedMessageID ?? "") + "#share" {
+            lookbookShareContentView.render(path: path, state: state)
+        } else {
+            imagesPreviewCollectionView.render(id: id, path: path, state: state)
+        }
+    }
+
+    private func calculateRowCountWithImage(_ n: Int) -> [Int] {
+        ChatMediaPreviewLayout.rows(count: n)
     }
     
     func setHightlightedOverlay(_ highlighted: Bool) {

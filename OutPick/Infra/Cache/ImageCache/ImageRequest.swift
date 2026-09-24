@@ -22,7 +22,8 @@ struct ImageRequest: Hashable, Sendable {
 }
 
 enum ImageRequestPriority: Int, Sendable {
-    case prefetch
+    case diskPreparation = -1
+    case prefetch = 0
     case visible
 }
 

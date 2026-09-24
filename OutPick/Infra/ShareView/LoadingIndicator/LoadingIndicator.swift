@@ -34,6 +34,7 @@ class LoadingIndicator {
     /// Stop and remove the overlay/spinner.
     func stop() {
         DispatchQueue.main.async {
+            if self.spinner?.isAnimating == true { ImageCacheMetrics.shared.mark("chatSpinner.globalOverlay", outcome: "stop") }
             self.spinner?.stopAnimating()
             self.overlayView?.removeFromSuperview()
             self.spinner = nil
@@ -81,6 +82,7 @@ class LoadingIndicator {
             ])
 
             spinner.startAnimating()
+            ImageCacheMetrics.shared.mark("chatSpinner.globalOverlay", outcome: "start")
 
             self.overlayView = overlay
             self.spinner = spinner

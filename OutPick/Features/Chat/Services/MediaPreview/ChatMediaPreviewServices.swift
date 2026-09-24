@@ -11,15 +11,29 @@ import UIKit
 struct ChatVideoPlaybackAsset: Equatable {
     let url: URL
     let storagePath: String?
+    var sourcePath: String? = nil
+    var fileLease: ChatOriginalFileLease? = nil
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.url == rhs.url && lhs.storagePath == rhs.storagePath && lhs.sourcePath == rhs.sourcePath
+    }
 }
 
 protocol ChatVideoPlaybackResolving {
+    func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease
     func playbackAsset(forPath path: String) async throws -> ChatVideoPlaybackAsset
     func localFileURLForSaving(
         localURL: URL?,
         storagePath: String?,
         onProgress: @escaping (Double) -> Void
     ) async throws -> URL
+}
+
+extension ChatVideoPlaybackResolving {
+    func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease {
+        let url = try await localFileURLForSaving(localURL: asset.url, storagePath: asset.storagePath, onProgress: { _ in })
+        return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
+    }
 }
 
 protocol ChatVideoDiskCaching {
@@ -70,20 +84,40 @@ final class DefaultChatVideoPlaybackResolver: ChatVideoPlaybackResolving {
     private let storageURLResolver: ChatStorageURLResolving
     private let videoDiskCache: ChatVideoDiskCaching
     private let fileDownloader: ChatRemoteFileDownloading
+    private let originalFiles: (any ChatOriginalFileLoading)?
 
     init(
         storageURLResolver: ChatStorageURLResolving,
         videoDiskCache: ChatVideoDiskCaching,
-        fileDownloader: ChatRemoteFileDownloading
+        fileDownloader: ChatRemoteFileDownloading,
+        originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
         self.storageURLResolver = storageURLResolver
         self.videoDiskCache = videoDiskCache
         self.fileDownloader = fileDownloader
+        self.originalFiles = originalFiles
     }
 
     func playbackAsset(forPath path: String) async throws -> ChatVideoPlaybackAsset {
         let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { throw ChatMediaPreviewError.emptyPath }
+
+        if let originalFiles {
+            let resource = Self.originalResource(trimmedPath)
+            if let lease = try await originalFiles.cachedOriginal(resource) {
+                return try await Self.cachedPlaybackAsset(lease: lease, path: trimmedPath)
+            }
+            let url: URL
+            if let local = Self.localFileURL(from: trimmedPath) { url = local }
+            else if let remote = Self.directRemoteURL(from: trimmedPath) { url = remote }
+            else { url = try await storageURLResolver.url(for: trimmedPath) }
+            try Task.checkCancellation()
+            // URL 조회 도중 세션이 바뀌었으면 이전 화면에 결과를 넘기지 않는다.
+            if let lease = try await originalFiles.cachedOriginal(resource) {
+                return try await Self.cachedPlaybackAsset(lease: lease, path: trimmedPath)
+            }
+            return ChatVideoPlaybackAsset(url: url, storagePath: trimmedPath, sourcePath: trimmedPath)
+        }
 
         if let localURL = Self.localFileURL(from: trimmedPath) {
             return ChatVideoPlaybackAsset(url: localURL, storagePath: nil)
@@ -98,10 +132,40 @@ final class DefaultChatVideoPlaybackResolver: ChatVideoPlaybackResolving {
         }
 
         let remote = try await storageURLResolver.url(for: trimmedPath)
-        Task.detached { [videoDiskCache] in
-            _ = try? await videoDiskCache.cache(from: remote, key: trimmedPath)
-        }
         return ChatVideoPlaybackAsset(url: remote, storagePath: trimmedPath)
+    }
+
+    static func cachedPlaybackAsset(lease: ChatOriginalFileLease, path: String) async throws -> ChatVideoPlaybackAsset {
+        guard !["mp4", "mov", "m4v"].contains(lease.fileURL.pathExtension.lowercased()) else {
+            return ChatVideoPlaybackAsset(url: lease.fileURL, storagePath: path, sourcePath: path, fileLease: lease)
+        }
+        do {
+            // 확장자가 없는 원본은 재생용 링크로 제공하고 플레이어 수명 동안 원본 pin을 유지한다.
+            let prepared = try PhotoLibraryPreparedResource(fileURL: lease.fileURL, isVideo: true, preferHardLink: true)
+            try Task.checkCancellation()
+            guard lease.isValid else { throw CancellationError() }
+            let playbackLease = ChatOriginalFileLease(fileURL: prepared.fileURL, isValid: { lease.isValid }, release: {
+                prepared.cleanup()
+                await lease.release()
+            })
+            return ChatVideoPlaybackAsset(url: playbackLease.fileURL, storagePath: path, sourcePath: path, fileLease: playbackLease)
+        } catch {
+            await lease.release()
+            throw error
+        }
+    }
+
+    func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease {
+        guard let originalFiles else {
+            let url = try await localFileURLForSaving(localURL: asset.url, storagePath: asset.storagePath, onProgress: { _ in })
+            return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
+        }
+        let path = asset.sourcePath ?? asset.storagePath ?? asset.url.absoluteString
+        return try await originalFiles.acquireOriginal(Self.originalResource(path), purpose: .saving)
+    }
+
+    private static func originalResource(_ path: String) -> ChatOriginalResource {
+        ChatOriginalResource(path: path, maximumBytes: Int(AVAssetExportVideoCompressor.maxChatSourceBytes))
     }
 
     func localFileURLForSaving(

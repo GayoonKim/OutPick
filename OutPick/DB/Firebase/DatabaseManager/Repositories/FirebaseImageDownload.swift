@@ -8,6 +8,12 @@ private final class ImageStorageTaskHandle: @unchecked Sendable {
     private var cancellation: Error?
     private var finished = false
 
+    var hasFinished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
+    }
+
     func install(_ task: StorageDownloadTask) {
         lock.lock()
         guard !finished else { lock.unlock(); return }
@@ -52,15 +58,26 @@ enum FirebaseImageDownload {
 
     static func file(from reference: StorageReference, to url: URL, maxBytes: Int) async throws {
         let handle = ImageStorageTaskHandle()
+        // 진단 인자가 있는 실행에서만 해시 경로와 SDK 종료 순서를 관찰한다.
+        let key = reference.fullPath
+        let metric = ImageCacheMetrics.shared.begin("firebase.file", key: key)
+        ImageCacheMetrics.shared.mark("firebase.file.target", key: url.path, parent: metric?.id)
+        defer { ImageCacheMetrics.shared.end(metric) }
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 let task = reference.write(toFile: url) { _, error in
-                    if let error = handle.finish(error) { continuation.resume(throwing: error) }
+                    let finishedError = handle.finish(error)
+                    ImageCacheMetrics.shared.mark("firebase.file.callback", key: key, parent: metric?.id,
+                        outcome: finishedError is CancellationError ? "cancelled" : finishedError == nil ? "success" : "failure")
+                    if let error = finishedError { continuation.resume(throwing: error) }
                     else { continuation.resume() }
                 }
                 handle.install(task)
                 task.observe(.progress) { snapshot in
+                    if handle.hasFinished {
+                        ImageCacheMetrics.shared.mark("firebase.file.progressAfterCallback", key: url.path, parent: metric?.id)
+                    }
                     if let progress = snapshot.progress,
                        progress.completedUnitCount > Int64(maxBytes) || progress.totalUnitCount > Int64(maxBytes) {
                         handle.cancel(ImageCachePipelineError.imageTooLarge)
@@ -69,6 +86,9 @@ enum FirebaseImageDownload {
             }
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size <= maxBytes else { throw ImageCachePipelineError.imageTooLarge }
-        } onCancel: { handle.cancel() }
+        } onCancel: {
+            ImageCacheMetrics.shared.mark("firebase.file.cancelRequested", key: key, parent: metric?.id)
+            handle.cancel()
+        }
     }
 }

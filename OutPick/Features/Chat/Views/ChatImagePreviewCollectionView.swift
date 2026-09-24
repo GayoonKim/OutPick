@@ -20,7 +20,7 @@ struct ChatImagePreviewItem {
 
     var previewPaths: [String] {
         var seen = Set<String>()
-        return [attachment.thumbResourcePath, attachment.originalResourcePath].compactMap { path in
+        return [attachment.thumbResourcePath].compactMap { path in
             guard !path.isEmpty else { return nil }
             guard seen.insert(path).inserted else { return nil }
             return path
@@ -41,7 +41,6 @@ class ChatImagePreviewCollectionView: UIView {
         case main
     }
 
-    typealias ThumbnailLoader = (ChatImagePreviewItem) async -> UIImage?
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, String>!
@@ -51,12 +50,8 @@ class ChatImagePreviewCollectionView: UIView {
     private var previewItems: [ChatImagePreviewItem] = []
     private var itemsByID: [String: ChatImagePreviewItem] = [:]
     private var renderedImagesByItemID: [String: UIImage] = [:]
-    private var thumbnailLoader: ThumbnailLoader?
+    private var cachedImage: (String) -> UIImage? = { _ in nil }
     
-    // MARK: - Compact sizing
-    private let singleItemHeight: CGFloat = 200   // 단일 이미지 높이 줄임
-    private let itemSpacing: CGFloat = 4          // 아이템 간격 살짝 키움
-
     override init(frame: CGRect) {
         super.init(frame: frame)
         
@@ -91,98 +86,22 @@ class ChatImagePreviewCollectionView: UIView {
     }
     
     private func configureLayout() -> UICollectionViewCompositionalLayout {
-        return UICollectionViewCompositionalLayout { [weak self] (sectionIndex, environment) -> NSCollectionLayoutSection? in
-            guard let self = self else { return nil }
-
-            // Async thumbnail loading 중에는 잠시 0개 상태가 올 수 있다.
-            // Compositional group은 최소 1개의 subitem이 필요하므로 fallback 레이아웃을 반환한다.
-            if self.imagesCount == 0 {
-                let itemSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .fractionalHeight(1.0)
-                )
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                item.contentInsets = NSDirectionalEdgeInsets(
-                    top: self.itemSpacing,
-                    leading: self.itemSpacing,
-                    bottom: self.itemSpacing,
-                    trailing: self.itemSpacing
-                )
-
-                let fallbackHeight = max(1, self.contentHeight > 0 ? self.contentHeight : self.singleItemHeight)
-                let groupSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .absolute(fallbackHeight)
-                )
-                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-                return NSCollectionLayoutSection(group: group)
-            }
-            
-            if self.imagesCount == 1 {
-                // 단일 이미지일 때는 큰 크기로
-                let itemSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .fractionalWidth(1.0)  // 정사각형 유지
-                )
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                item.contentInsets = NSDirectionalEdgeInsets(top: self.itemSpacing,
-                                                             leading: self.itemSpacing,
-                                                             bottom: self.itemSpacing,
-                                                             trailing: self.itemSpacing)
-                
-                let groupSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .absolute(self.singleItemHeight)
-                )
-                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-                
-                let section = NSCollectionLayoutSection(group: group)
-                return section
-            } else {
-                
-                // 동적 레이아웃
-                var groups: [NSCollectionLayoutGroup] = []
-                
-                for itemsInRow in rows {
-                    let itemWidth = 1.0 / CGFloat(itemsInRow)
-                    
-                    let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(itemWidth), heightDimension: .fractionalWidth(itemWidth))
-                    let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                    item.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
-                    
-                    let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .fractionalWidth(itemWidth))
-                    let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: Array(repeating: item, count: itemsInRow))
-                    groups.append(group)
+        UICollectionViewCompositionalLayout { [weak self] _, environment in
+            guard let self else { return nil }
+            let width = environment.container.effectiveContentSize.width
+            let count = max(1, self.imagesCount)
+            let height = max(1, ChatMediaPreviewLayout.height(count: count, width: width))
+            let group = NSCollectionLayoutGroup.custom(
+                layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height))
+            ) { _ in
+                ChatMediaPreviewLayout.frames(count: count, width: width).map {
+                    NSCollectionLayoutGroupCustomItem(frame: $0)
                 }
-
-                if groups.isEmpty {
-                    let itemSize = NSCollectionLayoutSize(
-                        widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .fractionalHeight(1.0)
-                    )
-                    let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                    let groupSize = NSCollectionLayoutSize(
-                        widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .absolute(max(1, self.contentHeight))
-                    )
-                    let fallbackGroup = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-                    return NSCollectionLayoutSection(group: fallbackGroup)
-                }
-                
-                let containerGroup = NSCollectionLayoutGroup.vertical(
-                    layoutSize: NSCollectionLayoutSize(
-                        widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .estimated(contentHeight)
-                    ),
-                    subitems: groups
-                )
-                
-                let section = NSCollectionLayoutSection(group: containerGroup)
-                return section
             }
+            return NSCollectionLayoutSection(group: group)
         }
     }
-    
+
     private func configureDataSource() {
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collectionView, indexPath, itemID in
             guard let self, let item = self.itemsByID[itemID] else { return nil }
@@ -202,15 +121,22 @@ class ChatImagePreviewCollectionView: UIView {
         _ items: [ChatImagePreviewItem],
         _ height: CGFloat,
         _ rows: [Int],
-        thumbnailLoader: ThumbnailLoader?
+        cachedImage: @escaping (String) -> UIImage? = { _ in nil }
     ) {
+        self.cachedImage = cachedImage
         let itemIDs = items.map(\.id)
         let validItemIDs = Set(itemIDs)
         let structureChanged = previewItems.map(\.id) != itemIDs
         let layoutChanged = imagesCount != items.count || contentHeight != height || self.rows != rows
+        let changedIDs = Set(items.compactMap { item -> String? in
+            guard let old = itemsByID[item.id], old.attachment.thumbResourcePath != item.attachment.thumbResourcePath else { return nil }
+            let oldPath = old.attachment.thumbResourcePath
+            return oldPath.hasPrefix("/") || oldPath.hasPrefix("file://") ? nil : item.id
+        })
+        for id in changedIDs { renderedImagesByItemID[id] = nil }
         // 삭제/초기화된 항목의 요청은 실제 셀 재사용 시점까지 남겨두지 않는다.
         for indexPath in collectionView.indexPathsForVisibleItems {
-            guard let itemID = dataSource.itemIdentifier(for: indexPath), !validItemIDs.contains(itemID),
+            guard let itemID = dataSource.itemIdentifier(for: indexPath), !validItemIDs.contains(itemID) || changedIDs.contains(itemID),
                   let cell = collectionView.cellForItem(at: indexPath) as? ChatImagePreviewCell else { continue }
             cell.resetContent()
         }
@@ -219,7 +145,6 @@ class ChatImagePreviewCollectionView: UIView {
         self.rows = rows
         self.previewItems = items
         self.itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        self.thumbnailLoader = thumbnailLoader
 
         renderedImagesByItemID = renderedImagesByItemID.filter { validItemIDs.contains($0.key) }
         
@@ -244,10 +169,44 @@ class ChatImagePreviewCollectionView: UIView {
     }
 
     private func configure(_ cell: ChatImagePreviewCell, with item: ChatImagePreviewItem) {
-        cell.configure(with: item, image: renderedImagesByItemID[item.id], thumbnailLoader: thumbnailLoader) { [weak self] image in
-            guard let self, self.itemsByID[item.id] != nil, let image else { return }
-            self.renderedImagesByItemID[item.id] = image
+        if renderedImagesByItemID[item.id] == nil {
+            let image = cachedImage(item.attachment.thumbResourcePath)
+            renderedImagesByItemID[item.id] = image
+            ImageCacheMetrics.shared.mark("chatPreview.cellCache", key: item.attachment.thumbResourcePath,
+                                          outcome: image == nil ? "miss" : "hit")
         }
+        cell.configure(with: item, image: renderedImagesByItemID[item.id])
+    }
+
+    func viewportItems(in view: UIView) -> [ChatMediaViewportItem] {
+        previewItems.enumerated().compactMap { index, item in
+            guard let attributes = collectionView.collectionViewLayout.layoutAttributesForItem(at: IndexPath(item: index, section: 0)) else { return nil }
+            let frame = collectionView.convert(attributes.frame, to: view).intersection(convert(bounds, to: view))
+            return ChatMediaViewportItem(id: item.id, path: item.attachment.thumbResourcePath, frame: frame)
+        }
+    }
+
+    func render(id: String, path: String, state: ChatMediaViewportController.Presentation) {
+        guard let item = itemsByID[id], item.attachment.thumbResourcePath == path else { return }
+        var loadingCacheHit: Bool?
+        if case .loading = state {
+            if let image = renderedImagesByItemID[id] ?? cachedImage(path) {
+                ImageCacheMetrics.shared.mark("chatPreview.loadingResolution", key: path, outcome: "imageAvailable")
+                render(id: id, path: path, state: .image(image))
+                return
+            }
+            loadingCacheHit = false
+            ImageCacheMetrics.shared.mark("chatPreview.loadingResolution", key: path, outcome: "memoryMiss")
+        }
+        if case .image(let image) = state { renderedImagesByItemID[id] = image }
+        if case .idle = state { renderedImagesByItemID[id] = nil }
+        guard let index = previewItems.firstIndex(where: { $0.id == id }),
+              let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? ChatImagePreviewCell else {
+            if loadingCacheHit != nil { ImageCacheMetrics.shared.mark("chatPreview.loadingDelivery", key: path, outcome: "noCell") }
+            return
+        }
+        if loadingCacheHit != nil { ImageCacheMetrics.shared.mark("chatPreview.loadingDelivery", key: path, outcome: "cell") }
+        cell.render(state, memoryCacheHit: loadingCacheHit)
     }
 
     func currentImages() -> [UIImage?] {

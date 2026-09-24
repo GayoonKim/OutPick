@@ -13,6 +13,8 @@ final class ChatVideoPlayerViewController: UIViewController {
     private let videoResolver: ChatVideoPlaybackResolving
     private let photoLibrarySaver: PhotoLibrarySaving
     private let playerViewController = AVPlayerViewController()
+    private var saveTask: Task<Void, Never>?
+    private var closed = false
 
     init(
         playbackAsset: ChatVideoPlaybackAsset,
@@ -42,6 +44,18 @@ final class ChatVideoPlayerViewController: UIViewController {
         playerViewController.player?.play()
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
+        closed = true
+        saveTask?.cancel()
+        playerViewController.player?.pause()
+        playerViewController.player = nil
+        if let lease = playbackAsset.fileLease { Task { await lease.release() } }
+    }
+
+    deinit { saveTask?.cancel() }
+
     private func configurePlayer() {
         let player = AVPlayer(url: playbackAsset.url)
         playerViewController.player = player
@@ -68,7 +82,8 @@ final class ChatVideoPlayerViewController: UIViewController {
         button.layer.cornerRadius = 22
         button.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            Task { await self.handleSaveTapped() }
+            guard self.saveTask == nil, !self.closed else { return }
+            self.saveTask = Task { await self.handleSaveTapped() }
         }, for: .touchUpInside)
 
         overlay.addSubview(button)
@@ -82,34 +97,26 @@ final class ChatVideoPlayerViewController: UIViewController {
 
     @MainActor
     private func handleSaveTapped() async {
+        defer { saveTask = nil }
         let hud = CircularProgressHUD.show(in: view, title: nil)
         hud.setProgress(0.15)
 
         do {
-            let fileURL = try await videoResolver.localFileURLForSaving(
-                localURL: playbackAsset.url,
-                storagePath: playbackAsset.storagePath,
-                onProgress: { fraction in
-                    Task { @MainActor in
-                        hud.setProgress(0.15 + 0.75 * fraction)
-                    }
-                }
-            )
-            try await photoLibrarySaver.saveVideo(fileURL: fileURL)
+            let lease = try await videoResolver.acquireFileForSaving(playbackAsset)
+            do {
+                try Task.checkCancellation()
+                guard !closed, lease.isValid else { throw CancellationError() }
+                try await photoLibrarySaver.saveOriginal(lease, isVideo: true)
+                await lease.release()
+            } catch { await lease.release(); throw error }
             hud.setProgress(1.0)
             hud.dismiss()
-            AlertManager.showAlertNoHandler(
-                title: "저장 완료",
-                message: "사진 앱에 동영상을 저장했습니다.",
-                viewController: self
-            )
+            guard !closed, !Task.isCancelled else { return }
+            MediaSaveToast.show("저장 완료", in: view)
         } catch {
             hud.dismiss()
-            AlertManager.showAlertNoHandler(
-                title: "저장 실패",
-                message: error.localizedDescription,
-                viewController: self
-            )
+            guard !closed, !Task.isCancelled, !(error is CancellationError) else { return }
+            MediaSaveToast.show("저장 실패", in: view)
         }
     }
 }

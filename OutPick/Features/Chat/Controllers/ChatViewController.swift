@@ -23,8 +23,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private var joinRoomBtn: UIButton = UIButton(type: .system)
     
-    private var chatMessageCollectionView = ChatMessageCollectionView()
-    private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
+    var chatMessageCollectionView = ChatMessageCollectionView()
+    var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private var cancellables = Set<AnyCancellable>()
     private var initialLoadTask: Task<Void, Never>?
     private var realtimeSubscription: ChatRoomRealtimeSubscription?
@@ -33,7 +33,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     var onRouteRemoved: ((ChatViewController) -> Void)?
     private var chatCustomMemucancellables = Set<AnyCancellable>()
     
-    private var messageWindowStore = ChatMessageWindowStore()
+    var messageWindowStore = ChatMessageWindowStore()
     
     private var isUserInCurrentRoom = false
     
@@ -105,9 +105,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: - Managers (의존성 주입)
     private let attachmentImageLoader: ChatAttachmentImageLoading
-    private let videoAssetLoader: ChatVideoAssetLoading
-    private let storageURLResolver: ChatStorageURLResolving
-    private let videoThumbnailGenerator: ChatVideoThumbnailGenerating
+    let mediaViewport: ChatMediaViewportController
+    var mediaViewportActive = false
+    var mediaDiskPreparationActive = false
+    var mediaInitialSnapshotPending = false
+    var mediaInitialReadBoundary: Int64?
+    var mediaLocalPreparationWindow: ChatInitialWindow?
+    var mediaViewportMovingDown = true
+    var mediaViewportLastY: CGFloat?
+    var mediaViewportVelocityY: CGFloat = 0
+    var mediaViewportSampleTime: TimeInterval?
+    var mediaViewportTargetY: CGFloat?
+    var mediaViewportUpdateScheduled = false
     let mediaProcessor: MediaProcessingServiceProtocol
     private lazy var avatarViewport = AvatarCollectionViewport(manager: avatarImageManager)
     private var visibleAvatarMessageIDs = Set<String>()
@@ -120,9 +129,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         mediaUploadUseCase: ChatMediaUploadUseCaseProtocol,
         outgoingOutboxUseCase: ChatOutgoingOutboxUseCaseProtocol,
         attachmentImageLoader: ChatAttachmentImageLoading,
-        videoAssetLoader: ChatVideoAssetLoading,
-        storageURLResolver: ChatStorageURLResolving,
-        videoThumbnailGenerator: ChatVideoThumbnailGenerating,
+        mediaViewport: ChatMediaViewportController,
         mediaProcessor: MediaProcessingServiceProtocol,
         avatarImageManager: AvatarImageManaging,
         profileSyncManager: ChatProfileSyncManaging,
@@ -132,15 +139,14 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.mediaUploadUseCase = mediaUploadUseCase
         self.outgoingOutboxUseCase = outgoingOutboxUseCase
         self.attachmentImageLoader = attachmentImageLoader
-        self.videoAssetLoader = videoAssetLoader
-        self.storageURLResolver = storageURLResolver
-        self.videoThumbnailGenerator = videoThumbnailGenerator
+        self.mediaViewport = mediaViewport
         self.mediaProcessor = mediaProcessor
         self.avatarImageManager = avatarImageManager
         self.profileSyncManager = profileSyncManager
         self.chatRoomViewModel = viewModel
         self.room = viewModel.room
         super.init(nibName: nil, bundle: nil)
+        chatMessageCollectionView.accessibilityIdentifier = "chat.messages." + viewModel.roomID
     }
 
     required init?(coder: NSCoder) {
@@ -190,14 +196,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         Task { @MainActor in
             chatRoomViewModel.cancelSearchWork()
         }
-        imageViewerPrefetchTasks.forEach { $0.cancel() }
-        imageViewerPrefetchTasks.removeAll()
-        thumbnailPrefetchTasks.values.forEach { $0.cancel() }
-        thumbnailPrefetchTasks.removeAll()
-        videoPrefetchTasks.values.forEach { $0.cancel() }
-        videoPrefetchTasks.removeAll()
-        mediaPrefetchCleanupTask?.cancel()
-        mediaPrefetchCleanupTask = nil
         let pendingMediaUploadStore = pendingMediaUploadStore
         Task { @MainActor in
             pendingMediaUploadStore.cancelAllTasks()
@@ -421,6 +419,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        ImageCacheMetrics.shared.mark("chatEntry.willAppear")
+        mediaViewportActive = true
+        bindMediaViewport()
+        mediaViewport.resume()
+        scheduleMediaViewportUpdate()
+        mediaDiskPreparationActive = true
+        if let window = mediaLocalPreparationWindow {
+            prepareInitialDiskImages(readBoundarySeq: window.readBoundarySeq, messages: window.messages)
+        } else {
+            prepareInitialDiskImages(readBoundarySeq: mediaInitialReadBoundary)
+        }
         if mediaSessionStopped {
             mediaSessionStopped = false
             if let room { Task { [weak self] in await self?.restoreMediaSession(room: room) } }
@@ -434,6 +443,9 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        mediaDiskPreparationActive = false
+        mediaLocalPreparationWindow = nil
+        mediaViewport.stopDiskPreparation()
         if isParticipantPreviewMode == false {
             chatRoomViewModel.handleRoomWillDisappear()
         }
@@ -453,7 +465,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         }
         
-        stopAllPrefetchers()
         initialLoadTask?.cancel()
         initialLoadTask = nil
         chatRoomViewModel.cancelSearchWork()
@@ -492,12 +503,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        mediaViewportActive = false
+        mediaViewport.suspend()
+        resetMediaScrollPrediction()
         avatarViewport.clear()
         visibleAvatarMessageIDs.removeAll()
         chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(false) }
         let isStillInNavigationStack = navigationController?.viewControllers.contains(where: { $0 === self }) ?? false
 
         if routeLifecycleState.shouldFinishAfterDisappearance(isStillInNavigationStack: isStillInNavigationStack) {
+            mediaViewport.endSession()
             chatRoomViewModel.invalidateMessagePages()
             stopMediaSelectionSession(reason: "route_disappeared")
             onRouteRemoved?(self)
@@ -507,6 +522,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateAvatarViewport()
+        scheduleMediaViewportUpdate()
         self.notiView.layer.cornerRadius = 15
     }
     
@@ -532,11 +548,17 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 if Task.isCancelled { break }
 
                 switch event {
+                case .prepareLocalMedia(let window):
+                    self.mediaLocalPreparationWindow = window
+                    ImageCacheMetrics.shared.mark("chatEntry.localMedia", outcome: "messages_\(window.messages.count)")
+                    self.prepareInitialDiskImages(readBoundarySeq: window.readBoundarySeq, messages: window.messages)
                 case .phaseChanged(let phase):
                     switch phase {
                     case .localVisible, .offlineNoLocal, .ready:
                         stopLoadingIfNeeded()
                     case .failed(let message):
+                        self.mediaLocalPreparationWindow = nil
+                        self.mediaViewport.stopDiskPreparation()
                         stopLoadingIfNeeded()
                         print("❌ 메시지 초기화 실패:", message)
                     case .idle, .checkingNetwork, .loadingLocal, .serverSyncing:
@@ -560,9 +582,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     case .hideCenteredMessage:
                         self.setCenteredStatusMessage(nil)
                     }
-
-                case .warmMedia(let messages, let maxConcurrent):
-                    self.scheduleInitialMediaWarmup(for: messages, maxConcurrent: maxConcurrent)
 
                 case .participantSessionReady(_, let bindRealtime):
                     self.isUserInCurrentRoom = true
@@ -591,12 +610,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func setMessageWindow(_ window: ChatInitialWindow) async {
+        mediaLocalPreparationWindow = nil
+        ImageCacheMetrics.shared.mark("chatEntry.renderWindow", outcome: "messages_\(window.messages.count)")
+        mediaInitialReadBoundary = window.readBoundarySeq
         let items = messageWindowStore.reset(
             messages: chatRoomViewModel.admitVisibleMessages(from: window.messages),
             readBoundarySeq: window.readBoundarySeq
         )
 
-        await applyInitialWindowSnapshotAndWait(items)
+        prepareInitialDiskImages(readBoundarySeq: window.readBoundarySeq)
+        mediaInitialSnapshotPending = true
+        defer {
+            mediaInitialSnapshotPending = false
+            scheduleMediaViewportUpdate()
+        }
+        await applyInitialWindowSnapshotAndWait(items, readBoundarySeq: window.readBoundarySeq)
         guard !Task.isCancelled else { return }
 
         scheduleProfileCacheRefresh(for: messageWindowStore.visibleMessages)
@@ -809,10 +837,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     print("⚠️ explicit latest lastReadSeq flush 실패: \(error)")
                 }
 
-                self.scheduleInitialMediaWarmup(
-                    for: window.messages,
-                    maxConcurrent: 2
-                )
+                self.scheduleMediaViewportUpdate()
                 self.reportVisibleReadFrontier()
             } catch is CancellationError {
                 _ = self.chatRoomViewModel.failLatestJump(request)
@@ -874,14 +899,25 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
 
     @MainActor
-    private func applyInitialWindowSnapshotAndWait(_ items: [Item]) async {
+    private func applyInitialWindowSnapshotAndWait(_ items: [Item], readBoundarySeq: Int64?) async {
         await withCheckedContinuation { continuation in
             var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
             snapshot.appendSections([.main])
             snapshot.appendItems(items, toSection: .main)
             dataSource.applySnapshotUsingReloadData(
                 snapshot,
-                completion: { continuation.resume() }
+                completion: { [weak self] in
+                    if let self, self.mediaDiskPreparationActive {
+                        // 전환 중 첫 프레임이 임시 상단 위치를 보여주지 않게 즉시 기준점을 맞춘다.
+                        self.chatMessageCollectionView.layoutIfNeeded()
+                        if readBoundarySeq != nil { _ = self.scrollToReadMarkerIfNeeded() }
+                        else { _ = self.displayLatestMessageIfNeeded() }
+                        self.chatMessageCollectionView.layoutIfNeeded()
+                        self.updateMediaViewport()
+                        ImageCacheMetrics.shared.mark("chatEntry.firstPosition")
+                    }
+                    continuation.resume()
+                }
             )
         }
     }
@@ -940,78 +976,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
     }
 
-    private func scheduleInitialMediaWarmup(for messages: [ChatMessage], maxConcurrent: Int) {
-        guard !messages.isEmpty else { return }
-        let concurrency = max(1, maxConcurrent)
-        let roomID = room?.id ?? ""
-        let thumbnailMessages = messages.filter {
-            $0.hasDisplayableAttachments
-        }
-        let videoMessages = messages.filter { $0.hasDisplayableVideos }
 
-        Task(priority: .utility) { [weak self] in
-            guard let self else { return }
-
-            if !thumbnailMessages.isEmpty {
-                var index = 0
-                while index < thumbnailMessages.count {
-                    let end = min(index + concurrency, thumbnailMessages.count)
-                    let slice = Array(thumbnailMessages[index..<end])
-                    await withTaskGroup(of: Void.self) { group in
-                        for msg in slice {
-                            group.addTask { [weak self] in
-                                guard let self else { return }
-                                _ = await self.attachmentImageLoader.cacheImagesIfNeeded(
-                                    for: msg,
-                                    maxBytes: self.chatThumbnailMaxBytes
-                                )
-                                await MainActor.run {
-                                    self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
-                                }
-                            }
-                        }
-                        await group.waitForAll()
-                    }
-                    index = end
-                }
-            }
-
-            if !roomID.isEmpty, !videoMessages.isEmpty {
-                var index = 0
-                while index < videoMessages.count {
-                    let end = min(index + concurrency, videoMessages.count)
-                    let slice = Array(videoMessages[index..<end])
-                    await withTaskGroup(of: Void.self) { group in
-                        for msg in slice {
-                            group.addTask { [weak self] in
-                                guard let self else { return }
-                                await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
-                                    for: msg,
-                                    maxThumbnailBytes: self.chatThumbnailMaxBytes
-                                )
-                                await MainActor.run {
-                                    self.reloadVisibleMessageIfNeeded(messageID: msg.ID)
-                                }
-                            }
-                        }
-                        await group.waitForAll()
-                    }
-                    index = end
-                }
-            }
-        }
-    }
-    
-    @MainActor
-    private func reloadVisibleMessageIfNeeded(messageID: String) {
-        var snapshot = dataSource.snapshot()
-        guard let item = snapshot.itemIdentifiers.first(where: { item in
-            if case let .message(m) = item { return m.ID == messageID }
-            return false
-        }) else { return }
-        snapshot.reconfigureItems([item])
-        dataSource.apply(snapshot, animatingDifferences: false)
-    }
     
     @MainActor
     private func removeReadMarkerIfNeeded() {
@@ -1176,11 +1141,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         for message in messageWindowStore.visibleMessages where deletedIDs.contains(message.ID) {
             pendingMediaUploadStore.completeImageUpload(for: message.ID)
             pendingMediaUploadStore.completeVideoUpload(for: message.ID)
-            cancelVideoPrefetchIfNeeded(for: message.ID)
-            for attachment in message.attachments {
-                cancelThumbnailPrefetchIfNeeded(for: attachment.thumbResourcePath)
-                cancelThumbnailPrefetchIfNeeded(for: attachment.originalResourcePath)
-            }
         }
         let sanitized = try await chatRoomViewModel.sanitizeForAdmission(
             messageWindowStore.visibleMessages
@@ -1200,6 +1160,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         chatRoomViewModel.invalidateMessagePages()
         renderPageRetryButtons()
         _ = routeLifecycleState.finishForReplacement()
+        mediaViewportActive = false
+        mediaViewport.endSession()
         stopMediaSelectionSession(reason: "coordinator_route_finished")
         latestJumpTask?.cancel()
         latestJumpTask = nil
@@ -1263,32 +1225,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if !wasNearBottom {
                 renderLatestMessageJump()
                 scheduleRealtimePreviewAutoDismiss(targetSeq: message.seq)
-            }
-            let hasImages = message.hasDisplayableImages
-            let hasVideos = message.hasDisplayableVideos
-            if (hasImages || hasVideos) && !isPendingMedia {
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { [weak self] in
-                        guard let self else { return }
-                        _ = await self.attachmentImageLoader.cacheImagesIfNeeded(
-                            for: message,
-                            maxBytes: self.chatThumbnailMaxBytes
-                        )
-                        await MainActor.run {
-                            self.reloadVisibleMessageIfNeeded(messageID: message.ID)
-                        }
-                    }
-                    if hasVideos {
-                        group.addTask { [weak self] in
-                            guard let self else { return }
-                            await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
-                                for: message,
-                                maxThumbnailBytes: self.chatThumbnailMaxBytes
-                            )
-                        }
-                    }
-                    await group.waitForAll()
-                }
             }
             scheduleProfileCacheRefresh(for: [message])
             await withCheckedContinuation { (completion: CheckedContinuation<Void, Never>) in
@@ -1921,6 +1857,11 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     @MainActor
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        ImageCacheMetrics.shared.mark("chatEntry.didAppear")
+        mediaViewportActive = true
+        bindMediaViewport()
+        mediaViewport.resume()
+        scheduleMediaViewportUpdate()
         avatarViewport.activate()
         updateAvatarViewport()
         chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.setAvatarVisible(true) }
@@ -3465,17 +3406,13 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 
                 // 메시지 최신 상태 반영
                 if latestMessage.isLookbookShareMessage {
-                    cell.configureWithLookbookShare(with: latestMessage, thumbnailLoader: { [weak self] path in
-                        guard let self else { return nil }
-                        return await self.lookbookShareThumbnailImage(for: path)
-                    }, avatarLoader: { [weak self] path in
+                    cell.configureWithLookbookShare(with: latestMessage, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
                         return try await self.avatarImage(for: path)
                     })
                 } else if latestMessage.hasDisplayableAttachments {
-                    cell.configureWithImage(with: latestMessage, thumbnailLoader: { [weak self] attachment in
-                        guard let self else { return nil }
-                        return await self.thumbnailImage(for: attachment)
+                    cell.configureWithImage(with: latestMessage, cachedImage: { [weak self] path in
+                        self?.attachmentImageLoader.cachedMemoryImageImmediately(for: path)
                     }, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
                         return try await self.avatarImage(for: path)
@@ -3525,6 +3462,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                     ? self.chatRoomViewModel.currentSearchKeyword
                     : nil
                 cell.highlightKeyword(keyword)
+                // 동일 크기의 경로 교체도 다음 배치 시점에 수요에 반영한다.
+                self.scheduleMediaViewportUpdate()
                 
                 return cell
             case .dateSeparator(let date, _):
@@ -3544,7 +3483,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         chatMessageCollectionView.setCollectionViewDataSource(dataSource)
-        chatMessageCollectionView.prefetchDataSource = self
+        chatMessageCollectionView.prefetchDataSource = nil
         if chatMessageCollectionView.backgroundView == nil {
             let container = UIView()
             container.addSubview(centeredStatusLabel)
@@ -3665,7 +3604,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         dataSource.apply(
             snapshot,
             animatingDifferences: animatingDifferences,
-            completion: completion
+            completion: { [weak self] in
+                self?.scheduleMediaViewportUpdate()
+                completion?()
+            }
         )
     }
     
@@ -3773,52 +3715,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     // MARK: 이미지 뷰어 관련
     // 이미지 뷰어 오픈 시 원본 프리패치 task
-    private var imageViewerPrefetchTasks: [Task<Void, Never>] = []
-    private let chatThumbnailMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
-    private let mediaPrefetchPad = 60
-    private let mediaPrefetchCleanupDelayMs: UInt64 = 350
-    
-    // Thumbnail prefetch tasks for chat scrolling (path-based)
-    private var thumbnailPrefetchTasks: [String: Task<Void, Never>] = [:]
-    
-    // Video asset warm-up tasks remain message-based.
-    private var videoPrefetchTasks: [String: Task<Void, Never>] = [:]
-    
-    // Debounced cleanup task for cancelling prefetches that moved far outside visible range
-    private var mediaPrefetchCleanupTask: Task<Void, Never>? = nil
-
-    private func thumbnailImage(for attachment: Attachment) async -> UIImage? {
-        for path in [attachment.thumbResourcePath, attachment.originalResourcePath] where !path.isEmpty {
-            if let image = await attachmentImageLoader.cachedImage(for: path) {
-                return image
-            }
-            if let image = try? await attachmentImageLoader.loadImage(for: path, maxBytes: chatThumbnailMaxBytes) {
-                return image
-            }
-        }
-
-        guard attachment.type == .video,
-              !attachment.originalResourcePath.isEmpty,
-              let url = try? await resolveVideoURL(for: attachment.originalResourcePath),
-              let data = try? await videoThumbnailGenerator.thumbnailData(url: url, maxPixel: 360),
-              let image = UIImage(data: data) else {
-            return nil
-        }
-        return image
-    }
-
-    private func resolveVideoURL(for path: String) async throws -> URL {
-        if let direct = URL(string: path),
-           let scheme = direct.scheme?.lowercased(),
-           ["http", "https", "file"].contains(scheme) {
-            return direct
-        }
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-        return try await storageURLResolver.url(for: path)
-    }
-
     private func avatarImage(for path: String) async throws -> UIImage? {
         guard !path.isEmpty else { return nil }
 
@@ -3830,16 +3726,6 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             for: path,
             maxBytes: 3 * 1024 * 1024
         )
-    }
-
-    private func lookbookShareThumbnailImage(for path: String) async -> UIImage? {
-        guard !path.isEmpty else { return nil }
-
-        if let image = await attachmentImageLoader.cachedImage(for: path) {
-            return image
-        }
-
-        return try? await attachmentImageLoader.loadImage(for: path, maxBytes: chatThumbnailMaxBytes)
     }
 
     @MainActor
@@ -3947,12 +3833,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 thumbnailImage: thumbImage,
                 thumbnailPath: thumbnailPath,
                 originalPath: originalPath,
-                isAnimated: att.isAnimatedGIF
+                isAnimated: att.isAnimatedGIF,
+                attachmentPosition: entry.mediaIndex
             )
         }
         guard !pages.isEmpty else { return }
 
-        stopAllPrefetchers()
 
         router?.showImageViewer(
             from: self,
@@ -3974,226 +3860,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             }
         )
 
-        let remoteOriginalIndexed: [(index: Int, path: String)] = pages.enumerated().compactMap { idx, page in
-            guard !page.isAnimated, let path = page.originalPath, !path.isEmpty else { return nil }
-            if path.hasPrefix("/") || path.hasPrefix("file://") { return nil }
-            return (idx, path)
-        }
-        guard !remoteOriginalIndexed.isEmpty else { return }
-
-        let remoteStart = remoteOriginalIndexed.firstIndex { $0.index == start } ?? 0
-        let order = ringOrderIndices(count: remoteOriginalIndexed.count, start: remoteStart)
-        let prioritizedPaths = order.map { remoteOriginalIndexed[$0].path }
-
-        let nearCount = min(8, prioritizedPaths.count)
-        let nearPaths = Array(prioritizedPaths.prefix(nearCount))
-        let restPaths = Array(prioritizedPaths.dropFirst(nearCount))
-
-        let nearTask = Task(priority: .utility) { [weak self] in
-            guard let self, !nearPaths.isEmpty else { return }
-            await self.attachmentImageLoader.prefetchImages(
-                paths: nearPaths,
-                maxBytes: ChatPhotoSizePolicy.maximumFileBytes,
-                maxConcurrent: 6
-            )
-        }
-        imageViewerPrefetchTasks.append(nearTask)
-
-        if !restPaths.isEmpty {
-            let restTask = Task(priority: .background) { [weak self] in
-                guard let self else { return }
-                await self.attachmentImageLoader.prefetchImages(
-                    paths: restPaths,
-                    maxBytes: ChatPhotoSizePolicy.maximumFileBytes,
-                    maxConcurrent: 3
-                )
-            }
-            imageViewerPrefetchTasks.append(restTask)
-        }
     }
     
-    // Stop and clear all active image prefetch tasks
-    private func stopAllPrefetchers() {
-        imageViewerPrefetchTasks.forEach { $0.cancel() }
-        imageViewerPrefetchTasks.removeAll()
-    }
-
-    @MainActor
-    private func startMediaPrefetchIfNeeded(for message: ChatMessage, roomID: String) {
-        for path in thumbnailPaths(for: message) {
-            startThumbnailPrefetchIfNeeded(for: path)
-        }
-
-        let hasVideos = message.hasDisplayableVideos
-        guard hasVideos else { return }
-        startVideoPrefetchIfNeeded(for: message)
-    }
-
-    @MainActor
-    private func startThumbnailPrefetchIfNeeded(for path: String) {
-        guard !path.isEmpty else { return }
-        guard thumbnailPrefetchTasks[path] == nil else { return }
-
-        let task = Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            if Task.isCancelled { return }
-
-            _ = try? await self.attachmentImageLoader.loadImage(for: path, maxBytes: self.chatThumbnailMaxBytes)
-
-            await MainActor.run {
-                self.thumbnailPrefetchTasks[path] = nil
-            }
-        }
-
-        thumbnailPrefetchTasks[path] = task
-    }
-
-    @MainActor
-    private func startVideoPrefetchIfNeeded(for message: ChatMessage) {
-        let messageID = message.ID
-        guard videoPrefetchTasks[messageID] == nil else { return }
-
-        let task = Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            if Task.isCancelled { return }
-
-            await self.videoAssetLoader.cacheVideoAssetsIfNeeded(
-                for: message,
-                maxThumbnailBytes: self.chatThumbnailMaxBytes
-            )
-
-            await MainActor.run {
-                self.reloadVisibleMessageIfNeeded(messageID: message.ID)
-                self.videoPrefetchTasks[messageID] = nil
-            }
-        }
-
-        videoPrefetchTasks[messageID] = task
-    }
-
-    @MainActor
-    private func cancelThumbnailPrefetchIfNeeded(for path: String) {
-        thumbnailPrefetchTasks[path]?.cancel()
-        thumbnailPrefetchTasks[path] = nil
-    }
-
-    @MainActor
-    private func cancelVideoPrefetchIfNeeded(for messageID: String) {
-        videoPrefetchTasks[messageID]?.cancel()
-        videoPrefetchTasks[messageID] = nil
-    }
-
-    /// Debounced cleanup keeps nearby work alive during fast flicks instead of cancelling immediately.
-    @MainActor
-    private func scheduleMediaPrefetchCleanup(delayMs: UInt64 = 350, pad: Int = 60) {
-        mediaPrefetchCleanupTask?.cancel()
-        mediaPrefetchCleanupTask = Task { [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
-            if Task.isCancelled { return }
-            self.cleanupMediaPrefetchTasksOutsideVisibleRange(pad: pad)
-        }
-    }
-
-    /// Cancel/remove path-based thumbnail tasks and message-based video warm-ups outside the visible window ± pad.
-    @MainActor
-    private func cleanupMediaPrefetchTasksOutsideVisibleRange(pad: Int = 60) {
-        guard !thumbnailPrefetchTasks.isEmpty || !videoPrefetchTasks.isEmpty else { return }
-
-        let snapshot = dataSource.snapshot()
-        let items = snapshot.itemIdentifiers(inSection: .main)
-        guard !items.isEmpty else {
-            // Nothing to show -> cancel everything
-            let thumbnailPaths = Array(thumbnailPrefetchTasks.keys)
-            for path in thumbnailPaths { cancelThumbnailPrefetchIfNeeded(for: path) }
-            let messageIDs = Array(videoPrefetchTasks.keys)
-            for id in messageIDs { cancelVideoPrefetchIfNeeded(for: id) }
-            return
-        }
-
-        // Build visible bounds (fallback to tail if nothing visible yet)
-        let visibleItems = chatMessageCollectionView.indexPathsForVisibleItems
-            .filter { $0.section == 0 }
-            .map { $0.item }
-
-        let total = items.count
-        let lowerBound: Int
-        let upperBound: Int
-
-        if let minVis = visibleItems.min(), let maxVis = visibleItems.max() {
-            lowerBound = max(0, minVis - pad)
-            upperBound = min(total - 1, maxVis + pad)
-        } else {
-            let tail = max(0, total - 1)
-            lowerBound = max(0, tail - pad)
-            upperBound = tail
-        }
-
-        // Allowed message IDs and thumbnail paths within [lowerBound, upperBound]
-        var allowedIDs = Set<String>()
-        var allowedThumbnailPaths = Set<String>()
-        allowedIDs.reserveCapacity((upperBound - lowerBound + 1) / 2)
-        if lowerBound <= upperBound {
-            for i in lowerBound...upperBound {
-                if case let .message(m) = items[i] {
-                    let latest = messageWindowStore.message(for: m.ID) ?? m
-                    allowedIDs.insert(latest.ID)
-                    for path in thumbnailPaths(for: latest) {
-                        allowedThumbnailPaths.insert(path)
-                    }
-                }
-            }
-        }
-
-        // Also collect all message IDs currently present in snapshot (for virtualization/delete safety)
-        let presentMessageIDs: Set<String> = Set(
-            items.compactMap { item in
-                if case let .message(m) = item { return m.ID }
-                return nil
-            }
-        )
-
-        let thumbnailPathsToCancel = thumbnailPrefetchTasks.keys.filter { path in
-            !allowedThumbnailPaths.contains(path)
-        }
-        for path in thumbnailPathsToCancel {
-            cancelThumbnailPrefetchIfNeeded(for: path)
-        }
-
-        // Cancel tasks that are either outside allowed window or not present in snapshot anymore
-        let idsToCancel = videoPrefetchTasks.keys.filter { id in
-            !allowedIDs.contains(id) || !presentMessageIDs.contains(id)
-        }
-        guard !idsToCancel.isEmpty else { return }
-
-        for id in idsToCancel {
-            cancelVideoPrefetchIfNeeded(for: id)
-        }
-    }
-
-    private func thumbnailPaths(for message: ChatMessage) -> [String] {
-        var seen = Set<String>()
-        return message.displayableAttachments
-            .compactMap { attachment in
-                let path = attachment.normalizedThumbPath
-                guard !path.isEmpty, seen.insert(path).inserted else { return nil }
-                return path
-            }
-    }
-
-    // Ring-order: start, +1, -1, +2, -2, ...
-    private func ringOrderIndices(count: Int, start: Int) -> [Int] {
-        guard count > 0 else { return [] }
-        let s = max(0, min(start, count - 1))
-        var result: [Int] = [s]; var step = 1
-        while result.count < count {
-            let r = s + step; if r < count { result.append(r) }
-            if result.count == count { break }
-            let l = s - step; if l >= 0 { result.append(l) }
-            step += 1
-        }
-        return result
-    }
     
 }
 
@@ -4223,49 +3891,44 @@ extension ChatViewController: UIScrollViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         updateAvatarViewport()
         guard scrollView === chatMessageCollectionView else { return }
-        Task { @MainActor in
-            self.scheduleMediaPrefetchCleanup(
-                delayMs: self.mediaPrefetchCleanupDelayMs,
-                pad: self.mediaPrefetchPad
-            )
-        }
+        recordMediaScrollPrediction(scrollView)
+        updateMediaViewport()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard scrollView === chatMessageCollectionView else { return }
+        resetMediaScrollPrediction()
+    }
+
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        guard scrollView === chatMessageCollectionView else { return }
+        mediaViewportTargetY = targetContentOffset.pointee.y + scrollView.adjustedContentInset.top
+        updateMediaViewport()
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         guard scrollView === chatMessageCollectionView else { return }
+        resetMediaScrollPrediction()
         triggerShakeIfNeeded()
         reportVisibleReadFrontier()
-        Task { @MainActor in
-            self.scheduleMediaPrefetchCleanup(
-                delayMs: self.mediaPrefetchCleanupDelayMs,
-                pad: self.mediaPrefetchPad
-            )
-        }
+        updateMediaViewport()
     }
     
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === chatMessageCollectionView else { return }
+        resetMediaScrollPrediction()
         triggerShakeIfNeeded()
         reportVisibleReadFrontier()
-        Task { @MainActor in
-            self.scheduleMediaPrefetchCleanup(
-                delayMs: self.mediaPrefetchCleanupDelayMs,
-                pad: self.mediaPrefetchPad
-            )
-        }
+        updateMediaViewport()
     }
     
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         guard scrollView === chatMessageCollectionView else { return }
         if !decelerate {
+            resetMediaScrollPrediction()
             triggerShakeIfNeeded()
             reportVisibleReadFrontier()
-            Task { @MainActor in
-                self.scheduleMediaPrefetchCleanup(
-                    delayMs: self.mediaPrefetchCleanupDelayMs,
-                    pad: self.mediaPrefetchPad
-                )
-            }
+            updateMediaViewport()
         }
     }
     
@@ -4329,6 +3992,7 @@ extension ChatViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView,
                         willDisplay cell: UICollectionViewCell,
                         forItemAt indexPath: IndexPath) {
+        scheduleMediaViewportUpdate()
         (cell as? ChatMessageCell)?.setAvatarVisible(true)
         let itemCount = collectionView.numberOfItems(inSection: 0)
         
@@ -4363,61 +4027,6 @@ extension ChatViewController: UICollectionViewDelegate {
 
 }
 
-// MARK: - UICollectionViewDataSourcePrefetching for media prefetch
-extension ChatViewController: UICollectionViewDataSourcePrefetching {
-    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
-        guard collectionView === chatMessageCollectionView else { return }
-//        guard let roomID = room?.id, !roomID.isEmpty else { return }
-
-        let roomID = room?.id ?? ""
-
-        guard !roomID.isEmpty else { return }
-
-        // visible 범위 ± 25로 제한
-        let pad = mediaPrefetchPad
-        
-        let visibleItems = collectionView.indexPathsForVisibleItems
-            .filter { $0.section == 0 }
-            .map { $0.item }
-
-        let (lowerBound, upperBound): (Int, Int)
-        if let minVis = visibleItems.min(), let maxVis = visibleItems.max() {
-            lowerBound = max(0, minVis - pad)
-            upperBound = maxVis + pad
-        } else {
-            // If nothing is visible yet, fall back to the incoming prefetch range
-            let candidates = indexPaths.filter { $0.section == 0 }.map { $0.item }
-            guard let minIdx = candidates.min(), let maxIdx = candidates.max() else { return }
-            lowerBound = max(0, minIdx - pad)
-            upperBound = maxIdx + pad
-        }
-
-        for indexPath in indexPaths where indexPath.section == 0 {
-            guard indexPath.item >= lowerBound, indexPath.item <= upperBound else { continue }
-            guard let item = dataSource.itemIdentifier(for: indexPath) else { continue }
-            guard case let .message(message) = item else { continue }
-
-            // Use latest state if available
-            let latest = messageWindowStore.message(for: message.ID) ?? message
-            Task { @MainActor in
-                self.startMediaPrefetchIfNeeded(for: latest, roomID: roomID)
-            }
-        }
-    }
-
-    func collectionView(_ collectionView: UICollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
-        guard collectionView === chatMessageCollectionView else { return }
-        guard !indexPaths.isEmpty else { return }
-        Task { @MainActor in
-            self.scheduleMediaPrefetchCleanup(
-                delayMs: self.mediaPrefetchCleanupDelayMs,
-                pad: self.mediaPrefetchPad
-            )
-        }
-    }
-}
-
-
 //MARK: seq 업데이트 헬퍼
 extension ChatViewController {
     private func flushLastReadSeq(trigger: String) {
@@ -4447,6 +4056,7 @@ extension ChatViewController {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 if name == UIApplication.didBecomeActiveNotification {
                     Task { @MainActor [weak self] in
+                        if let self, self.mediaViewportActive { self.mediaViewport.resume(); self.scheduleMediaViewportUpdate() }
                         self?.refreshRoomAccessIfNeeded(force: true)
                         if let self, self.mediaSessionStopped, self.viewIfLoaded?.window != nil {
                             self.mediaSessionStopped = false
@@ -4456,7 +4066,10 @@ extension ChatViewController {
                 } else {
                     self?.flushLastReadSeq(trigger: name.rawValue)
                     if name == UIApplication.didEnterBackgroundNotification {
-                        Task { @MainActor [weak self] in self?.stopMediaSelectionSession(reason: "app_background") }
+                        Task { @MainActor [weak self] in
+                            self?.mediaViewport.suspend()
+                            self?.stopMediaSelectionSession(reason: "app_background")
+                        }
                     }
                 }
             }

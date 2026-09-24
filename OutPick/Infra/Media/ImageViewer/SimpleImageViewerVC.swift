@@ -15,6 +15,7 @@ struct ImageViewerPage {
     let originalPath: String?
     let shouldAlwaysResolveThumbnail: Bool
     let isAnimated: Bool
+    let attachmentPosition: Int?
 
     init(
         initialImage: UIImage? = nil,
@@ -22,7 +23,8 @@ struct ImageViewerPage {
         thumbnailPath: String?,
         originalPath: String?,
         shouldAlwaysResolveThumbnail: Bool = false,
-        isAnimated: Bool = false
+        isAnimated: Bool = false,
+        attachmentPosition: Int? = nil
     ) {
         self.initialImage = initialImage
         self.thumbnailImage = thumbnailImage
@@ -30,6 +32,7 @@ struct ImageViewerPage {
         self.originalPath = originalPath
         self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
         self.isAnimated = isAnimated
+        self.attachmentPosition = attachmentPosition
     }
 }
 
@@ -48,6 +51,9 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let loadImageProvider: LoadImageProvider?
     private let loadImageDataProvider: LoadImageDataProvider?
     private let photoLibrarySaver: PhotoLibrarySaving
+    private let originalFiles: (any ChatOriginalFileLoading)?
+    private var originalLeases: [Int: ChatOriginalFileLease] = [:]
+    private var saveTask: Task<Void, Never>?
     private let onClose: (() -> Void)?
     private let onReport: ((SimpleImageViewerVC) -> Void)?
     private let thumbnailMaxBytes = ChatPhotoSizePolicy.maximumFileBytes
@@ -91,7 +97,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         photoLibrarySaver: PhotoLibrarySaving,
         onClose: (() -> Void)? = nil,
         onReport: ((SimpleImageViewerVC) -> Void)? = nil,
-        transientImages: Bool = false
+        transientImages: Bool = false,
+        originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
         self.pages = pages
         self.transientImages = transientImages
@@ -100,6 +107,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         self.loadImageProvider = loadImageProvider
         self.loadImageDataProvider = loadImageDataProvider
         self.photoLibrarySaver = photoLibrarySaver
+        self.originalFiles = originalFiles
         self.onClose = onClose
         self.onReport = onReport
         super.init(nibName: nil, bundle: nil)
@@ -109,6 +117,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     deinit {
+        saveTask?.cancel()
         cancelAllPageLoadTasks()
     }
 
@@ -226,6 +235,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         imageViews.forEach { $0.stopAnimating() }
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
             viewerClosed = true
+            saveTask?.cancel()
             cancelAllPageLoadTasks()
             releaseTransientImages()
         }
@@ -306,6 +316,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     private func closeViewer() {
         viewerClosed = true
+        saveTask?.cancel()
         cancelAllPageLoadTasks()
         releaseTransientImages()
         if let onClose {
@@ -316,7 +327,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func releaseTransientImages() {
-        guard transientImages else { return }
+        guard transientImages || originalFiles != nil else { return }
+        originalLeases.removeAll()
         imageViews.forEach { $0.stopAnimating(); $0.image = nil }
         pages.removeAll()
         loadedPages.removeAll()
@@ -369,8 +381,39 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         let displayed = currentImage(at: index)
         isSaving = true
         renderChrome()
-        Task { [weak self] in
+        saveTask = Task { [weak self] in
             guard let self else { return }
+            if let originalFiles = self.originalFiles {
+                var result = "저장 실패"
+                do {
+                    guard let path = page.originalPath else { throw ChatMediaPreviewError.missingSaveSource }
+                    let lease = try await originalFiles.acquireOriginal(ChatOriginalResource(path: path), purpose: .saving)
+                    do {
+                        try Task.checkCancellation()
+                        guard !self.viewerClosed, lease.isValid else { throw CancellationError() }
+                        try await self.photoLibrarySaver.saveOriginal(lease, isVideo: false)
+                        result = "저장 완료"
+                        await lease.release()
+                    } catch {
+                        await lease.release()
+                        throw error
+                    }
+                } catch {
+                    #if DEBUG
+                    // 사진/경로/사용자 정보 없이 Photos 제출 전후의 오류 분류만 남긴다.
+                    let failure = error as NSError
+                    print("[MediaQA] event=originalPhotoSaveFailed domain=\(failure.domain) code=\(failure.code) cancelled=\(Task.isCancelled)")
+                    #endif
+                    if let error = error as? PhotoLibrarySaveError, error == .permissionDenied {
+                        result = error.localizedDescription
+                    }
+                }
+                self.isSaving = false
+                guard !Task.isCancelled, !self.viewerClosed else { return }
+                self.renderChrome()
+                self.showToast(result)
+                return
+            }
             var image = displayed
             if image == nil { image = await self.loadOriginalNetwork(for: page) }
             if image == nil { image = await self.loadThumbnail(for: page) }
@@ -451,9 +494,9 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         guard isViewLoaded, chrome != nil, !viewerClosed else { return }
         let index = index ?? currentIndex()
         let loading = requestIDs[index] != nil
-        statusButton.isHidden = !failedPages.contains(index) && !(loading && currentImage(at: index) != nil)
+        statusButton.isHidden = !failedPages.contains(index)
         statusButton.isEnabled = failedPages.contains(index)
-        statusButton.setTitle(failedPages.contains(index) ? "불러오지 못했어요 · 다시 시도" : "불러오는 중…", for: .normal)
+        statusButton.setTitle("불러오지 못했어요 · 다시 시도", for: .normal)
         if loading && currentImage(at: index) == nil { spinner.startAnimating() } else { spinner.stopAnimating() }
     }
 
@@ -461,6 +504,11 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         let index = currentIndex()
         guard pages.indices.contains(index) else { return }
         cancelPageLoadTask(for: index)
+        if originalFiles != nil {
+            failedPages.remove(index)
+            startOriginalFileLoad(for: index, page: pages[index], adjacent: false)
+            return
+        }
         startProgressiveLoad(for: index, page: pages[index], role: .demand)
     }
 
@@ -491,6 +539,30 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func scheduleProgressiveLoads(around index: Int) {
         guard !pages.isEmpty else { return }
         let current = max(0, min(index, pages.count - 1))
+        if originalFiles != nil {
+            let wanted = ImageViewerOriginalPolicy.indices(pages: pages, current: current)
+            let currentFileReady = originalLeases[current]?.isValid == true
+            // 새 현재 페이지의 파일이 없으면 다른 페이지의 진행 중 다운로드를 멈춘다.
+            // 이미 확보한 파일과 디코딩은 유지하고 현재 다운로드에 먼저 집중한다.
+            for i in Array(pageLoadTasks.keys) where i != current && !currentFileReady && originalLeases[i] == nil {
+                cancelPageLoadTask(for: i)
+            }
+            for i in pages.indices where !wanted.contains(i) {
+                cancelPageLoadTask(for: i)
+                originalLeases[i] = nil
+                loadedPages.remove(i)
+                failedPages.remove(i)
+                imageViews[i].stopAnimating()
+                imageViews[i].image = pages[i].thumbnailImage ?? pages[i].initialImage
+            }
+            for i in [current, current - 1, current + 1] where wanted.contains(i) {
+                guard i == current || currentFileReady else { continue }
+                if pageLoadTasks[i] == nil && !loadedPages.contains(i) && !failedPages.contains(i) {
+                    startOriginalFileLoad(for: i, page: pages[i], adjacent: i != current)
+                }
+            }
+            return
+        }
         let lower = max(0, index - 2)
         let upper = min(pages.count - 1, index + 2)
         guard lower <= upper else { return }
@@ -509,6 +581,60 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         for i in lower...upper where i != current && pageLoadTasks[i] == nil && !loadedPages.contains(i) && !failedPages.contains(i) {
             startProgressiveLoad(for: i, page: pages[i], role: .warmup)
         }
+    }
+
+    private func startOriginalFileLoad(for index: Int, page: ProgressivePage, adjacent: Bool) {
+        guard let originalFiles else { return }
+        guard let path = page.originalPath else {
+            failedPages.insert(index)
+            renderLoadStatus()
+            return
+        }
+        failedPages.remove(index)
+        let id = UUID()
+        requestIDs[index] = id
+        pageLoadTasks[index] = Task(priority: adjacent ? .utility : .userInitiated) { [weak self] in
+            guard let self else { return }
+            func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == id }
+            let metrics = ImageCacheMetrics.shared
+            let total = metrics.begin("original.viewer", key: path)
+            var outcome = "cancelled"
+            defer { metrics.end(total, outcome: outcome) }
+            metrics.mark("original.viewerRole", key: path, parent: total?.id, outcome: adjacent ? "adjacent" : "current")
+            do {
+                let lease = try await metrics.request("original.acquire", key: path) {
+                    try await originalFiles.acquireOriginal(
+                        ChatOriginalResource(path: path), purpose: adjacent ? .adjacent : .viewing
+                    )
+                }
+                guard isCurrent(), lease.isValid else { await lease.release(); return }
+                self.originalLeases[index] = lease
+                // 디코딩 완료를 기다리지 않고 파일 확보 시점에 인접 다운로드를 허용한다.
+                if self.currentIndex() == index { self.scheduleProgressiveLoads(around: index) }
+                let decode = metrics.begin("original.decode", key: path, parent: total?.id)
+                let image = await ImageViewerOriginalDecoder.image(fileURL: lease.fileURL, animated: page.isAnimated)
+                metrics.end(decode, outcome: image == nil ? "empty" : "ready")
+                guard isCurrent(), lease.isValid else { await lease.release(); return }
+                guard let image else {
+                    self.originalLeases[index] = nil
+                    await lease.release()
+                    throw PhotoLibrarySaveError.saveFailed
+                }
+                self.originalLeases[index] = lease
+                self.setImage(image, at: index)
+                self.loadedPages.insert(index)
+                outcome = "imageAssigned"
+            } catch {
+                guard isCurrent() else { return }
+                outcome = "failure"
+                self.failedPages.insert(index)
+            }
+            guard isCurrent() else { return }
+            self.requestIDs[index] = nil
+            self.clearPageLoadTask(for: index)
+            self.renderLoadStatus()
+        }
+        renderLoadStatus()
     }
 
     private func startProgressiveLoad(
@@ -635,7 +761,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         return await loadImageDataProvider?(path, maxBytes)
     }
 
-    static func makeAnimatedImage(from data: Data) -> UIImage? {
+    nonisolated static func makeAnimatedImage(from data: Data) -> UIImage? {
         KingfisherWrapper<UIImage>.animatedImage(
             data: data,
             options: ImageCreatingOptions(preloadAll: false, onlyFirstFrame: false)
