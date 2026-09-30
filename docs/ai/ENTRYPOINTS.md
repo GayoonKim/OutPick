@@ -1,5 +1,7 @@
 # OutPick Entrypoints
 
+- **프로그램적 검증 게이트:** 공용 원본 `tools/verification-gate/` → [OutPick 설정·실행 방법](../../verification/README.md) → `verification/{gate,functions,firestore,ios}.json` → `output/verification/<실행 ID>/summary.json`. [운영 기준](architecture/PROGRAMMATIC_VERIFICATION.md)·[검증 기록](tasks/programmatic-verification-gates/progress.md). 모델은 사용자가 직접 변경한다.
+
 - **다음 핵심 작업:** [전송 시점+7일 만료 인계](tasks/chat-media-first-view-loading/retention-next-handoff.md). Storage 썸네일/원본·앱 디스크/메모리 공통 만료, 로그인/다운로드로 기한 연장 없음. 정책 확정/구현 전. 완료한 미디어 작업의 [리뷰·최종 검증](tasks/chat-media-first-view-loading/review.md).
 
 - **영상 저장 중 닫기 검증:** `OutPickTests/VideoSaveLifetimeTests.swift`가 실제 UIKit present/dismiss와 지연 resolver/saver를 사용해 두 영상 VC의 준비 중 닫기·제출 후 성공/실패·늦은 UI 차단·재생 링크/저장 파일 해제를 확인한다. 사용자 영상/Photos/서버 자료 없이 전용 임시 파일만 사용.
