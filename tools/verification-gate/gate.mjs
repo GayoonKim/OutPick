@@ -269,6 +269,12 @@ async function readXcodeResults(project, bundlePath, requiredTests, runDir, time
   let data;
   try { data = parseJSON(await readFile(outPath, "utf8")); }
   catch { return {failures, blockers: ["xcresult JSON 손상"], executed: 0}; }
+  return parseXcodeResults(data, requiredTests);
+}
+
+function parseXcodeResults(data, requiredTests) {
+  const failures = [];
+  const blockers = [];
   const observed = new Map();
   const visit = (nodes) => {
     for (const node of nodes ?? []) {
@@ -285,7 +291,7 @@ async function readXcodeResults(project, bundlePath, requiredTests, runDir, time
   };
   visit(data.testNodes);
   if (observed.size === 0) blockers.push("Xcode 테스트 0개");
-  for (const id of requiredTests) if (observed.get(id) !== "Passed") blockers.push(`필수 Xcode 테스트 미통과: ${id}`);
+  for (const id of requiredTests) if (!observed.has(id)) blockers.push(`필수 Xcode 테스트 누락: ${id}`);
   return {failures, blockers, executed: observed.size, observed: [...observed]};
 }
 
@@ -408,4 +414,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
 }
 
-export {parseJSON, readNodeResults, validateConfig};
+export {parseJSON, readNodeResults, parseXcodeResults, validateConfig};

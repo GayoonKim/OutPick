@@ -5,7 +5,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
-import {parseJSON, readNodeResults, validateConfig} from "./gate.mjs";
+import {parseJSON, readNodeResults, parseXcodeResults, validateConfig} from "./gate.mjs";
 
 const gate = fileURLToPath(new URL("./gate.mjs", import.meta.url));
 const reporter = fileURLToPath(new URL("./node-reporter.mjs", import.meta.url));
@@ -183,4 +183,17 @@ test("skip, 0개, 손상, 중복 결과를 차단하고 실제 실패를 기록�
   assert.match(failed.failures.join(" "), /테스트 실패/);
   const brokenCounts = await parse(event("test:pass", "필수 성공") + "\n" + JSON.stringify({type: "test:summary", counts: {tests: 1, passed: 1, failed: "invalid"}}));
   assert.match(brokenCounts.blockers.join(" "), /잘못된 요약 수치/);
+});
+
+test("Xcode 필수 테스트의 assertion 실패와 누락·skip을 구분한다", () => {
+  const data = (result) => ({testNodes: [{nodeType: "Test Case", nodeIdentifier: "Suite/example()", result}]});
+  const ids = ["Suite/example()"];
+  const failed = parseXcodeResults(data("Failed"), ids);
+  assert.equal(failed.failures.length, 1);
+  assert.equal(failed.blockers.length, 0);
+  const passed = parseXcodeResults(data("Passed"), ids);
+  assert.equal(passed.failures.length + passed.blockers.length, 0);
+  assert.match(parseXcodeResults(data("Skipped"), ids).blockers.join(" "), /미실행/);
+  assert.match(parseXcodeResults({testNodes: []}, ids).blockers.join(" "), /누락/);
+  assert.match(parseXcodeResults({testNodes: []}, []).blockers.join(" "), /0개/);
 });

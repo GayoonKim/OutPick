@@ -52,5 +52,5 @@ OutPick은 `verification/gate.json`(자체·Firebase 설정·Socket), `functions
 - 원본·설치기·사용 설명을 저장소에 추가해 게이트 구현이 PR에서 누락되는 문제를 해결했다. 개인 홈 절대 경로와 Simulator UUID는 실행 설정에서 제거했다.
 - Node reporter가 assertion 오류와 stdout/stderr/diagnostic을 보존하도록 수정했다. 불완전한 요약 수치도 통과시키지 않는다.
 - 정상적인 추적 파일 삭제를 입력 상태로 식별하고, 명시한 ignored 설정 파일도 내용 해시에 반영한다. 비밀 파일 내용은 결과에 출력하지 않는다. iOS 입력에 xcconfig·빌드 스크립트·Development plist를, Emulator 입력에 추가 Storage rules·indexes를 포함했다.
-- 시간 초과/취소 시 강제 종료 대기가 조기에 사라지지 않도록 수정했다. SIGTERM을 무시하는 자손 프로세스 정리를 포함한 게이트 자체 회귀 12개가 통과했다.
+- 시간 초과/취소 시 강제 종료 대기가 조기에 사라지지 않도록 수정했다. SIGTERM을 무시하는 자손 프로세스 정리를 포함한 회귀 검사를 추가했다. Xcode 필수 테스트의 assertion 실패는 `failed`, 누락·skip은 `blocked`로 구분하는 검사까지 자체 회귀 13개를 실행한다.
 - 운영 기준·ADR·검증 workflow에 남아 있던 미구현 표시를 정정했다. PR 검증은 이 변경들을 커밋한 후 네 설정으로 실행하고 원본 요약 위치와 코드 버전을 PR에 기록한다.
