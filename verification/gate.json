@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": ["verification", "tools/verification-gate", "Socket", "scripts", "AGENTS.md"],
+  "checks": [
+    {
+      "id": "gate-selftest",
+      "command": "node",
+      "args": ["--test", "tools/verification-gate/gate.test.mjs"],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "command"
+    },
+    {
+      "id": "firebase-config-test",
+      "command": "sh",
+      "args": ["scripts/build/test-validate-and-copy-firebase-config.sh"],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "command"
+    },
+    {
+      "id": "socket-check",
+      "command": "npm",
+      "args": ["--prefix", "Socket", "run", "check"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "kind": "command"
+    },
+    {
+      "id": "socket-test",
+      "command": "npm",
+      "args": ["--prefix", "Socket", "test"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "kind": "node",
+      "reportNames": ["main"],
+      "requiredTests": ["Socket/test/runtime/rateLimiter.test.js::rate limiter는 key와 window별 요청 수를 제한한다"]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "runTimeoutMs": 2100000,
+  "inputs": ["verification", "tools/verification-gate", "Configurations", "scripts/build", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "OutPick", "OutPickTests", "OutPickUITests", "OutPick.xcodeproj", "AGENTS.md"],
+  "checks": [
+    {
+      "id": "app-runtime-test",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project", "OutPick.xcodeproj",
+        "-scheme", "OutPick-Development",
+        "-destination", "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-only-testing:OutPickTests/AppRuntimeConfigurationTests",
+        "-parallel-testing-enabled", "NO",
+        "-derivedDataPath", "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO"
+      ],
+      "cwd": ".",
+      "timeoutMs": 1800000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "AppRuntimeConfigurationTests/developmentConfigurationAcceptsOnlyDevelopmentBoundaries()",
+        "AppRuntimeConfigurationTests/productionConfigurationRequiresCanonicalSocket()",
+        "AppRuntimeConfigurationTests/developmentRejectsProductionSocket()",
+        "AppRuntimeConfigurationTests/developmentRejectsProductionSocketURLVariants()",
+        "AppRuntimeConfigurationTests/developmentRequiresCanonicalSocket()",
+        "AppRuntimeConfigurationTests/productionRejectsCanonicalSocketVariant()",
+        "AppRuntimeConfigurationTests/firebaseBundleAndProjectMustMatchRuntimeEnvironment()",
+        "AppRuntimeConfigurationTests/developmentRejectsProductionFirebaseProject()",
+        "AppRuntimeConfigurationTests/productionRejectsDevelopmentFirebaseProject()",
+        "AppRuntimeConfigurationTests/googleCallbackMustMatchFirebasePlist()",
+        "AppRuntimeConfigurationTests/kakaoCallbackMustMatchNativeAppKey()",
+        "AppRuntimeConfigurationTests/developmentRejectsProductionKakaoConfiguration()",
+        "AppRuntimeConfigurationTests/productionRejectsDevelopmentKakaoConfiguration()"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "runTimeoutMs": 1500000,
+  "inputs": ["verification", "tools/verification-gate", "firestore-tests", "functions", "firestore.rules", "firestore.indexes.json", "storage.rules", "storage.chat-media-quarantine.rules", "storage.moderation-evidence.rules", "firebase.json", "AGENTS.md"],
+  "checks": [
+    {
+      "id": "firestore-storage-test",
+      "command": "npm",
+      "args": ["--prefix", "firestore-tests", "test"],
+      "cwd": ".",
+      "timeoutMs": 1200000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": ["rules", "transactions"],
+      "requiredTests": [
+        "firestore-tests/room-document-id.rules.test.mjs::authenticated owner can atomically create room, member, and joined projection",
+        "firestore-tests/room-succession-deadline.emulator.test.mjs::한 방이 50초에 만료돼도 다른 방의 성공과 일반 참여방 정리를 보존한다"
+      ]
+    }
+  ]
+}
