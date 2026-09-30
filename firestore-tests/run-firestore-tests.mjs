@@ -3,6 +3,15 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const environment = { ...process.env };
+const reporterPath = environment.OUTPICK_GATE_REPORTER_PATH;
+const resultBase = environment.OUTPICK_GATE_RESULT_BASE;
+if (Boolean(reporterPath) !== Boolean(resultBase)) {
+  throw new Error("게이트 reporter와 결과 위치를 함께 지정해야 합니다.");
+}
+const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+const reporterArgs = (name) => reporterPath
+  ? `--test-reporter ${quote(reporterPath)} --test-reporter-destination ${quote(join(resultBase, `node-result-${name}.jsonl`))} `
+  : "";
 const configuredJava = spawnSync("java", ["-version"], {
   env: environment,
   stdio: "ignore",
@@ -34,7 +43,7 @@ const result = spawnSync(
     "--project",
     "outpick-rules-test",
     "npm --prefix ../functions run build " +
-      "&& node --test --test-concurrency=1 " +
+      "&& node --test --test-concurrency=1 " + reporterArgs("rules") +
       "room-document-id.rules.test.mjs style-moods.rules.test.mjs " +
       "profile.rules.test.mjs profile-storage.rules.test.mjs " +
       "chat-media-storage.rules.test.mjs " +
@@ -42,7 +51,7 @@ const result = spawnSync(
       "moderation-evidence-storage.rules.test.mjs " +
       "moderation-capabilities.rules.test.mjs " +
       "brand-storage.rules.test.mjs " +
-      "&& node --test --test-concurrency=1 profile-transactions.emulator.test.mjs " +
+      "&& node --test --test-concurrency=1 " + reporterArgs("transactions") + "profile-transactions.emulator.test.mjs " +
       "account-deletion.emulator.test.mjs moderation-principal.emulator.test.mjs " +
       "moderation-reports.emulator.test.mjs " +
       "comment-write-rate-limit.emulator.test.mjs " +

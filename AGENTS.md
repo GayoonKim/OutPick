@@ -35,6 +35,9 @@
 
 ## 작업 원칙
 
+- 모델은 사용자가 직접 변경한다. Astra High에서 설계·계획·결과 분석, Sol Extra High에서 승인된 구현을 진행한다. 별도 모델 자동 전달 구성은 기본으로 두지 않는다.
+- 필수 검증은 [프로그램적 검증 기준](docs/ai/architecture/PROGRAMMATIC_VERIFICATION.md)을 따른다. 공용 원본은 `tools/verification-gate/`, 설치 위치는 `~/.codex/tools/verification-gate/`, OutPick 검사 설정은 `verification/{gate,functions,firestore,ios}.json`이다. 프로젝트 루트에서 합의된 검사 설정을 `node tools/verification-gate/gate.mjs --project . --config verification/<설정>.json`으로 실행하고 `output/verification/<실행 ID>/summary.json`의 결과를 확인한다. 설치·준비 방법은 `verification/README.md`, 실제 연결 범위는 [진행 상태](docs/ai/tasks/programmatic-verification-gates/progress.md)를 따른다.
+
 - 구현 전 변경 파일 후보, 구현 계획, 테스트/검증 계획을 먼저 정리한다.
 - 기능 범위, 완료 기준, 화면 이동, 데이터 구조, API/Firebase Functions 필요 여부, 정책 리스크, 아키텍처 변경처럼 제품 또는 기술 결정이 모호하면 임의로 확정하지 않고 사용자와 논의한다.
 - 논의가 필요한 경우 무엇이 모호한지, 가능한 선택지, 각 선택지의 장단점, 추천안을 정리한 뒤 사용자 결정을 기다린다.
@@ -52,7 +55,7 @@
 - 코드 주석이 필요하면 한글로 작성한다.
 - 앱 실행으로 쉽게 확인 가능한 단순 happy path UI는 자동 테스트를 과하게 작성하지 않고 수동 QA를 우선한다.
 - 서버 실패, 권한 실패, 일부 API 실패, 비동기, 중복 호출, 캐시, pagination, 상태 전이처럼 재현과 제어가 어려운 케이스는 fake repository/use case/spy 기반 자동 테스트를 우선한다.
-- 테스트 실행은 사용자가 명시적으로 요청했거나, 결제/인증/데이터 삭제/보안 규칙/배포 전 검증처럼 실패 비용이 큰 변경에 한해 우선 수행한다.
+- 승인된 구현 계획의 필수 게이트 검사는 구현 승인에 포함해 실행한다. 다음 선택적 검사에 대한 기준이 필수 검사를 생략하는 근거가 되어서는 안 된다. 추가 선택적 테스트는 사용자 요청 또는 결제/인증/데이터 삭제/보안 규칙/배포 전 검증처럼 실패 비용이 큰 변경을 우선한다.
 - 테스트 코드를 작성하고 실행하지 않은 경우에는 작성한 테스트 파일/시나리오와 실행 보류 이유를 최종 보고에 정리한다.
 - `scripts/ai` 실행 자동화는 같은 명령이나 검증 흐름이 2~3회 이상 반복될 때만 제안하거나 추가한다.
 

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": ["verification", "tools/verification-gate", "functions", "firestore.indexes.json", "firestore.rules", "AGENTS.md"],
+  "checks": [
+    {
+      "id": "functions-lint",
+      "command": "npm",
+      "args": ["--prefix", "functions", "run", "lint"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "kind": "command",
+      "nodeMajor": 24
+    },
+    {
+      "id": "functions-test",
+      "command": "npm",
+      "args": ["--prefix", "functions", "test"],
+      "cwd": ".",
+      "timeoutMs": 600000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": ["main"],
+      "requiredTests": ["functions/lib/index.contract.test.js::Firebase deployment export 이름 117개를 유지한다"]
+    }
+  ]
+}
