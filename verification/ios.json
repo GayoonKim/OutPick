@@ -1,19 +1,35 @@
 {
   "version": 1,
   "runTimeoutMs": 2100000,
-  "inputs": ["verification", "OutPick", "OutPickTests", "OutPickUITests", "OutPick.xcodeproj", "Configurations", "scripts/build", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "AGENTS.md"],
+  "inputs": [
+    "verification",
+    "tools/verification-gate",
+    "Configurations",
+    "scripts/build",
+    "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
+    "OutPick",
+    "OutPickTests",
+    "OutPickUITests",
+    "OutPick.xcodeproj",
+    "AGENTS.md"
+  ],
   "checks": [
     {
       "id": "app-runtime-test",
       "command": "xcodebuild",
       "args": [
         "test",
-        "-project", "OutPick.xcodeproj",
-        "-scheme", "OutPick-Development",
-        "-destination", "platform=iOS Simulator,id=116C340A-1F81-425E-B26D-7B2842CD71FF",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
         "-only-testing:OutPickTests/AppRuntimeConfigurationTests",
-        "-parallel-testing-enabled", "NO",
-        "-derivedDataPath", "output/verification-derived-data",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
         "CODE_SIGNING_ALLOWED=NO"
       ],
       "cwd": ".",

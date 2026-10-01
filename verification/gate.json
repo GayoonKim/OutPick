@@ -1,12 +1,21 @@
 {
   "version": 1,
   "runTimeoutMs": 900000,
-  "inputs": ["verification", "Socket", "scripts", "AGENTS.md"],
+  "inputs": [
+    "verification",
+    "tools/verification-gate",
+    "Socket",
+    "scripts",
+    "AGENTS.md"
+  ],
   "checks": [
     {
       "id": "gate-selftest",
       "command": "node",
-      "args": ["--test", "/Users/gy/.codex/tools/verification-gate/gate.test.mjs"],
+      "args": [
+        "--test",
+        "tools/verification-gate/gate.test.mjs"
+      ],
       "cwd": ".",
       "timeoutMs": 120000,
       "kind": "command"
@@ -14,7 +23,9 @@
     {
       "id": "firebase-config-test",
       "command": "sh",
-      "args": ["scripts/build/test-validate-and-copy-firebase-config.sh"],
+      "args": [
+        "scripts/build/test-validate-and-copy-firebase-config.sh"
+      ],
       "cwd": ".",
       "timeoutMs": 120000,
       "kind": "command"
@@ -22,7 +33,12 @@
     {
       "id": "socket-check",
       "command": "npm",
-      "args": ["--prefix", "Socket", "run", "check"],
+      "args": [
+        "--prefix",
+        "Socket",
+        "run",
+        "check"
+      ],
       "cwd": ".",
       "timeoutMs": 300000,
       "kind": "command"
@@ -30,11 +46,17 @@
     {
       "id": "socket-test",
       "command": "npm",
-      "args": ["--prefix", "Socket", "test"],
+      "args": [
+        "--prefix",
+        "Socket",
+        "test"
+      ],
       "cwd": ".",
       "timeoutMs": 300000,
       "kind": "node",
-      "reportNames": ["main"],
+      "reportNames": [
+        "main"
+      ],
       "requiredTests": [
         "Socket/test/runtime/rateLimiter.test.js::rate limiter는 key와 window별 요청 수를 제한한다",
         "Socket/test/media/directMediaUploadService.test.js::묶음 크기에 맞춰 전체 객체 확인 후 한번만 확정한다",

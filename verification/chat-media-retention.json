@@ -2,7 +2,7 @@
   "version": 1,
   "runTimeoutMs": 2100000,
   "inputs": [
-    "verification", "OutPick", "OutPickTests", "OutPick.xcodeproj",
+    "verification", "tools/verification-gate", "OutPick", "OutPickTests", "OutPick.xcodeproj",
     "Configurations", "scripts/build", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "AGENTS.md"
   ],
   "checks": [
