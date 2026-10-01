@@ -94,7 +94,7 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         limit: Int? = nil
     ) -> [ChatRoomSettingMediaItem] {
         var unified: [ChatRoomSettingMediaItem] = images
-            .filter { !$0.isFailed }
+            .filter { !$0.isFailed && isAvailable($0.mediaExpiresAt) }
             .map {
                 ChatRoomSettingMediaItem(
                     messageID: $0.messageID,
@@ -105,13 +105,17 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
                     originalKey: $0.originalKey,
                     thumbURL: $0.thumbURL,
                     originalURL: $0.originalURL,
+                    generationThumb: $0.generationThumb,
+                    generationOriginal: $0.generationOriginal,
                     localThumb: $0.localThumb,
                     sentAt: $0.sentAt,
-                    isVideo: false
+                    mediaExpiresAt: $0.mediaExpiresAt,
+                    isVideo: false,
+                    attachmentID: $0.attachmentID
                 )
             }
         unified.append(contentsOf: videos
-            .filter { !$0.isFailed }
+            .filter { !$0.isFailed && isAvailable($0.mediaExpiresAt) }
             .map {
                 ChatRoomSettingMediaItem(
                     messageID: $0.messageID,
@@ -122,9 +126,13 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
                     originalKey: $0.originalKey,
                     thumbURL: $0.thumbURL,
                     originalURL: $0.originalURL,
+                    generationThumb: $0.generationThumb,
+                    generationOriginal: $0.generationOriginal,
                     localThumb: $0.localThumb,
                     sentAt: $0.sentAt,
-                    isVideo: true
+                    mediaExpiresAt: $0.mediaExpiresAt,
+                    isVideo: true,
+                    attachmentID: $0.attachmentID
                 )
             })
 
@@ -260,40 +268,50 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
         limit: Int
     ) async throws -> [ChatRoomSettingMediaItem] {
         guard limit > 0 else { return [] }
-        if isUsingRemoteHistory && !remoteHasMore {
-            return []
+        if isUsingRemoteHistory && !remoteHasMore { return [] }
+
+        var collected: [ChatRoomSettingMediaItem] = []
+        while collected.count < limit && (!isUsingRemoteHistory || remoteHasMore) {
+            let fetchLimit = limit - collected.count
+            let requestedCursor = lastRemoteCursor ?? deliveredItems.last?.cursor
+            let entries: [ChatRoomMediaIndexEntry]
+            if let cursor = requestedCursor {
+                entries = try await remoteMediaRepository.fetchOlderMedia(inRoom: roomID, before: cursor, limit: fetchLimit)
+            } else {
+                entries = try await remoteMediaRepository.fetchLatestMedia(inRoom: roomID, limit: fetchLimit)
+            }
+
+            isUsingRemoteHistory = true
+            remoteHasMore = entries.count == fetchLimit
+            guard let nextCursor = entries.last?.cursor else {
+                remoteHasMore = false
+                break
+            }
+            if let requestedCursor {
+                let advanced = nextCursor.sentAt < requestedCursor.sentAt
+                    || (nextCursor.sentAt == requestedCursor.sentAt && nextCursor.messageID < requestedCursor.messageID)
+                    || (nextCursor.sentAt == requestedCursor.sentAt && nextCursor.messageID == requestedCursor.messageID
+                        && nextCursor.idx > requestedCursor.idx)
+                guard advanced else {
+                    remoteHasMore = false
+                    break
+                }
+            }
+            lastRemoteCursor = nextCursor
+            try localMediaRepository.upsertMediaIndexEntries(entries)
+
+            var knownIDs = deliveredItemIDs
+            knownIDs.formUnion(pendingLocalItems.map(\.id))
+            var knownContentKeys = Set(deliveredItems.flatMap(\.dedupeKeys))
+            knownContentKeys.formUnion(pendingLocalItems.flatMap(\.dedupeKeys))
+            let items = entries
+                .map(makeMediaItem(from:))
+                .filter { isAvailable($0.mediaExpiresAt) }
+                .filter { shouldInclude($0, knownIDs: &knownIDs, knownContentKeys: &knownContentKeys) }
+            registerDelivered(items)
+            collected.append(contentsOf: items)
         }
-
-        let entries: [ChatRoomMediaIndexEntry]
-        if let cursor = lastRemoteCursor {
-            entries = try await remoteMediaRepository.fetchOlderMedia(inRoom: roomID, before: cursor, limit: limit)
-        } else if let cursor = deliveredItems.last?.cursor {
-            entries = try await remoteMediaRepository.fetchOlderMedia(inRoom: roomID, before: cursor, limit: limit)
-        } else {
-            entries = try await remoteMediaRepository.fetchLatestMedia(inRoom: roomID, limit: limit)
-        }
-
-        isUsingRemoteHistory = true
-        remoteHasMore = entries.count == limit
-        lastRemoteCursor = entries.last?.cursor
-
-        guard !entries.isEmpty else {
-            remoteHasMore = false
-            return []
-        }
-
-        try localMediaRepository.upsertMediaIndexEntries(entries)
-
-        var knownIDs = deliveredItemIDs
-        knownIDs.formUnion(pendingLocalItems.map(\.id))
-        var knownContentKeys = Set(deliveredItems.flatMap(\.dedupeKeys))
-        knownContentKeys.formUnion(pendingLocalItems.flatMap(\.dedupeKeys))
-        let items = entries
-            .map(makeMediaItem(from:))
-            .filter { shouldInclude($0, knownIDs: &knownIDs, knownContentKeys: &knownContentKeys) }
-
-        registerDelivered(items)
-        return items
+        return collected
     }
 
     private func fetchRemoteItemsIfAvailable(
@@ -349,10 +367,19 @@ final class LoadChatRoomMediaUseCase: LoadChatRoomMediaUseCaseProtocol {
             originalKey: entry.originalKey,
             thumbURL: entry.thumbResourcePath,
             originalURL: entry.originalResourcePath,
+            generationThumb: entry.generationThumb,
+            generationOriginal: entry.generationOriginal,
             localThumb: nil,
             sentAt: entry.sentAt,
-            isVideo: entry.type == .video
+            mediaExpiresAt: entry.mediaExpiresAt,
+            isVideo: entry.type == .video,
+            attachmentID: entry.attachmentID
         )
+    }
+
+    private func isAvailable(_ expiry: Date?) -> Bool {
+        guard let expiry else { return false }
+        return expiry > Date()
     }
 
     private func shouldInclude(

@@ -1,5 +1,19 @@
 # Chat Entrypoints
 
+## 채팅 미디어 7일 만료
+
+[최종 계약·검증·한계](../architecture/CHAT_MEDIA_RETENTION.md)를 기준으로 한다.
+
+- `ChatContainer`가 계정별 `ChatMediaSignedDownloadService`를 조립해 이미지 파이프라인·원본 transport·영상 adapter에 주입한다. `Repositories/ChatMediaURLRepository.swift`는 IDs+variant 요청, HTTPS 티켓 검증, 메모리 내 요청 병합, 최대 1회 갱신과 늦은 응답 차단을 담당한다. HTTP 400 ExpiredToken/명시적 만료 403만 만료로 분류한다.
+- `Services/OriginalMedia/ChatMediaExpiryCacheIndex.swift`의 typed resource는 계정·path·generation·만료를 연결한다. `ChatAttachmentImageService`, `ChatOriginalFileStore/Disk`는 hit/write/lease에서 검사한다. 전 계정 정리는 소유한 새 namespace에 한정하며 구형 개발 캐시를 임의 삭제하지 않는다.
+- `ChatViewController.scheduleMediaExpiryTimer`와 메시지/미리보기 셀은 만료 후 기존 크기를 유지한다. `ChatCoordinator`는 사진·GIF·영상 모두 기존 전체 화면으로 연결한다. `SimpleImageViewerVC`와 `ChatVideoPlayerViewController`는 원본 없이 기본 이미지와 “미디어 저장 기간이 만료되었어요.”를 표시하고 다운로드·재생·저장을 차단한다.
+- `ChatVideoPlaybackSession`은 URL 만료 시 1회 갱신하고 실제 재생 위치·의도를 복원한다. 일시정지 중에는 재개·seek 때 갱신하며 실패 후 수동 재시도한다. `ChatExpiryVideoPlayer.performControl`은 AVKit 백그라운드 조작을 메인 액터에 전달한다.
+- `ChatReplyView`/`ChatViewController.handleReply`는 미만료 썸네일·닉네임·종류/개수, 만료 아이콘·상태를 표시한다. `LoadChatRoomMediaUseCase`와 설정 VC/VM·gallery는 만료 항목을 제외한다.
+- `ChatMessageManager`/`ChatInitialLoadUseCase`/`ChatMessagePageLoader`는 오프라인에서 로컬만 사용한다. `ChatUnreadCatchUpState`와 VC는 서버 조회·재시도 버튼을 억제하고 연결 복귀 후 기존 흐름을 재개한다.
+- `DefaultPhotoLibrarySaver.saveOriginal`은 권한 대기 후 취소·lease 만료를 다시 검사한다. Photos 제출 전 취소와 제출 후 OS 완료 콜백까지 파일 보존을 구분한다. 닫힘·계정 전환 후 늦은 UI는 표시하지 않는다.
+- `ChatMediaBoundaryQA.swift`/`ChatSignedURLHTTPQA.swift`는 DEBUG·DEV·지정 미디어에만 적용하는 선택적 시험 제어다. 일반 실행은 비활성이고 임시 서버 120초 정책은 제거됐다.
+
+
 - 영상 저장 결과는 `ChatVideoPlayerViewController`/`VideoPlayerOverlayVC`→`MediaSaveToast.show` 하단 토스트로 통일. 원문 오류는 사용자 문구에 포함하지 않는다. 사진 토스트와 같은 bottom76/패딩12·8/1.2초 유지. 중앙 결과 alert 제거, 닫힌 뒤 안내 차단 유지.
 
 - 저장 시 원본 캐시가 생긴 뒤 재생 miss→hit 전환: `DefaultChatVideoPlaybackResolver.cachedPlaybackAsset`에서 bin을 실제 MP4/MOV 확장자 링크로 제공. `PhotoLibraryPreparedResource(preferHardLink:true)`가 링크 실패 시 사본 사용. playback lease 해제 시 링크 제거+원본 lease 해제, sourcePath 유지로 저장은 원본 store 이용.

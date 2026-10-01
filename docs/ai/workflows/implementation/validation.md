@@ -1,6 +1,6 @@
 # Implementation Validation
 
-> 2026-09-30 사용자 선택으로 [프로그램적 검증 운영](../../architecture/PROGRAMMATIC_VERIFICATION.md)을 간소화했다. 모델은 사용자가 직접 바꾸며 승인된 필수 검사는 프로그램이 실행·판정한다. 공용 실행기와 OutPick 설정의 실제 연결·검증 범위는 [진행 기록](../../tasks/programmatic-verification-gates/progress.md)을 따른다. 자동 전달·계정/App 분리·신규 병합 통제는 이번 범위에서 제외한다.
+> [프로그램적 검증 운영](../../architecture/PROGRAMMATIC_VERIFICATION.md)에 따라 로컬 공용 실행기와 OutPick 검사 설정 연결을 완료했다. 모델은 사용자가 직접 바꾸며 승인된 필수 검사는 프로그램이 실행·판정한다. GitHub CI·자동 전달·계정/App 분리·신규 병합 통제는 포함하지 않는다.
 
 ## 목적
 

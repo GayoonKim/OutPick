@@ -71,6 +71,17 @@ test("묶음 크기에 맞춰 전체 객체 확인 후 한번만 확정한다", 
     assert.equal(f.metrics().calls - before, count * 2);
     assert.equal(f.metrics().peak, count * 2);
     assert.equal(f.documents.get("Rooms/r/Messages/m").attachments.length, count);
+    const message = f.documents.get("Rooms/r/Messages/m");
+    assert.equal(message.sentAt, "1970-01-01T00:00:01.000Z");
+    assert.equal(message.mediaExpiresAt.toMillis(), 604801000);
+    assert.equal(message.attachments.every(item => item.generationOriginal === "1" && item.generationThumb === "1"), true);
+    const expiry = [...f.documents.entries()].find(([path]) => path.startsWith("chatMediaExpiryJobs/"))?.[1];
+    assert.equal(expiry?.status, "scheduled");
+    assert.equal(expiry?.objects.length, count * 2);
+    assert.equal(expiry?.nextAttemptAt.toMillis(), message.mediaExpiresAt.toMillis());
+    assert.equal(f.documents.get("Rooms/r/mediaIndex/m_0")?.mediaExpiresAt.toMillis(), 604801000);
+    assert.equal(f.documents.get("Rooms/r/mediaIndex/m_0")?.attachmentID, message.attachments[0].attachmentID);
+    assert.equal((await pending).mediaExpiresAt, "1970-01-08T00:00:01.000Z");
     await f.service.finalize(args);
     assert.equal(f.documents.get("Rooms/r").seq, 6);
     assert.equal(f.metrics().calls - before, count * 2);

@@ -73,7 +73,7 @@ ADR에 기록하지 않을 것:
 | ADR-022 | accepted | 브랜드·시즌·사용자는 공용 스타일 무드 ID를 사용한다. | [상세](adr/ADR-022-브랜드-시즌-사용자는-공용-스타일-무드-id를-사용한다.md) |
 | ADR-023 | accepted | 추출 fix는 Production runtime과 실제 input smoke로 검증한다. | [상세](adr/ADR-023-추출-fix는-production-runtime과-실제-input-smoke로-검증한다.md) |
 | ADR-024 | accepted | UGC 안전은 canonical moderation principal과 서버 capability로 통합한다. | [상세](adr/ADR-024-ugc-안전은-canonical-moderation-principal과-서버-capability로-통합한다.md) |
-| ADR-025 | accepted (2026-09-30 Node 실행기·OutPick 연결) | 사용자가 모델을 직접 변경하고 필수 검증을 프로그램적 게이트로 실행·판정한다. 별도 권한/병합 통제 인프라는 이번 범위에서 제외한다. | [상세](adr/ADR-025-검증은-프로그램적-게이트로-판정하고-필수-검사로-병합을-통제한다.md) |
+| ADR-025 | accepted (로컬 실행기·프로젝트 연결 완료) | 사용자가 모델을 직접 변경하고 필수 검증을 프로그램적 게이트로 실행·판정한다. GitHub CI·신규 병합 통제 인프라는 포함하지 않는다. | [상세](adr/ADR-025-검증은-프로그램적-게이트로-판정하고-필수-검사로-병합을-통제한다.md) |
 
 ## 새 ADR 추가 절차
 

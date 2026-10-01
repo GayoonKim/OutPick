@@ -4,8 +4,8 @@
 
 사용자가 복잡한 구성을 제거하고 직접 모델을 변경하는 운영을 선택했다.
 
-- 설계·세부 계획·테스트 설계·결과 분석: GPT-6 Astra High.
-- 구현: GPT-6 Sol Extra High.
+- 설계·세부 계획·테스트 설계·결과 분석: GPT-6.1 Sol High (2026-10-01 사용자 갱신).
+- 구현·필수 게이트 실행·결과 보고: GPT-6.1 Sol Light.
 - 모델 변경: 사용자 직접 수행.
 - 검증 실행·판정: 프로젝트에 연결할 프로그램적 게이트.
 - 자동 전달·별도 OS 계정·GitHub App·격리/승인 인프라 구축: 이번 범위에서 제외.
@@ -44,7 +44,7 @@ OutPick은 `verification/gate.json`(자체·Firebase 설정·Socket), `functions
 
 프로젝트 루트에서 `node tools/verification-gate/gate.mjs --project . --config verification/gate.json` 형식으로 실행한다. 다른 설정은 끝 인자를 `verification/functions.json`, `verification/firestore.json`, `verification/ios.json`으로 바꾼다. Functions와 Emulator는 Node 24를 `PATH` 맨 앞에 준비한다. Firestore/Storage는 로컬 Emulator 포트 접근이 필요하고, iOS는 CoreSimulator 접근이 필요하다. 격리된 환경에서 불가하면 게이트가 차단 결과를 반환한다.
 
-프로젝트별 필수 검사와 테스트 ID의 충분성은 사용자·Astra가 작업 계획에서 검토한다. 이 설정은 초기 연결 범위의 검사만 강제한다. `OutPickUITests`, 사용자 실기기, 운영 배포, 다른 프로젝트의 검사는 별도 연결 전까지 미검증이다. 모델 전환·Astra/Sol 전달 자동화는 포함하지 않는다.
+프로젝트별 필수 검사와 테스트 ID의 충분성은 사용자·GPT-6.1 Sol High가 작업 계획에서 검토한다. 초기 연결 이후 채팅 미디어 만료용 필수 검사를 확장했고 [최종 범위](../../architecture/CHAT_MEDIA_RETENTION.md)를 따른다. `OutPickUITests`, 운영 배포, 다른 프로젝트의 검사는 별도 연결 전까지 미검증이다. 실기기 QA는 사용자 관찰 결과와 별도로 기록하며 모델 전환·자동 전달은 포함하지 않는다.
 
 ## PR 준비와 리뷰 보완
 

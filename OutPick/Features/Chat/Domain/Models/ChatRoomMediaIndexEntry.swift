@@ -22,6 +22,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
     let type: Attachment.AttachmentType
     let bucketThumb: String?
     let bucketOriginal: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let thumbKey: String?
     let originalKey: String?
     let thumbURL: String?
@@ -33,6 +35,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
     let hash: String?
     let isDeleted: Bool
     let sentAt: Date
+    let mediaExpiresAt: Date?
+    let attachmentID: String?
 
     init(
         roomID: String,
@@ -43,6 +47,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
         type: Attachment.AttachmentType,
         bucketThumb: String? = nil,
         bucketOriginal: String? = nil,
+        generationThumb: String? = nil,
+        generationOriginal: String? = nil,
         thumbKey: String?,
         originalKey: String?,
         thumbURL: String?,
@@ -53,7 +59,9 @@ struct ChatRoomMediaIndexEntry: Hashable {
         duration: Double?,
         hash: String?,
         isDeleted: Bool,
-        sentAt: Date
+        sentAt: Date,
+        mediaExpiresAt: Date? = nil,
+        attachmentID: String? = nil
     ) {
         self.roomID = roomID
         self.messageID = messageID
@@ -63,6 +71,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
         self.type = type
         self.bucketThumb = bucketThumb
         self.bucketOriginal = bucketOriginal
+        self.generationThumb = generationThumb
+        self.generationOriginal = generationOriginal
         self.thumbKey = thumbKey
         self.originalKey = originalKey
         self.thumbURL = thumbURL
@@ -74,6 +84,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
         self.hash = hash
         self.isDeleted = isDeleted
         self.sentAt = sentAt
+        self.mediaExpiresAt = mediaExpiresAt
+        self.attachmentID = attachmentID
     }
 
     var documentID: String {
@@ -93,11 +105,12 @@ struct ChatRoomMediaIndexEntry: Hashable {
     }
 
     static func entries(from message: ChatMessage) -> [ChatRoomMediaIndexEntry] {
-        let sentAt = message.sentAt ?? Date()
-
-        return message.attachments
+        let mediaAttachments = message.attachments
             .filter { $0.type == .image || $0.type == .video }
             .sorted { $0.index < $1.index }
+        guard !mediaAttachments.isEmpty, let sentAt = message.sentAt else { return [] }
+
+        return mediaAttachments
             .map { attachment in
                 let hash = attachment.hash.isEmpty ? nil : attachment.hash
                 return ChatRoomMediaIndexEntry(
@@ -109,6 +122,8 @@ struct ChatRoomMediaIndexEntry: Hashable {
                     type: attachment.type,
                     bucketThumb: attachment.bucketThumb,
                     bucketOriginal: attachment.bucketOriginal,
+                    generationThumb: attachment.generationThumb,
+                    generationOriginal: attachment.generationOriginal,
                     thumbKey: hash,
                     originalKey: hash.map { "\($0):orig" },
                     thumbURL: attachment.pathThumb.isEmpty ? nil : attachment.pathThumb,
@@ -119,7 +134,9 @@ struct ChatRoomMediaIndexEntry: Hashable {
                     duration: attachment.duration,
                     hash: hash,
                     isDeleted: message.isDeleted,
-                    sentAt: sentAt
+                    sentAt: sentAt,
+                    mediaExpiresAt: message.mediaExpiresAt,
+                    attachmentID: attachment.attachmentID
                 )
             }
     }

@@ -17,6 +17,15 @@ class MediaGalleryViewController: UICollectionViewController {
         let thumbnailPath: String?
         let originalPath: String?
         let videoPath: String?
+        let generationThumb: String?
+        let generationOriginal: String?
+        let mediaExpiresAt: Date?
+        var playbackResource: ChatVideoPlaybackResource? = nil
+
+        var isExpired: Bool {
+            guard let mediaExpiresAt else { return true }
+            return ChatMediaExpiryPolicy.isExpired(mediaExpiresAt, now: Date())
+        }
     }
     
     private enum Section: Hashable { case day(Date) }
@@ -29,12 +38,13 @@ class MediaGalleryViewController: UICollectionViewController {
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
 
-    /// (옵션) 이미지 캐시 조회/로더 주입. path-only 뷰어에서 사용.
-    var cachedImageProvider: SimpleImageViewerVC.CachedImageProvider?
-    var loadImageProvider: SimpleImageViewerVC.LoadImageProvider?
+    var cachedImageProvider: ((ChatMediaCacheResource) async -> UIImage?)?
+    var loadImageProvider: ((ChatMediaCacheResource, Int) async -> UIImage?)?
     private let photoLibrarySaver: PhotoLibrarySaving
     private let videoResolver: ChatVideoPlaybackResolving
     private let originalFiles: (any ChatOriginalFileLoading)?
+    private var items: [GalleryItem]
+    private var expiryTimer: Timer?
 
     init(
         items: [GalleryItem],
@@ -42,7 +52,7 @@ class MediaGalleryViewController: UICollectionViewController {
         videoResolver: ChatVideoPlaybackResolving,
         originalFiles: (any ChatOriginalFileLoading)? = nil
     ) {
-        self.items = Self.uniqueItems(items)
+        self.items = Self.uniqueItems(items.filter { !$0.isExpired })
         self.photoLibrarySaver = photoLibrarySaver
         self.videoResolver = videoResolver
         self.originalFiles = originalFiles
@@ -61,6 +71,23 @@ class MediaGalleryViewController: UICollectionViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTopBar()
+        scheduleExpiryTimer()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        removeExpiredItems()
+        scheduleExpiryTimer()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        expiryTimer?.invalidate()
+        expiryTimer = nil
+    }
+
+    deinit {
+        expiryTimer?.invalidate()
     }
 
     private static func makeLayout() -> UICollectionViewCompositionalLayout {
@@ -151,6 +178,7 @@ class MediaGalleryViewController: UICollectionViewController {
         dataSource = DS(collectionView: collectionView) { (cv, indexPath, item) -> UICollectionViewCell? in
             switch item {
             case let .thumb(g):
+                guard !g.isExpired else { return nil }
                 let cell = cv.dequeueReusableCell(withReuseIdentifier: GalleryThumbCell.reuseID, for: indexPath) as! GalleryThumbCell
                 cell.configure(image: g.image, isVideo: g.isVideo)
                 return cell
@@ -177,8 +205,6 @@ class MediaGalleryViewController: UICollectionViewController {
         dataSource.apply(snap, animatingDifferences: false)
 
     }
-    private let items: [GalleryItem]
-
     private static func uniqueItems(_ items: [GalleryItem]) -> [GalleryItem] {
         var knownIDs = Set<String>()
         var knownContentKeys = Set<String>()
@@ -196,6 +222,26 @@ class MediaGalleryViewController: UICollectionViewController {
 
             return true
         }
+    }
+
+    private func removeExpiredItems() {
+        let validItems = items.filter { !$0.isExpired }
+        guard validItems.count != items.count else { return }
+        items = validItems
+        configureDataSource()
+    }
+
+    private func scheduleExpiryTimer() {
+        expiryTimer?.invalidate()
+        expiryTimer = nil
+        guard isViewLoaded, view.window != nil,
+              let expiry = items.compactMap(\.mediaExpiresAt).filter({ $0 > Date() }).min() else { return }
+        expiryTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, expiry.timeIntervalSinceNow), repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.removeExpiredItems()
+            self.scheduleExpiryTimer()
+        }
+        if let expiryTimer { RunLoop.main.add(expiryTimer, forMode: .common) }
     }
 
     private static func canonicalPath(_ path: String?) -> String? {
@@ -286,15 +332,22 @@ extension MediaGalleryViewController {
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
         guard case let .thumb(g) = item else { return }
+        guard !g.isExpired else { removeExpiredItems(); return }
 
         Task { [weak self] in
             guard let self = self else { return }
             if g.isVideo {
-                let playbackPath = self.originalFiles == nil ? (g.videoPath ?? g.originalPath ?? g.thumbnailPath) : (g.videoPath ?? g.originalPath)
-                if let path = playbackPath {
+                if let resource = g.playbackResource {
                     do {
-                        let playbackAsset = try await self.videoResolver.playbackAsset(forPath: path)
+                        let playbackAsset = try await self.videoResolver.playbackAsset(for: resource, forceRefresh: false)
+                        guard !g.isExpired, self.videoResolver.isSessionValid, self.viewIfLoaded?.window != nil,
+                              self.presentedViewController == nil else {
+                            await playbackAsset.fileLease?.release()
+                            self.removeExpiredItems()
+                            return
+                        }
                         await MainActor.run {
+                            guard !g.isExpired else { self.removeExpiredItems(); return }
                             let pvc = VideoPlayerOverlayVC(
                                 playbackAsset: playbackAsset,
                                 videoResolver: self.videoResolver,
@@ -306,7 +359,7 @@ extension MediaGalleryViewController {
                     } catch {
                         await MainActor.run {
                             let alert = UIAlertController(title: "재생할 수 없음",
-                                                          message: "이 동영상의 경로를 다운로드 URL로 변환할 수 없습니다.",
+                                                          message: (error as? ChatVideoPlaybackError)?.errorDescription ?? "동영상을 불러오지 못했습니다.",
                                                           preferredStyle: .alert)
                             alert.addAction(UIAlertAction(title: "확인", style: .default))
                             self.present(alert, animated: true)
@@ -331,13 +384,22 @@ extension MediaGalleryViewController {
                     initialImage: g.image,
                     thumbnailPath: thumbnailPath,
                     originalPath: originalPath,
-                    isAnimated: URL(string: originalPath ?? "")?.pathExtension.lowercased() == "gif"
+                    isAnimated: URL(string: originalPath ?? "")?.pathExtension.lowercased() == "gif",
+                    generationThumb: g.generationThumb,
+                    generationOriginal: g.generationOriginal,
+                    mediaExpiresAt: g.mediaExpiresAt
                 )
                 let viewer = SimpleImageViewerVC(
                     pages: [page],
                     startIndex: 0,
-                    cachedImageProvider: self.cachedImageProvider,
-                    loadImageProvider: self.loadImageProvider,
+                    cachedImageProvider: { [weak self] path in
+                        guard let self else { return nil }
+                        return await self.cachedImageProvider?(Self.cacheResource(path: path, item: g))
+                    },
+                    loadImageProvider: { [weak self] path, maxBytes in
+                        guard let self else { return nil }
+                        return await self.loadImageProvider?(Self.cacheResource(path: path, item: g), maxBytes)
+                    },
                     photoLibrarySaver: self.photoLibrarySaver,
                     originalFiles: self.originalFiles
                 )
@@ -346,5 +408,10 @@ extension MediaGalleryViewController {
                 self.present(viewer, animated: true)
             }
         }
+    }
+
+    private static func cacheResource(path: String, item: GalleryItem) -> ChatMediaCacheResource {
+        let generation = path == item.originalPath ? item.generationOriginal : item.generationThumb
+        return .attachment(path: path, generation: generation, mediaExpiresAt: item.mediaExpiresAt)
     }
 }

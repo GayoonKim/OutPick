@@ -4,11 +4,18 @@ struct ChatOriginalResource: Hashable, Sendable {
     let path: String
     let version: String
     let maximumBytes: Int
+    let mediaExpiresAt: Date?
 
-    init(path: String, version: String = "path-v1", maximumBytes: Int = ChatPhotoSizePolicy.maximumFileBytes) {
+    init(
+        path: String,
+        version: String = "path-v1",
+        maximumBytes: Int = ChatPhotoSizePolicy.maximumFileBytes,
+        mediaExpiresAt: Date? = nil
+    ) {
         self.path = path.trimmingCharacters(in: .whitespacesAndNewlines)
         self.version = version
         self.maximumBytes = maximumBytes
+        self.mediaExpiresAt = mediaExpiresAt
     }
 
     var fileExtension: String {
@@ -46,6 +53,7 @@ final class ChatOriginalFileLease: @unchecked Sendable {
     let fileURL: URL
     private let lock = NSLock()
     private var releaseAction: (@Sendable () async -> Void)?
+    private var hasSubmittedPhotoLibraryChange = false
     private let valid: @Sendable () -> Bool
 
     init(fileURL: URL, isValid: @escaping @Sendable () -> Bool,
@@ -57,7 +65,16 @@ final class ChatOriginalFileLease: @unchecked Sendable {
 
     var isValid: Bool {
         lock.lock(); defer { lock.unlock() }
-        return releaseAction != nil && valid()
+        return releaseAction != nil && (hasSubmittedPhotoLibraryChange || valid())
+    }
+
+    /// Photos에 제출되기 전 마지막 유효성 검사와 제출 보호를 한 임계 구역에서 수행한다.
+    /// 제출 이후에는 만료·화면 종료가 Photos 완료 콜백이나 파일 lease를 무효화하지 않는다.
+    func beginPhotoLibrarySubmission() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard releaseAction != nil, !hasSubmittedPhotoLibraryChange, valid() else { return false }
+        hasSubmittedPhotoLibraryChange = true
+        return true
     }
 
     private func takeRelease() -> (@Sendable () async -> Void)? {
@@ -74,6 +91,7 @@ protocol ChatOriginalFileLoading: AnyObject {
     func acquireOriginal(_ resource: ChatOriginalResource, purpose: ChatOriginalPurpose) async throws -> ChatOriginalFileLease
     func cachedOriginal(_ resource: ChatOriginalResource) async throws -> ChatOriginalFileLease?
     func removeOriginal(path: String) async
+    func removeExpiredOriginals(at now: Date) async -> Bool
     func invalidateSession()
 }
 
@@ -103,6 +121,10 @@ final class ChatOriginalFileService: ChatOriginalFileLoading, @unchecked Sendabl
     }
 
     func removeOriginal(path: String) async { await store.remove(path: path, accountID: accountID) }
+
+    func removeExpiredOriginals(at now: Date) async -> Bool {
+        await store.removeExpired(at: now)
+    }
 
     func invalidateSession() {
         session.validity.invalidate()

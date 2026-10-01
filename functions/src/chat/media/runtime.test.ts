@@ -15,12 +15,20 @@ test("Development와 Production media identity를 환경별로 분리한다", ()
     "outpick-chat-media-cleanup-dev@outpick-test.iam.gserviceaccount.com"
   );
   assert.equal(
+    chatMediaServiceAccountEmailForProject("outpick-test", "videoPlayback"),
+    "outpick-chat-media-video-dev@outpick-test.iam.gserviceaccount.com"
+  );
+  assert.equal(
     chatMediaServiceAccountEmailForProject("outpick-664ae", "orchestrator"),
     "outpick-chat-media-orch@outpick-664ae.iam.gserviceaccount.com"
   );
   assert.equal(
     chatMediaServiceAccountEmailForProject("outpick-664ae", "cleanup"),
     "outpick-chat-media-cleanup@outpick-664ae.iam.gserviceaccount.com"
+  );
+  assert.equal(
+    chatMediaServiceAccountEmailForProject("outpick-664ae", "videoPlayback"),
+    "outpick-chat-media-video-prod@outpick-664ae.iam.gserviceaccount.com"
   );
 });
 

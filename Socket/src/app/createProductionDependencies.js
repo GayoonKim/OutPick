@@ -238,6 +238,12 @@ export function createProductionDependencies({
       generateMessageID,
       clock,
       allocateSeqAndPersist,
+      loadMessage: async (roomID, messageID) => {
+        if (!roomID || !messageID || messageID.includes("/")) return null;
+        const snapshot = await db.collection("Rooms").doc(roomID)
+          .collection("Messages").doc(messageID).get();
+        return snapshot.exists ? snapshot.data() : null;
+      },
       messageDeliverySingleFlight,
       fanoutChatPush,
       handleLookbookShare,

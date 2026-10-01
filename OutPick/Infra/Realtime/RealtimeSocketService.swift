@@ -1166,7 +1166,7 @@ actor RealtimeSocketService {
     ) async throws -> ChatMediaProcessingSnapshot {
         let payload = try await emitPayloadAck(
             event: "chat:mediaProcessingStatus",
-            ["roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
+            ["contractVersion": 3, "roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
             timeout: ackTimeout,
             failureMessage: "미디어 처리 상태 확인에 실패했습니다."
         )
@@ -1181,7 +1181,7 @@ actor RealtimeSocketService {
     ) async throws -> ChatMediaProcessingSnapshot {
         let payload = try await emitPayloadAck(
             event: "chat:mediaCancel",
-            ["roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
+            ["contractVersion": 3, "roomID": roomID, "uploadID": uploadID, "clientMutationID": clientMutationID],
             timeout: ackTimeout,
             failureMessage: "미디어 업로드 취소에 실패했습니다."
         )

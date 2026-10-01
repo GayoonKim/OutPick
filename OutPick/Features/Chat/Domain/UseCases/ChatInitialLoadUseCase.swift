@@ -88,6 +88,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
     private let currentUserUIDProvider: @Sendable () -> String
     private let serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling?
     private let deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol?
+    private let roomReadStateStore: ChatRoomReadStateStore?
 
     init(
         messageManager: ChatMessageManaging,
@@ -97,7 +98,8 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         policyResolver: ChatInitialLoadPolicyResolving = DefaultChatInitialLoadPolicyResolver(),
         deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil,
         serverConfirmedMessageReconciler: ChatServerConfirmedMessageReconciling? = nil,
-        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
+        currentUserUIDProvider: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
+        roomReadStateStore: ChatRoomReadStateStore? = nil
     ) {
         self.messageManager = messageManager
         self.userProfileRepository = userProfileRepository
@@ -107,6 +109,7 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
         self.serverConfirmedMessageReconciler = serverConfirmedMessageReconciler
         self.deletionSyncUseCase = deletionSyncUseCase
         self.currentUserUIDProvider = currentUserUIDProvider
+        self.roomReadStateStore = roomReadStateStore
     }
 
     func execute(
@@ -156,8 +159,20 @@ final class DefaultChatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol {
                         return
                     }
 
-                    let latestSeq = max(Int64(room.seq), try await resolvedLatestSeq(roomID: roomID))
-                    let lastReadSeq = try await resolvedLastReadSeq(roomID: roomID)
+                    // 오프라인에서는 방에 보관된 번호로 로컬 창을 연다.
+                    let latestSeq: Int64
+                    if networkStatusProvider.currentStatus.isOnline {
+                        latestSeq = max(Int64(room.seq), try await resolvedLatestSeq(roomID: roomID))
+                    } else {
+                        latestSeq = Int64(room.seq)
+                    }
+                    let lastReadSeq: Int64
+                    if networkStatusProvider.currentStatus.isOnline {
+                        lastReadSeq = try await resolvedLastReadSeq(roomID: roomID)
+                    } else {
+                        // 읽음 상태도 서버에 묻지 않는다. 로컬 경계가 없으면 최근 창을 연다.
+                        lastReadSeq = await MainActor.run { roomReadStateStore?.snapshot(for: roomID)?.lastReadSeq ?? latestSeq }
+                    }
                     let mode = makeOpenMode(lastReadSeq: lastReadSeq, latestSeq: latestSeq)
                     print(
                         "[ChatReadPersistence][initial-open] "

@@ -616,6 +616,11 @@ class ChatMessageCell: UICollectionViewCell {
             replyPreviewNameLabel.text = replyMessage.sender
             if replyMessage.isDeleted {
                 replyPreviewMsgLabel.text = "삭제된 메시지입니다"
+            } else if replyMessage.attachmentsCount > 0,
+                      replyMessage.mediaExpiresAt.map({ $0 <= Date() }) ?? true {
+                replyPreviewMsgLabel.text = replyMessage.videosCount > 0 && replyMessage.imagesCount == 0
+                    ? "보관 기간이 만료된 동영상입니다"
+                    : "보관 기간이 만료된 사진입니다"
             } else {
                 replyPreviewMsgLabel.text = replyMessage.text
             }
@@ -646,7 +651,7 @@ class ChatMessageCell: UICollectionViewCell {
     
     func configureWithImage(
         with message: ChatMessage,
-        cachedImage: @escaping (String) -> UIImage? = { _ in nil },
+        cachedImage: @escaping (ChatMediaCacheResource) -> UIImage? = { _ in nil },
         avatarLoader: ((String) async throws -> UIImage?)? = nil
     ) {
         representedMessageID = message.ID
@@ -860,7 +865,8 @@ class ChatMessageCell: UICollectionViewCell {
               let id = representedMessageID,
               let path = representedLookbookSharedContent?.thumbnailPathSnapshot else { return [] }
         return [ChatMediaViewportItem(id: id + "#share", path: path,
-                                     frame: lookbookShareContentView.thumbnailFrame(in: view))]
+                                     frame: lookbookShareContentView.thumbnailFrame(in: view),
+                                     cacheResource: .sharedContent(path: path))]
     }
 
     func renderMedia(id: String, path: String, state: ChatMediaViewportController.Presentation) {
@@ -1114,7 +1120,8 @@ class ChatMessageCell: UICollectionViewCell {
                     id: ChatImagePreviewItem.stableID(messageID: message.ID, attachment: attachment),
                     displayIndex: offset,
                     attachment: attachment,
-                    durationText: durationText
+                    durationText: durationText,
+                    mediaExpiresAt: message.mediaExpiresAt
                 )
             }
     }

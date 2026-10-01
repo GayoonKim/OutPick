@@ -1,9 +1,9 @@
 /* eslint-disable require-jsdoc, max-len */
 import assert from "node:assert/strict";
 import test from "node:test";
-import {Timestamp, type Firestore} from "firebase-admin/firestore";
+import {type Firestore} from "firebase-admin/firestore";
 import {publishCompletedMediaUpload} from "./readyService.js";
-import {claimMediaUploadForExecution, completeSynchronousImageExecution} from "./orchestrationService.js";
+import {completeSynchronousImageExecution} from "./orchestrationService.js";
 
 function memoryFirestore(initial: Record<string, Record<string, unknown>>) {
   const values = new Map(Object.entries(initial));
@@ -16,6 +16,10 @@ function memoryFirestore(initial: Record<string, Record<string, unknown>>) {
   const collection = (path: string): Record<string, unknown> => ({
     doc: (id: string) => reference(`${path}/${id}`),
   });
+  const snapshot = (ref: {path: string}) => {
+    const data = values.get(ref.path);
+    return {exists: data !== undefined, data: () => data, ref};
+  };
   const firestore = {
     collection,
     runTransaction: async (operation: (transaction: Record<string, unknown>) => unknown) => {
@@ -35,218 +39,137 @@ function memoryFirestore(initial: Record<string, Record<string, unknown>>) {
       return operation(transaction);
     },
   } as unknown as Firestore;
-  const snapshot = (ref: {path: string}) => {
-    const data = values.get(ref.path);
-    return {exists: data !== undefined, data: () => data, ref};
-  };
   return {firestore, values, reference};
 }
 
 function fixture(overrides: Record<string, Record<string, unknown>> = {}) {
   const uploadPath = "Rooms/room/MediaUploads/message";
   const attachmentID = "attachment";
-  const initial = {
+  const manifest = [{
+    attachmentID,
+    displayBucket: "ready",
+    displayPath: `rooms/room/messages/message/attachments/${attachmentID}/display`,
+    displayGeneration: "1",
+    displayBytes: 123,
+    displayContentType: "image/jpeg",
+    thumbnailBucket: "ready",
+    thumbnailPath: `rooms/room/messages/message/attachments/${attachmentID}/thumbnail`,
+    thumbnailGeneration: "2",
+    thumbnailBytes: 45,
+    thumbnailContentType: "image/jpeg",
+  }];
+  const memory = memoryFirestore({
     [uploadPath]: {
       contractVersion: 2,
       roomID: "room",
       uploadID: "message",
       messageID: "message",
-      senderUID: "sender",
-      moderationPrincipalID: "principal",
       kind: "images",
-      attachmentCount: 1,
-      attachmentIDs: [attachmentID],
-      quarantineBucket: "quarantine",
-      quarantinePaths: ["room/sender/message/attachment/source"],
       processingStatus: "processing",
       leaseToken: "lease",
       processingSlotID: "image-0",
       principalSlotID: "principal_images_0",
-      normalizedManifest: [{
-        attachmentID,
-        displayBucket: "ready",
-        displayPath: `rooms/room/messages/message/attachments/${attachmentID}/display`,
-        displayGeneration: "1",
-        displayBytes: 123,
-        displayContentType: "image/jpeg",
-        thumbnailBucket: "ready",
-        thumbnailPath: `rooms/room/messages/message/attachments/${attachmentID}/thumbnail`,
-        thumbnailGeneration: "2",
-        thumbnailBytes: 45,
-        thumbnailContentType: "image/jpeg",
-      }],
-      technicalValidationResult: [{
-        attachmentID,
-        actualFormat: "jpeg",
-        width: 1200,
-        height: 800,
-        frameCount: 1,
-        animated: false,
-      }],
+      quarantineBucket: "quarantine",
+      quarantinePaths: ["room/source"],
+      attachmentCount: 1,
+      normalizedManifest: manifest,
     },
-    "Rooms/room": {seq: 4, isClosed: false, lifecycleStatus: "active"},
-    "Rooms/room/members/sender": {userID: "sender"},
-    "userPublicProfiles/sender": {nickname: "아웃픽", avatarThumbPath: "profile/thumb"},
+    "Rooms/room": {seq: 4},
     "chatMediaProcessingSlots/image-0": {leaseToken: "lease"},
-    "chatMediaPrincipalUploadSlots/principal_images_0": {ownerUploadPath: uploadPath},
+    "chatMediaPrincipalUploadSlots/principal_images_0": {
+      ownerUploadPath: uploadPath,
+    },
     ...overrides,
-  };
-  const memory = memoryFirestore(initial);
-  return {memory, uploadPath};
+  });
+  return {memory, uploadPath, manifest};
 }
 
-test("worker 완료는 message/seq/index/preview/delivery/ready와 slot 반환을 한 transaction에 반영한다", async () => {
-  const {memory, uploadPath} = fixture();
+test("v2 worker 결과는 메시지로 확정하지 않고 실패·객체 정리 상태로 돌린다", async () => {
+  const {memory, uploadPath, manifest} = fixture();
   const result = await publishCompletedMediaUpload({
     firestore: memory.firestore,
     uploadRef: memory.reference(uploadPath) as never,
     nowMillis: 10_000,
   });
 
-  assert.equal(result.published, true);
-  assert.equal(result.seq, 5);
-  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
-  assert.equal(memory.values.get("Rooms/room/Messages/message")?.seq, 5);
-  const message = memory.values.get("Rooms/room/Messages/message");
-  assert.equal(message?.unreadMessageSeq, 5);
-  assert.equal(memory.values.get("Rooms/room")?.unreadMessageSeq, 5);
-  const attachment = (message?.attachments as Array<Record<string, unknown>>)[0];
-  assert.equal(attachment.bucketOriginal, "ready");
-  assert.equal(attachment.bucketThumb, "ready");
-  assert.equal(attachment.generationOriginal, "1");
-  assert.equal(attachment.contentTypeOriginal, "image/jpeg");
-  assert.equal(attachment.mediaFormat, "jpeg");
-  assert.equal(attachment.animated, false);
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.seq, 5);
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.bucketOriginal, "ready");
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.generationOriginal, "1");
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.contentTypeOriginal, "image/jpeg");
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.mediaFormat, "jpeg");
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.animated, false);
-  assert.equal(memory.values.get("chatMediaDeliveryJobs/room_message")?.status, "pending");
-  assert.equal(memory.values.get(uploadPath)?.processingStatus, "ready");
+  assert.equal(result.published, false);
+  assert.equal(result.reason, "legacy_media_contract_disabled");
+  assert.deepEqual(result.readyObjects, [
+    {bucket: "ready", path: manifest[0].displayPath},
+    {bucket: "ready", path: manifest[0].thumbnailPath},
+  ]);
+  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
+  assert.equal(memory.values.get("Rooms/room")?.seq, 4);
+  assert.equal(memory.values.get("chatMediaDeliveryJobs/room_message"), undefined);
+  assert.equal(memory.values.get(uploadPath)?.processingStatus, "failed");
+  assert.equal(memory.values.get(uploadPath)?.failureCode, "legacy_media_contract_disabled");
   assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, null);
   assert.equal(memory.values.get("chatMediaPrincipalUploadSlots/principal_images_0")?.ownerUploadPath, null);
-  assert.ok(memory.values.get(uploadPath)?.expiresAt instanceof Timestamp);
+});
 
-  const duplicate = await publishCompletedMediaUpload({
+test("legacy image completion은 slot을 반환하지만 message/seq를 만들지 않는다", async () => {
+  const {memory, uploadPath} = fixture();
+  await completeSynchronousImageExecution({
     firestore: memory.firestore,
     uploadRef: memory.reference(uploadPath) as never,
-    nowMillis: 11_000,
+    leaseToken: "lease",
+    slotID: "image-0",
+    nowMillis: 10_000,
   });
-  assert.equal(duplicate.duplicate, true);
-  assert.equal(duplicate.seq, 5);
-  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
-});
 
-test("동기 이미지 완료 반환 직후 다음 묶음은 대기 없이 같은 slot을 획득한다", async () => {
-  const {memory, uploadPath} = fixture();
-  await completeSynchronousImageExecution({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000});
-  const nextPath = "Rooms/room/MediaUploads/next";
-  memory.values.set(nextPath, {contractVersion: 2, kind: "images", processingStatus: "queued",
-    processingAttempt: 0, processingDeadlineAt: Timestamp.fromMillis(100_000)});
-  const next = await claimMediaUploadForExecution({firestore: memory.firestore,
-    uploadRef: memory.reference(nextPath) as never, projectID: "outpick-test", nowMillis: 10_000, leaseToken: "next"});
-  assert.equal(next.claimed, true);
-  const replay = await publishCompletedMediaUpload({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_001});
-  assert.equal(replay.duplicate, true);
-  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
-  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "next");
-});
-
-test("Firestore 완료 이벤트가 먼저 성공해도 dispatcher 완료는 중복 메시지를 만들지 않는다", async () => {
-  const {memory, uploadPath} = fixture();
-  await publishCompletedMediaUpload({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_000});
-  await completeSynchronousImageExecution({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_001});
-  assert.equal(memory.values.get("Rooms/room")?.seq, 5);
+  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
+  assert.equal(memory.values.get("Rooms/room")?.seq, 4);
+  assert.equal(memory.values.get(uploadPath)?.processingStatus, "failed");
   assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, null);
 });
 
-test("현재 실행의 manifest가 없으면 slot을 유지한 채 정상 완료하지 않는다", async () => {
+test("오래된 lease 결과는 현재 reservation을 실패 처리하거나 slot을 반환하지 않는다", async () => {
   const {memory, uploadPath} = fixture();
-  memory.values.set(uploadPath, {...memory.values.get(uploadPath), normalizedManifest: []});
-  await assert.rejects(completeSynchronousImageExecution({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000}),
-  /image_completion_slot_not_released/);
-  assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "lease");
-  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
-});
+  const result = await publishCompletedMediaUpload({
+    firestore: memory.firestore,
+    uploadRef: memory.reference(uploadPath) as never,
+    nowMillis: 10_000,
+    expectedLeaseToken: "old",
+  });
 
-test("오래된 dispatcher는 새 lease의 manifest를 확정하거나 slot을 반환하지 않는다", async () => {
-  const {memory, uploadPath} = fixture();
-  const result = await publishCompletedMediaUpload({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, nowMillis: 10_000, expectedLeaseToken: "old"});
   assert.equal(result.reason, "stale_execution");
   assert.equal(memory.values.get(uploadPath)?.processingStatus, "processing");
   assert.equal(memory.values.get("chatMediaProcessingSlots/image-0")?.leaseToken, "lease");
   assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
 });
 
-test("취소가 먼저 확정되면 동기 완료가 메시지나 slot을 부활시키지 않는다", async () => {
-  const {memory, uploadPath} = fixture();
-  memory.values.set(uploadPath, {...memory.values.get(uploadPath), processingStatus: "canceled", leaseToken: null, processingSlotID: null});
-  memory.values.set("chatMediaProcessingSlots/image-0", {leaseToken: null});
-  await completeSynchronousImageExecution({firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never, leaseToken: "lease", slotID: "image-0", nowMillis: 10_000});
-  assert.equal(memory.values.get(uploadPath)?.processingStatus, "canceled");
-  assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
-});
-
-test("animated GIF의 검증된 format과 animation metadata를 message와 media index에 보존한다", async () => {
-  const seed = fixture();
-  const baseUpload = seed.memory.values.get(seed.uploadPath) ?? {};
-  const attachmentID = "attachment";
+test("이미 terminal인 v2 결과도 성공 ACK나 메시지 duplicate로 노출되지 않는다", async () => {
   const {memory, uploadPath} = fixture({
-    [seed.uploadPath]: {
-      ...baseUpload,
-      normalizedManifest: [{
-        attachmentID,
-        displayBucket: "ready",
-        displayPath: `rooms/room/messages/message/attachments/${attachmentID}/display`,
-        displayGeneration: "3",
-        displayBytes: 3959,
-        displayContentType: "image/gif",
-        thumbnailBucket: "ready",
-        thumbnailPath: `rooms/room/messages/message/attachments/${attachmentID}/thumbnail`,
-        thumbnailGeneration: "4",
-        thumbnailBytes: 1093,
-        thumbnailContentType: "image/jpeg",
-      }],
-      technicalValidationResult: [{
-        attachmentID,
-        actualFormat: "gif",
-        width: 800,
-        height: 800,
-        frameCount: 50,
-        animated: true,
-      }],
+    ["Rooms/room/MediaUploads/message"]: {
+      contractVersion: 2,
+      roomID: "room",
+      messageID: "message",
+      kind: "images",
+      processingStatus: "ready",
+      seq: 5,
+      normalizedManifest: [],
     },
+    ["Rooms/room/Messages/message"]: {ID: "message", seq: 5},
   });
-
   const result = await publishCompletedMediaUpload({
     firestore: memory.firestore,
     uploadRef: memory.reference(uploadPath) as never,
     nowMillis: 10_000,
   });
 
-  assert.equal(result.published, true);
-  const message = memory.values.get("Rooms/room/Messages/message");
-  const attachment = (message?.attachments as Array<Record<string, unknown>>)[0];
-  assert.equal(attachment.mediaFormat, "gif");
-  assert.equal(attachment.animated, true);
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.mediaFormat, "gif");
-  assert.equal(memory.values.get("Rooms/room/mediaIndex/message_0")?.animated, true);
+  assert.equal(result.published, false);
+  assert.equal(result.duplicate, false);
+  assert.equal(result.reason, "legacy_media_contract_disabled");
 });
 
-test("cancel이 먼저 terminal을 확정하면 message와 seq를 만들지 않고 orphan cleanup 대상으로 반환한다", async () => {
+test("contract 3 직접 업로드 원장은 legacy worker publisher에서 처리하지 않는다", async () => {
   const {memory, uploadPath} = fixture({
-    "Rooms/room/MediaUploads/message": {
-      ...fixture().memory.values.get("Rooms/room/MediaUploads/message"),
-      processingStatus: "canceled",
+    ["Rooms/room/MediaUploads/message"]: {
+      contractVersion: 3,
+      roomID: "room",
+      messageID: "message",
+      kind: "images",
+      processingStatus: "processing",
     },
   });
   const result = await publishCompletedMediaUpload({
@@ -256,23 +179,6 @@ test("cancel이 먼저 terminal을 확정하면 message와 seq를 만들지 않�
   });
 
   assert.equal(result.published, false);
-  assert.equal(result.reason, "stale_or_invalid_completion");
-  assert.equal(result.readyObjects.length, 2);
+  assert.equal(result.reason, "invalid_contract");
   assert.equal(memory.values.has("Rooms/room/Messages/message"), false);
-  assert.equal(memory.values.get("Rooms/room")?.seq, 4);
-});
-
-test("message ID 충돌은 fail closed하고 ready 객체 정리를 예약한다", async () => {
-  const {memory, uploadPath} = fixture({
-    "Rooms/room/Messages/message": {ID: "message", seq: 4, senderUID: "other"},
-  });
-  const result = await publishCompletedMediaUpload({
-    firestore: memory.firestore,
-    uploadRef: memory.reference(uploadPath) as never,
-    nowMillis: 10_000,
-  });
-
-  assert.equal(result.reason, "message_id_conflict");
-  assert.equal(memory.values.get(uploadPath)?.processingStatus, "failed");
-  assert.equal(memory.values.get("Rooms/room")?.seq, 4);
 });

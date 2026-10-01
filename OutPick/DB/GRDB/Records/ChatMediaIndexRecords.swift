@@ -12,6 +12,8 @@ struct ImageIndexRecord: Codable, FetchableRecord, PersistableRecord {
     let originalKey: String?
     let thumbURL: String?
     let originalURL: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let width: Int?
     let height: Int?
     let bytesOriginal: Int?
@@ -19,6 +21,8 @@ struct ImageIndexRecord: Codable, FetchableRecord, PersistableRecord {
     let isFailed: Bool
     let localThumb: String?
     let sentAt: Date
+    let mediaExpiresAt: Date?
+    var attachmentID: String? = nil
 }
 
 struct VideoIndexRecord: Codable, FetchableRecord, PersistableRecord {
@@ -32,6 +36,8 @@ struct VideoIndexRecord: Codable, FetchableRecord, PersistableRecord {
     let originalKey: String?
     let thumbURL: String?
     let originalURL: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let width: Int?
     let height: Int?
     let bytesOriginal: Int?
@@ -42,4 +48,6 @@ struct VideoIndexRecord: Codable, FetchableRecord, PersistableRecord {
     let isFailed: Bool
     let localThumb: String?
     let sentAt: Date
+    let mediaExpiresAt: Date?
+    var attachmentID: String? = nil
 }

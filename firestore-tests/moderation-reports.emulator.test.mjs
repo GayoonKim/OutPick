@@ -17,6 +17,13 @@ import {
   messageIncidentID,
 } from "../functions/lib/moderation/messageEvidence/contracts.js";
 import {
+  chatMediaExpiryJobID,
+} from "../functions/lib/chat/media/retentionContracts.js";
+import {
+  drainDueChatMediaExpiryJobs,
+  processChatMediaExpiryJob,
+} from "../functions/lib/chat/media/retentionService.js";
+import {
   processMessageEvidenceCopyJob,
 } from "../functions/lib/moderation/messageEvidence/evidenceCopy.js";
 import {
@@ -63,6 +70,7 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("moderationConfirmedViolations")),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
     db.recursiveDelete(db.collection("chatMessageDeletionDeliveryJobs")),
+    db.recursiveDelete(db.collection("chatMediaExpiryJobs")),
     db.recursiveDelete(db.collection("moderationPrincipals").doc(targetPrincipalID)),
     db.recursiveDelete(db.collection("platformAdmins").doc(targetUID)),
     db.recursiveDelete(db.collection("Rooms").doc("moderation-room")),
@@ -110,6 +118,9 @@ async function seedMediaMessage(messageID = "media-1") {
         bucketOriginal: "ready-bucket",
         pathOriginal: `rooms/moderation-room/messages/${messageID}/attachments/attachment-1/display`,
         generationOriginal: "1",
+        bucketThumb: "ready-bucket",
+        pathThumb: `rooms/moderation-room/messages/${messageID}/attachments/attachment-1/thumbnail`,
+        generationThumb: "2",
         bytesOriginal: 1024,
         contentTypeOriginal: "image/jpeg",
       }],
@@ -118,6 +129,41 @@ async function seedMediaMessage(messageID = "media-1") {
       seq: 2,
     }),
   ]);
+  await attachMediaExpiryJob(messageID);
+}
+
+async function attachMediaExpiryJob(messageID) {
+  const sentAt = Timestamp.fromDate(now);
+  const mediaExpiresAt = Timestamp.fromMillis(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const messageRef = db.collection("Rooms").doc("moderation-room").collection("Messages").doc(messageID);
+  const message = (await messageRef.get()).data();
+  await messageRef.update({
+    mediaContractVersion: 3,
+    sentAt: now.toISOString(),
+    mediaExpiresAt,
+  });
+  const objects = (message?.attachments ?? []).flatMap((attachment) => [
+    {bucket: attachment.bucketOriginal, path: attachment.pathOriginal,
+      generation: attachment.generationOriginal, role: "original"},
+    ...(attachment.pathThumb ? [{bucket: attachment.bucketThumb, path: attachment.pathThumb,
+      generation: attachment.generationThumb, role: "thumbnail"}] : []),
+  ]);
+  await db.collection("chatMediaExpiryJobs").doc(chatMediaExpiryJobID("moderation-room", messageID)).set({
+    schemaVersion: 1,
+    roomID: "moderation-room",
+    messageID,
+    sentAt,
+    mediaExpiresAt,
+    objects,
+    status: "scheduled",
+    attemptsInRun: 0,
+    nextAttemptAt: mediaExpiresAt,
+    leaseToken: null,
+    leaseExpiresAt: null,
+    lastErrorCode: null,
+    createdAt: sentAt,
+    updatedAt: sentAt,
+  });
 }
 
 async function seedTextMessage(messageID = "text-1") {
@@ -481,6 +527,7 @@ describe("moderation report transactions", () => {
         seq: 2,
       }),
     ]);
+    await attachMediaExpiryJob("media-1");
     const input = {
       roomID: "moderation-room",
       messageID: "media-1",
@@ -569,6 +616,206 @@ describe("moderation report transactions", () => {
       now,
     }), false);
     assert.equal(fake.calls.copy, 1);
+  });
+
+  test("만료 정리는 증거 복사 완료까지 보류하고 복사 후 원본·썸네일 generation을 삭제한다", async () => {
+    await seedMediaMessage();
+    const input = {
+      roomID: "moderation-room",
+      messageID: "media-1",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(513),
+    };
+    assert.equal((await submitMessageReportService(reporterUID, input, now)).status, "processing");
+    const expiryRef = db.collection("chatMediaExpiryJobs")
+      .doc(chatMediaExpiryJobID("moderation-room", "media-1"));
+    const expiryJob = await expiryRef.get();
+    assert.equal(expiryJob.get("status"), "awaitingEvidence");
+    const expiresAt = expiryJob.get("mediaExpiresAt").toDate();
+    const deletedObjects = [];
+    const retentionStorage = {
+      deleteExactGeneration: async (object) => { deletedObjects.push(object); },
+    };
+    assert.equal(await processChatMediaExpiryJob({
+      jobID: expiryRef.id,
+      firestore: db,
+      storage: retentionStorage,
+      readyBucket: "ready-bucket",
+      now: new Date(expiresAt.getTime() + 1),
+    }), "skipped");
+    assert.equal(deletedObjects.length, 0);
+
+    const copyJob = (await db.collection("moderationEvidenceCopyJobs").get()).docs[0];
+    const evidenceStorage = fakeEvidenceStorage();
+    assert.equal(await processMessageEvidenceCopyJob({
+      jobID: copyJob.id,
+      firestore: db,
+      storage: evidenceStorage.storage,
+      readyBucket: "ready-bucket",
+      evidenceBucket: "evidence-bucket",
+      now: new Date(expiresAt.getTime() + 2),
+    }), true);
+    const released = await expiryRef.get();
+    assert.equal(released.get("status"), "scheduled");
+    assert.equal(released.get("nextAttemptAt").toMillis(), expiresAt.getTime() + 2);
+
+    assert.equal(await processChatMediaExpiryJob({
+      jobID: expiryRef.id,
+      firestore: db,
+      storage: retentionStorage,
+      readyBucket: "ready-bucket",
+      now: new Date(expiresAt.getTime() + 3),
+    }), "deleted");
+    assert.deepEqual(deletedObjects.map((object) => object.generation), ["1", "2"]);
+    assert.equal((await expiryRef.get()).exists, false);
+  });
+
+  test("만료된 미디어는 새 증거 준비를 거부하지만 기존 신고 receipt 재조회는 유지한다", async () => {
+    await seedMediaMessage("expired-media");
+    const roomRef = db.collection("Rooms").doc("moderation-room");
+    await Promise.all([
+      db.collection("users").doc(reporterBUID).set({accountStatus: "active"}),
+      db.collection("moderationAccounts").doc(reporterBUID).set({
+        accountStatus: "active",
+        moderationPrincipalID: "principal-reporter-b",
+        moderationStatus: "active",
+        stateVersion: 1,
+      }),
+      roomRef.collection("members").doc(reporterBUID).set({joinedAt: Timestamp.fromDate(now)}),
+    ]);
+    const originalInput = {
+      roomID: "moderation-room",
+      messageID: "expired-media",
+      reason: "privacy",
+      detail: null,
+      clientRequestID: requestID(514),
+    };
+    const original = await submitMessageReportService(reporterUID, originalInput, now);
+    assert.equal(original.status, "processing");
+    const expiry = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+    const replay = await submitMessageReportService(reporterUID, originalInput, expiry);
+    assert.equal(replay.status, "processing");
+    assert.equal(replay.deduplicated, true);
+    await assert.rejects(
+      submitMessageReportService(reporterBUID, {
+        ...originalInput,
+        clientRequestID: requestID(515),
+      }, expiry),
+      (error) => error?.code === "failed-precondition" &&
+        error?.details?.errorCode === "MEDIA_EXPIRED",
+    );
+    assert.equal((await db.collection("moderationMessageReportPreparations").get()).size, 1);
+    assert.equal((await db.collection("moderationMessageReportRequests").get()).size, 1);
+  });
+
+  test("부분 삭제는 성공한 파일을 빼고 남은 generation만 다음 시간에 재시도한다", async () => {
+    await seedMediaMessage();
+    const expiryRef = db.collection("chatMediaExpiryJobs")
+      .doc(chatMediaExpiryJobID("moderation-room", "media-1"));
+    const expiresAt = (await expiryRef.get()).get("mediaExpiresAt").toDate();
+    const firstRunAt = new Date(expiresAt.getTime() + 30 * 60 * 1000);
+    const calls = {original: 0, thumbnail: 0};
+    const storage = {
+      deleteExactGeneration: async (object) => {
+        calls[object.role] += 1;
+        if (object.role === "thumbnail") {
+          throw Object.assign(new Error("generation changed"), {code: 412});
+        }
+      },
+    };
+    assert.equal(await processChatMediaExpiryJob({
+      jobID: expiryRef.id,
+      firestore: db,
+      storage,
+      readyBucket: "ready-bucket",
+      now: firstRunAt,
+    }), "deferred");
+    assert.deepEqual(calls, {original: 1, thumbnail: 3});
+    const pending = await expiryRef.get();
+    assert.equal(pending.get("status"), "retryPending");
+    assert.equal(pending.get("attemptsInRun"), 3);
+    assert.equal(pending.get("lastErrorCode"), "storage_generation_mismatch");
+    assert.deepEqual(pending.get("objects").map((object) => object.role), ["thumbnail"]);
+
+    const retryAt = pending.get("nextAttemptAt").toDate();
+    assert.equal(await processChatMediaExpiryJob({
+      jobID: expiryRef.id,
+      firestore: db,
+      storage: {deleteExactGeneration: async (object) => { calls[object.role] += 1; }},
+      readyBucket: "ready-bucket",
+      now: retryAt,
+    }), "deleted");
+    assert.deepEqual(calls, {original: 1, thumbnail: 4});
+    assert.equal((await expiryRef.get()).exists, false);
+  });
+
+  test("만료된 lease는 다음 정기 회차에서 다시 claim하고 삭제를 수렴한다", async () => {
+    await seedMediaMessage();
+    const expiryRef = db.collection("chatMediaExpiryJobs")
+      .doc(chatMediaExpiryJobID("moderation-room", "media-1"));
+    const expiresAt = (await expiryRef.get()).get("mediaExpiresAt").toDate();
+    const runAt = new Date(expiresAt.getTime() + 60_000);
+    await expiryRef.update({
+      status: "processing",
+      leaseToken: "stale-lease",
+      leaseExpiresAt: Timestamp.fromDate(new Date(runAt.getTime() - 1)),
+      nextAttemptAt: Timestamp.fromDate(new Date(runAt.getTime() - 1)),
+    });
+    let deleteCount = 0;
+    assert.equal(await processChatMediaExpiryJob({
+      jobID: expiryRef.id,
+      firestore: db,
+      storage: {deleteExactGeneration: async () => { deleteCount += 1; }},
+      readyBucket: "ready-bucket",
+      now: runAt,
+    }), "deleted");
+    assert.equal(deleteCount, 2);
+    assert.equal((await expiryRef.get()).exists, false);
+  });
+
+  test("정리 회차는 200건에서 멈추고 cursor pagination으로 다음 작업을 방문한다", async () => {
+    const dueAt = Timestamp.fromDate(now);
+    const sentAt = Timestamp.fromMillis(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const jobs = db.collection("chatMediaExpiryJobs");
+    const batch = db.batch();
+    for (let index = 0; index < 201; index += 1) {
+      const messageID = `page-${String(index).padStart(3, "0")}`;
+      const reference = jobs.doc(chatMediaExpiryJobID("moderation-room", messageID));
+      batch.set(reference, {
+        schemaVersion: 1,
+        roomID: "moderation-room",
+        messageID,
+        sentAt,
+        mediaExpiresAt: dueAt,
+        objects: [{
+          bucket: "ready-bucket",
+          path: `rooms/moderation-room/messages/${messageID}/attachments/a/display`,
+          generation: "1",
+          role: "original",
+        }],
+        status: "scheduled",
+        attemptsInRun: 0,
+        nextAttemptAt: dueAt,
+      });
+    }
+    await batch.commit();
+    const processed = [];
+    const result = await drainDueChatMediaExpiryJobs({
+      firestore: db,
+      storage: {deleteExactGeneration: async () => undefined},
+      readyBucket: "ready-bucket",
+      clock: () => new Date(now),
+      startDeadlineMillis: now.getTime() + 60_000,
+      processJob: async ({jobID}) => {
+        processed.push(jobID);
+        return "deleted";
+      },
+    });
+    assert.equal(result.candidateCount, 200);
+    assert.equal(processed.length, 200);
+    assert.equal(new Set(processed).size, 200);
+    assert.equal(result.resultCounts.deleted, 200);
   });
 
   test("evidence acceptance drain은 실행당 30건만 확정하고 다음 lease에서 이어간다", async () => {
@@ -890,6 +1137,7 @@ describe("moderation report transactions", () => {
         seq: 2,
       }),
     ]);
+    await attachMediaExpiryJob("media-1");
     const initialInput = {
       roomID: "moderation-room",
       messageID: "media-1",
@@ -966,6 +1214,7 @@ describe("moderation report transactions", () => {
         seq: 2,
       }),
     ]);
+    await attachMediaExpiryJob("media-1");
     const processing = await submitMessageReportService(reporterUID, {
       roomID: "moderation-room",
       messageID: "media-1",

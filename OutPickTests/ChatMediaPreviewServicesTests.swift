@@ -1,227 +1,169 @@
-//
-//  ChatMediaPreviewServicesTests.swift
-//  OutPickTests
-//
-//  Created by Codex on 6/19/26.
-//
-
 import Foundation
 import Testing
 @testable import OutPick
 
+@MainActor
 struct ChatMediaPreviewServicesTests {
-    @Test func scopedPlaybackStreamsWithoutStartingFullDownloadAndSaveUsesLease() async throws {
-        let remote = URL(string: "https://example.com/original.mp4")!
+    private func resource(expiry: Date) -> ChatVideoPlaybackResource {
+        ChatVideoPlaybackResource(roomID: "room", messageID: "message", attachmentID: "attachment",
+            path: "gs://ready/rooms/room/messages/message/attachments/attachment/display",
+            generation: "123", mediaExpiresAt: expiry)!
+    }
+
+    @Test func streamsWithoutFullDownloadAndSavingCarriesOriginalExpiry() async throws {
+        let current = Date()
+        let resource = resource(expiry: current.addingTimeInterval(600))
+        let repository = PlaybackRepositorySpy(now: { current })
         let files = VideoOriginalFilesSpy()
-        let legacy = ChatVideoDiskCacheSpy()
-        let downloader = ChatRemoteFileDownloaderSpy()
-        let resolver = DefaultChatVideoPlaybackResolver(
-            storageURLResolver: ChatStorageURLResolverSpy(resolvedURLs: ["rooms/a.mp4": remote]),
-            videoDiskCache: legacy, fileDownloader: downloader, originalFiles: files
-        )
-        let asset = try await resolver.playbackAsset(forPath: "rooms/a.mp4")
-        #expect(asset.url == remote)
-        #expect(files.acquiredPaths.isEmpty)
-        #expect(legacy.cacheCalls.isEmpty)
-        #expect(legacy.existsKeys.isEmpty)
-        #expect(downloader.downloadedURLs.isEmpty)
-        let saved = try await resolver.acquireFileForSaving(asset)
-        #expect(files.acquiredPaths == ["rooms/a.mp4"])
-        #expect(saved.fileURL == files.url)
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: files, now: { current })
+        let first = try await resolver.playbackAsset(for: resource)
+        let second = try await resolver.playbackAsset(for: resource)
+        #expect(repository.calls == 1)
+        #expect(first == second)
+        #expect(files.acquiredResources.isEmpty)
+        let saved = try await resolver.acquireFileForSaving(first)
+        #expect(files.acquiredResources == [resource.original])
         await saved.release()
     }
 
-    @Test func scopedPlaybackReusesPinnedOriginalWithoutURLResolution() async throws {
+    @Test func cachedOriginalStartsWithNoURLRequest() async throws {
+        let resource = resource(expiry: Date().addingTimeInterval(600))
+        let repository = PlaybackRepositorySpy()
         let files = VideoOriginalFilesSpy()
         files.hasCached = true
-        let urls = ChatStorageURLResolverSpy()
-        let resolver = DefaultChatVideoPlaybackResolver(
-            storageURLResolver: urls, videoDiskCache: ChatVideoDiskCacheSpy(),
-            fileDownloader: ChatRemoteFileDownloaderSpy(), originalFiles: files
-        )
-        let asset = try await resolver.playbackAsset(forPath: "rooms/a.mp4")
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: files)
+        let asset = try await resolver.playbackAsset(for: resource)
         #expect(asset.url == files.url)
-        #expect(asset.fileLease?.isValid == true)
-        #expect(urls.requestedPaths.isEmpty)
+        #expect(asset.resource == resource)
+        #expect(repository.calls == 0)
         await asset.fileLease?.release()
     }
 
-    @Test func playbackAssetUsesLocalFilePathWithoutStorageLookup() async throws {
-        let storageResolver = ChatStorageURLResolverSpy()
-        let videoCache = ChatVideoDiskCacheSpy()
-        let resolver = makeResolver(storageResolver: storageResolver, videoCache: videoCache)
-        let localURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mp4")
-
-        let asset = try await resolver.playbackAsset(forPath: localURL.path)
-
-        #expect(asset.url == localURL)
-        #expect(asset.storagePath == nil)
-        #expect(storageResolver.requestedPaths.isEmpty)
-        #expect(videoCache.existsKeys.isEmpty)
+    @Test func concurrentRequestsShareIssuance() async throws {
+        let resource = resource(expiry: Date().addingTimeInterval(600))
+        let repository = PlaybackRepositorySpy()
+        repository.delayed = true
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: VideoOriginalFilesSpy())
+        let first = Task { try await resolver.playbackAsset(for: resource) }
+        let second = Task { try await resolver.playbackAsset(for: resource) }
+        for _ in 0..<100 where repository.pending == nil { await Task.yield() }
+        #expect(repository.calls == 1)
+        repository.finish()
+        _ = try await first.value
+        _ = try await second.value
+        #expect(repository.calls == 1)
     }
 
-    @Test func playbackAssetUsesCachedVideoBeforeRemoteURL() async throws {
-        let storageResolver = ChatStorageURLResolverSpy()
-        let cachedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cached-\(UUID().uuidString)")
-            .appendingPathExtension("mp4")
-        let videoCache = ChatVideoDiskCacheSpy(existingURLs: ["rooms/1/video.mp4": cachedURL])
-        let resolver = makeResolver(storageResolver: storageResolver, videoCache: videoCache)
-
-        let asset = try await resolver.playbackAsset(forPath: "rooms/1/video.mp4")
-
-        #expect(asset.url == cachedURL)
-        #expect(asset.storagePath == "rooms/1/video.mp4")
-        #expect(videoCache.existsKeys == ["rooms/1/video.mp4"])
-        #expect(storageResolver.requestedPaths.isEmpty)
+    @Test func responseArrivingAfterMediaExpiryIsDiscarded() async throws {
+        var current = Date()
+        let resource = resource(expiry: current.addingTimeInterval(10))
+        let repository = PlaybackRepositorySpy(now: { current })
+        repository.delayed = true
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: VideoOriginalFilesSpy(), now: { current })
+        let task = Task { try await resolver.playbackAsset(for: resource) }
+        for _ in 0..<100 where repository.pending == nil { await Task.yield() }
+        current = resource.mediaExpiresAt
+        repository.finish()
+        do { _ = try await task.value; Issue.record("만료 뒤 URL을 반환함") }
+        catch { #expect(error as? ChatVideoPlaybackError == .expired) }
     }
 
-    @Test func playbackAssetResolvesRemoteStoragePathWhenCacheMisses() async throws {
-        let remoteURL = try #require(URL(string: "https://example.com/video.mp4"))
-        let storageResolver = ChatStorageURLResolverSpy(resolvedURLs: ["rooms/1/video.mp4": remoteURL])
-        let videoCache = ChatVideoDiskCacheSpy()
-        let resolver = makeResolver(storageResolver: storageResolver, videoCache: videoCache)
-
-        let asset = try await resolver.playbackAsset(forPath: "rooms/1/video.mp4")
-
-        #expect(asset.url == remoteURL)
-        #expect(asset.storagePath == "rooms/1/video.mp4")
-        #expect(storageResolver.requestedPaths == ["rooms/1/video.mp4"])
+    @Test func accountInvalidationDiscardsLateResponse() async throws {
+        let resource = resource(expiry: Date().addingTimeInterval(600))
+        let repository = PlaybackRepositorySpy()
+        repository.delayed = true
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: VideoOriginalFilesSpy())
+        let task = Task { try await resolver.playbackAsset(for: resource) }
+        for _ in 0..<100 where repository.pending == nil { await Task.yield() }
+        resolver.invalidateSession()
+        repository.finish()
+        do { _ = try await task.value; Issue.record("종료된 계정 세션에 URL을 반환함") }
+        catch { #expect(error is CancellationError) }
+        #expect(!resolver.isSessionValid)
     }
 
-    @Test func localFileURLForSavingUsesCachedStorageFile() async throws {
-        let cachedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cached-save-\(UUID().uuidString)")
-            .appendingPathExtension("mp4")
-        let videoCache = ChatVideoDiskCacheSpy(existingURLs: ["rooms/1/video.mp4": cachedURL])
-        let downloader = ChatRemoteFileDownloaderSpy()
-        let resolver = makeResolver(videoCache: videoCache, downloader: downloader)
-        var progressValues: [Double] = []
-
-        let fileURL = try await resolver.localFileURLForSaving(
-            localURL: nil,
-            storagePath: "rooms/1/video.mp4",
-            onProgress: { progressValues.append($0) }
-        )
-
-        #expect(fileURL == cachedURL)
-        #expect(progressValues == [1.0])
-        #expect(downloader.downloadedURLs.isEmpty)
+    @Test func renewalDoesNotExtendMediaExpiryAndDeletionBlocksCachedURL() async throws {
+        var current = Date()
+        let resource = resource(expiry: current.addingTimeInterval(600))
+        let repository = PlaybackRepositorySpy(now: { current })
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: VideoOriginalFilesSpy(), now: { current })
+        let first = try await resolver.playbackAsset(for: resource)
+        current = try #require(first.urlExpiresAt)
+        let renewed = try await resolver.playbackAsset(for: resource)
+        #expect(repository.calls == 2)
+        #expect(renewed.resource?.mediaExpiresAt == resource.mediaExpiresAt)
+        await resolver.removeCachedURL(for: resource.path)
+        do { _ = try await resolver.playbackAsset(for: resource); Issue.record("삭제 뒤 URL을 재사용함") }
+        catch { #expect(error as? ChatVideoPlaybackError == .unavailable) }
     }
 
-    @Test func localFileURLForSavingDownloadsRemoteURLWhenNoCacheExists() async throws {
-        let remoteURL = try #require(URL(string: "https://example.com/video.mp4"))
-        let downloadedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("downloaded-\(UUID().uuidString)")
-            .appendingPathExtension("mp4")
-        let storageResolver = ChatStorageURLResolverSpy(resolvedURLs: ["rooms/1/video.mp4": remoteURL])
-        let downloader = ChatRemoteFileDownloaderSpy(downloadedURL: downloadedURL)
-        let resolver = makeResolver(storageResolver: storageResolver, downloader: downloader)
-        var progressValues: [Double] = []
-
-        let fileURL = try await resolver.localFileURLForSaving(
-            localURL: nil,
-            storagePath: "rooms/1/video.mp4",
-            onProgress: { progressValues.append($0) }
-        )
-
-        #expect(fileURL == downloadedURL)
-        #expect(storageResolver.requestedPaths == ["rooms/1/video.mp4"])
-        #expect(downloader.downloadedURLs == [remoteURL])
-        #expect(progressValues == [1.0])
+    @Test func pathOnlyEntryAcceptsOnlyLocalOutboxFiles() async throws {
+        let repository = PlaybackRepositorySpy()
+        let resolver = DefaultChatVideoPlaybackResolver(repository: repository, originalFiles: VideoOriginalFilesSpy())
+        let local = try await resolver.playbackAsset(forPath: "/tmp/outbox.mp4")
+        #expect(local.url.isFileURL)
+        do { _ = try await resolver.playbackAsset(forPath: "gs://ready/video"); Issue.record("원격 path-only 재생 허용") }
+        catch { #expect(error as? ChatVideoPlaybackError == .unavailable) }
+        #expect(repository.calls == 0)
     }
 
-    @Test func localFileURLForSavingThrowsWhenSourceIsMissing() async throws {
-        let resolver = makeResolver()
-
-        do {
-            _ = try await resolver.localFileURLForSaving(localURL: nil, storagePath: nil, onProgress: { _ in })
-            Issue.record("Expected missingSaveSource error")
-        } catch let error as ChatMediaPreviewError {
-            #expect(error == .missingSaveSource)
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+    @Test func callableSendsOnlyIdentifiersAndRejectsExtendedExpiry() async throws {
+        let expiry = Date(timeIntervalSince1970: 2_000_000_000)
+        let resource = resource(expiry: expiry)
+        let transport = PlaybackTransportSpy()
+        transport.response = ["url": "https://example.com/video?signature=fixture",
+                              "urlExpiresAt": expiry.addingTimeInterval(-10).timeIntervalSince1970 * 1000,
+                              "mediaExpiresAt": expiry.timeIntervalSince1970 * 1000]
+        let repository = CloudFunctionsChatVideoPlaybackURLRepository(transport: transport)
+        _ = try await repository.issue(for: resource)
+        #expect(transport.name == "issueChatVideoPlaybackURL")
+        #expect(Set(transport.data.keys) == ["roomID", "messageID", "attachmentID"])
+        transport.response["mediaExpiresAt"] = expiry.addingTimeInterval(1).timeIntervalSince1970 * 1000
+        do { _ = try await repository.issue(for: resource); Issue.record("서버 기한 변경 허용") }
+        catch { #expect(error as? ChatVideoPlaybackError == .invalidResponse) }
     }
+}
 
-    private func makeResolver(
-        storageResolver: ChatStorageURLResolverSpy = ChatStorageURLResolverSpy(),
-        videoCache: ChatVideoDiskCacheSpy = ChatVideoDiskCacheSpy(),
-        downloader: ChatRemoteFileDownloaderSpy = ChatRemoteFileDownloaderSpy()
-    ) -> DefaultChatVideoPlaybackResolver {
-        DefaultChatVideoPlaybackResolver(
-            storageURLResolver: storageResolver,
-            videoDiskCache: videoCache,
-            fileDownloader: downloader
-        )
+@MainActor
+private final class PlaybackRepositorySpy: ChatVideoPlaybackURLRepository {
+    var calls = 0
+    var delayed = false
+    var pending: CheckedContinuation<Void, Never>?
+    let now: () -> Date
+    init(now: @escaping () -> Date = Date.init) { self.now = now }
+    func issue(for resource: ChatVideoPlaybackResource) async throws -> ChatVideoPlaybackURL {
+        calls += 1
+        let expiry = min(now().addingTimeInterval(60), resource.mediaExpiresAt)
+        if delayed { await withCheckedContinuation { pending = $0 } }
+        return ChatVideoPlaybackURL(url: URL(string: "https://example.com/video")!,
+            urlExpiresAt: expiry, mediaExpiresAt: resource.mediaExpiresAt)
     }
+    func finish() { let saved = pending; pending = nil; saved?.resume() }
 }
 
 private final class VideoOriginalFilesSpy: ChatOriginalFileLoading {
     let url = URL(fileURLWithPath: "/tmp/original-test.mp4")
-    var acquiredPaths: [String] = []
+    var acquiredResources: [ChatOriginalResource] = []
     var hasCached = false
     func acquireOriginal(_ resource: ChatOriginalResource, purpose: ChatOriginalPurpose) async throws -> ChatOriginalFileLease {
-        acquiredPaths.append(resource.path)
+        acquiredResources.append(resource)
         return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
     }
     func cachedOriginal(_ resource: ChatOriginalResource) async throws -> ChatOriginalFileLease? {
         hasCached ? ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {}) : nil
     }
     func removeOriginal(path: String) async {}
+    func removeExpiredOriginals(at now: Date) async -> Bool { true }
     func invalidateSession() {}
 }
 
-private final class ChatStorageURLResolverSpy: ChatStorageURLResolving {
-    var resolvedURLs: [String: URL]
-    private(set) var requestedPaths: [String] = []
-
-    init(resolvedURLs: [String: URL] = [:]) {
-        self.resolvedURLs = resolvedURLs
-    }
-
-    func url(for path: String) async throws -> URL {
-        requestedPaths.append(path)
-        if let url = resolvedURLs[path] {
-            return url
-        }
-        throw URLError(.badURL)
-    }
-}
-
-private final class ChatVideoDiskCacheSpy: ChatVideoDiskCaching {
-    var existingURLs: [String: URL]
-    private(set) var existsKeys: [String] = []
-    private(set) var cacheCalls: [(remote: URL, key: String)] = []
-
-    init(existingURLs: [String: URL] = [:]) {
-        self.existingURLs = existingURLs
-    }
-
-    func exists(forKey key: String) async -> URL? {
-        existsKeys.append(key)
-        return existingURLs[key]
-    }
-
-    func cache(from remote: URL, key: String) async throws -> URL {
-        cacheCalls.append((remote, key))
-        return existingURLs[key] ?? remote
-    }
-}
-
-private final class ChatRemoteFileDownloaderSpy: ChatRemoteFileDownloading {
-    let downloadedURL: URL
-    private(set) var downloadedURLs: [URL] = []
-
-    init(downloadedURL: URL = FileManager.default.temporaryDirectory.appendingPathComponent("downloaded.mp4")) {
-        self.downloadedURL = downloadedURL
-    }
-
-    func downloadToTemporaryFile(from remote: URL, onProgress: @escaping (Double) -> Void) async throws -> URL {
-        downloadedURLs.append(remote)
-        onProgress(1.0)
-        return downloadedURL
+private final class PlaybackTransportSpy: CloudFunctionsTransporting {
+    var response: [String: Any] = [:]
+    var name = ""
+    var data: [String: Any] = [:]
+    func call(_ name: String, data: [String: Any]) async throws -> [String: Any] {
+        self.name = name
+        self.data = data
+        return response
     }
 }

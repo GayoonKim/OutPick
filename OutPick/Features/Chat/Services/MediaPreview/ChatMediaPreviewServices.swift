@@ -1,11 +1,5 @@
-//
-//  ChatMediaPreviewServices.swift
-//  OutPick
-//
-//  Created by Codex on 6/19/26.
-//
-
 import Foundation
+import Combine
 import UIKit
 
 struct ChatVideoPlaybackAsset: Equatable {
@@ -13,225 +7,212 @@ struct ChatVideoPlaybackAsset: Equatable {
     let storagePath: String?
     var sourcePath: String? = nil
     var fileLease: ChatOriginalFileLease? = nil
+    var resource: ChatVideoPlaybackResource? = nil
+    var urlExpiresAt: Date? = nil
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.url == rhs.url && lhs.storagePath == rhs.storagePath && lhs.sourcePath == rhs.sourcePath
+        lhs.url == rhs.url && lhs.storagePath == rhs.storagePath && lhs.sourcePath == rhs.sourcePath &&
+            lhs.resource == rhs.resource && lhs.urlExpiresAt == rhs.urlExpiresAt
     }
 }
 
+@MainActor
 protocol ChatVideoPlaybackResolving {
+    var invalidations: AnyPublisher<String?, Never> { get }
+    var isSessionValid: Bool { get }
+    func invalidateSession()
     func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease
+    func playbackAsset(for resource: ChatVideoPlaybackResource, forceRefresh: Bool) async throws -> ChatVideoPlaybackAsset
     func playbackAsset(forPath path: String) async throws -> ChatVideoPlaybackAsset
-    func localFileURLForSaving(
-        localURL: URL?,
-        storagePath: String?,
-        onProgress: @escaping (Double) -> Void
-    ) async throws -> URL
+    func localFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double) -> Void) async throws -> URL
 }
 
 extension ChatVideoPlaybackResolving {
-    func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease {
-        let url = try await localFileURLForSaving(localURL: asset.url, storagePath: asset.storagePath, onProgress: { _ in })
-        return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
+    var invalidations: AnyPublisher<String?, Never> { Empty().eraseToAnyPublisher() }
+    var isSessionValid: Bool { true }
+    func invalidateSession() {}
+    func playbackAsset(for resource: ChatVideoPlaybackResource, forceRefresh: Bool = false) async throws -> ChatVideoPlaybackAsset {
+        throw ChatVideoPlaybackError.unavailable
+    }
+    func localFileURLForSaving(localURL: URL?, storagePath: String?, onProgress: @escaping (Double) -> Void) async throws -> URL {
+        throw ChatMediaPreviewError.missingSaveSource
     }
 }
 
 protocol ChatVideoDiskCaching {
     func exists(forKey key: String) async -> URL?
-    @discardableResult
-    func cache(from remote: URL, key: String) async throws -> URL
+    @discardableResult func cache(from remote: URL, key: String) async throws -> URL
     func remove(forKey key: String) async
 }
-
-extension ChatVideoDiskCaching {
-    func remove(forKey key: String) async {}
-}
+extension ChatVideoDiskCaching { func remove(forKey key: String) async {} }
 
 protocol ChatStorageURLResolving {
     func url(for path: String) async throws -> URL
     func removeCachedURL(for path: String) async
 }
-
-extension ChatStorageURLResolving {
-    func removeCachedURL(for path: String) async {}
-}
-
-protocol ChatRemoteFileDownloading {
-    func downloadToTemporaryFile(from remote: URL, onProgress: @escaping (Double) -> Void) async throws -> URL
-}
+extension ChatStorageURLResolving { func removeCachedURL(for path: String) async {} }
 
 enum ChatMediaPreviewError: LocalizedError, Equatable {
-    case emptyPath
-    case missingSaveSource
-    case photoPermissionDenied
-    case saveFailed
-
+    case emptyPath, missingSaveSource, photoPermissionDenied, saveFailed
     var errorDescription: String? {
         switch self {
-        case .emptyPath:
-            return "미디어 경로를 확인할 수 없습니다."
-        case .missingSaveSource:
-            return "저장할 파일 경로를 확인할 수 없습니다."
-        case .photoPermissionDenied:
-            return "사진 앱 저장 권한이 필요합니다."
-        case .saveFailed:
-            return "사진 앱에 저장하지 못했습니다."
+        case .emptyPath: "미디어 경로를 확인할 수 없습니다."
+        case .missingSaveSource: "저장할 파일 경로를 확인할 수 없습니다."
+        case .photoPermissionDenied: "사진 앱 저장 권한이 필요합니다."
+        case .saveFailed: "사진 앱에 저장하지 못했습니다."
         }
     }
 }
 
-final class DefaultChatVideoPlaybackResolver: ChatVideoPlaybackResolving {
-    private let storageURLResolver: ChatStorageURLResolving
-    private let videoDiskCache: ChatVideoDiskCaching
-    private let fileDownloader: ChatRemoteFileDownloading
-    private let originalFiles: (any ChatOriginalFileLoading)?
+/// Container마다 하나를 소유하므로 URL과 진행 요청은 계정 세션 밖으로 공유되지 않는다.
+@MainActor
+final class DefaultChatVideoPlaybackResolver: ChatVideoPlaybackResolving, ChatStorageURLResolving {
+    private let repository: any ChatVideoPlaybackURLRepository
+    private let originalFiles: any ChatOriginalFileLoading
+    private let now: () -> Date
+    private var urls: [ChatVideoPlaybackResource: ChatVideoPlaybackURL] = [:]
+    private var flights: [ChatVideoPlaybackResource: (UUID, Task<ChatVideoPlaybackURL, Error>)] = [:]
+    private var removedPaths = Set<String>()
+    private var cacheTimer: Timer?
+    private let invalidationSubject = PassthroughSubject<String?, Never>()
+    private(set) var isSessionValid = true
+    var invalidations: AnyPublisher<String?, Never> { invalidationSubject.eraseToAnyPublisher() }
 
-    init(
-        storageURLResolver: ChatStorageURLResolving,
-        videoDiskCache: ChatVideoDiskCaching,
-        fileDownloader: ChatRemoteFileDownloading,
-        originalFiles: (any ChatOriginalFileLoading)? = nil
-    ) {
-        self.storageURLResolver = storageURLResolver
-        self.videoDiskCache = videoDiskCache
-        self.fileDownloader = fileDownloader
+    init(repository: any ChatVideoPlaybackURLRepository, originalFiles: any ChatOriginalFileLoading, now: @escaping () -> Date = Date.init) {
+        self.repository = repository
         self.originalFiles = originalFiles
+        self.now = now
     }
 
+    func invalidateSession() {
+        isSessionValid = false
+        cacheTimer?.invalidate()
+        urls.removeAll()
+        flights.values.forEach { $0.1.cancel() }
+        flights.removeAll()
+        invalidationSubject.send(nil)
+    }
+
+    func removeCachedURL(for path: String) async {
+        removedPaths.insert(path)
+        urls = urls.filter { $0.key.path != path }
+        for key in Array(flights.keys) where key.path == path { flights.removeValue(forKey: key)?.1.cancel() }
+        invalidationSubject.send(path)
+        scheduleCacheExpiry()
+    }
+
+    func url(for path: String) async throws -> URL { throw ChatVideoPlaybackError.unavailable }
+
+    private func validate(_ resource: ChatVideoPlaybackResource) throws {
+        try Task.checkCancellation()
+        guard isSessionValid else { throw CancellationError() }
+        guard !removedPaths.contains(resource.path) else { throw ChatVideoPlaybackError.unavailable }
+        guard resource.mediaExpiresAt > now() else {
+            urls[resource] = nil
+            throw ChatVideoPlaybackError.expired
+        }
+    }
+
+    func playbackAsset(for resource: ChatVideoPlaybackResource, forceRefresh: Bool = false) async throws -> ChatVideoPlaybackAsset {
+        try validate(resource)
+        if let lease = try await originalFiles.cachedOriginal(resource.original) {
+            do {
+                try validate(resource)
+                var asset = try await Self.cachedPlaybackAsset(lease: lease, path: resource.path)
+                do { try validate(resource) }
+                catch { await asset.fileLease?.release(); throw error }
+                asset.resource = resource
+                return asset
+            } catch { await lease.release(); throw error }
+        }
+        try validate(resource)
+        urls = urls.filter { $0.value.urlExpiresAt > now() && $0.key.mediaExpiresAt > now() }
+        let ticket: ChatVideoPlaybackURL
+        if !forceRefresh, let cached = urls[resource] { ticket = cached }
+        else {
+            let flight: (UUID, Task<ChatVideoPlaybackURL, Error>)
+            if let existing = flights[resource] { flight = existing }
+            else {
+                flight = (UUID(), Task { try await repository.issue(for: resource) })
+                flights[resource] = flight
+            }
+            do { ticket = try await flight.1.value }
+            catch {
+                if flights[resource]?.0 == flight.0 { flights[resource] = nil }
+                throw error
+            }
+            if flights[resource]?.0 == flight.0 { flights[resource] = nil }
+            try validate(resource)
+            guard ticket.urlExpiresAt > now() else { throw ChatVideoPlaybackError.temporarilyUnavailable }
+            guard ticket.urlExpiresAt <= resource.mediaExpiresAt,
+                  abs(ticket.mediaExpiresAt.timeIntervalSince(resource.mediaExpiresAt)) < 0.001 else {
+                throw ChatVideoPlaybackError.invalidResponse
+            }
+            urls[resource] = ticket
+            scheduleCacheExpiry()
+        }
+        try validate(resource)
+        return ChatVideoPlaybackAsset(url: ticket.url, storagePath: resource.path, sourcePath: resource.path,
+                                     resource: resource, urlExpiresAt: ticket.urlExpiresAt)
+    }
+
+    private func scheduleCacheExpiry() {
+        cacheTimer?.invalidate()
+        cacheTimer = nil
+        urls = urls.filter { $0.value.urlExpiresAt > now() && $0.key.mediaExpiresAt > now() }
+        guard isSessionValid, let expiry = urls.values.map(\.urlExpiresAt).min() else { return }
+        cacheTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, expiry.timeIntervalSince(now())), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleCacheExpiry() }
+        }
+        if let cacheTimer { RunLoop.main.add(cacheTimer, forMode: .common) }
+    }
+
+    deinit {
+        cacheTimer?.invalidate()
+        flights.values.forEach { $0.1.cancel() }
+    }
+
+    /// 서버 확정 전 outbox의 로컬 파일만 허용한다. 원격 path-only URL은 발급하지 않는다.
     func playbackAsset(forPath path: String) async throws -> ChatVideoPlaybackAsset {
-        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPath.isEmpty else { throw ChatMediaPreviewError.emptyPath }
-
-        if let originalFiles {
-            let resource = Self.originalResource(trimmedPath)
-            if let lease = try await originalFiles.cachedOriginal(resource) {
-                return try await Self.cachedPlaybackAsset(lease: lease, path: trimmedPath)
-            }
-            let url: URL
-            if let local = Self.localFileURL(from: trimmedPath) { url = local }
-            else if let remote = Self.directRemoteURL(from: trimmedPath) { url = remote }
-            else { url = try await storageURLResolver.url(for: trimmedPath) }
-            try Task.checkCancellation()
-            // URL 조회 도중 세션이 바뀌었으면 이전 화면에 결과를 넘기지 않는다.
-            if let lease = try await originalFiles.cachedOriginal(resource) {
-                return try await Self.cachedPlaybackAsset(lease: lease, path: trimmedPath)
-            }
-            return ChatVideoPlaybackAsset(url: url, storagePath: trimmedPath, sourcePath: trimmedPath)
-        }
-
-        if let localURL = Self.localFileURL(from: trimmedPath) {
-            return ChatVideoPlaybackAsset(url: localURL, storagePath: nil)
-        }
-
-        if let remote = Self.directRemoteURL(from: trimmedPath) {
-            return ChatVideoPlaybackAsset(url: remote, storagePath: nil)
-        }
-
-        if let cached = await videoDiskCache.exists(forKey: trimmedPath) {
-            return ChatVideoPlaybackAsset(url: cached, storagePath: trimmedPath)
-        }
-
-        let remote = try await storageURLResolver.url(for: trimmedPath)
-        return ChatVideoPlaybackAsset(url: remote, storagePath: trimmedPath)
+        guard isSessionValid else { throw CancellationError() }
+        let local: URL?
+        if path.hasPrefix("/") { local = URL(fileURLWithPath: path) }
+        else { local = URL(string: path).flatMap { $0.isFileURL ? $0 : nil } }
+        guard let local else { throw ChatVideoPlaybackError.unavailable }
+        return ChatVideoPlaybackAsset(url: local, storagePath: nil, sourcePath: path)
     }
 
     static func cachedPlaybackAsset(lease: ChatOriginalFileLease, path: String) async throws -> ChatVideoPlaybackAsset {
+        guard lease.isValid else { await lease.release(); throw CancellationError() }
         guard !["mp4", "mov", "m4v"].contains(lease.fileURL.pathExtension.lowercased()) else {
             return ChatVideoPlaybackAsset(url: lease.fileURL, storagePath: path, sourcePath: path, fileLease: lease)
         }
         do {
-            // 확장자가 없는 원본은 재생용 링크로 제공하고 플레이어 수명 동안 원본 pin을 유지한다.
             let prepared = try PhotoLibraryPreparedResource(fileURL: lease.fileURL, isVideo: true, preferHardLink: true)
-            try Task.checkCancellation()
-            guard lease.isValid else { throw CancellationError() }
+            do {
+                try Task.checkCancellation()
+                guard lease.isValid else { throw CancellationError() }
+            } catch { prepared.cleanup(); throw error }
             let playbackLease = ChatOriginalFileLease(fileURL: prepared.fileURL, isValid: { lease.isValid }, release: {
                 prepared.cleanup()
                 await lease.release()
             })
             return ChatVideoPlaybackAsset(url: playbackLease.fileURL, storagePath: path, sourcePath: path, fileLease: playbackLease)
-        } catch {
-            await lease.release()
-            throw error
-        }
+        } catch { await lease.release(); throw error }
     }
 
     func acquireFileForSaving(_ asset: ChatVideoPlaybackAsset) async throws -> ChatOriginalFileLease {
-        guard let originalFiles else {
-            let url = try await localFileURLForSaving(localURL: asset.url, storagePath: asset.storagePath, onProgress: { _ in })
-            return ChatOriginalFileLease(fileURL: url, isValid: { true }, release: {})
+        guard isSessionValid else { throw CancellationError() }
+        if let resource = asset.resource {
+            try validate(resource)
+            let lease = try await originalFiles.acquireOriginal(resource.original, purpose: .saving)
+            do { try validate(resource); return lease }
+            catch { await lease.release(); throw error }
         }
-        let path = asset.sourcePath ?? asset.storagePath ?? asset.url.absoluteString
-        return try await originalFiles.acquireOriginal(Self.originalResource(path), purpose: .saving)
-    }
-
-    private static func originalResource(_ path: String) -> ChatOriginalResource {
-        ChatOriginalResource(path: path, maximumBytes: Int(AVAssetExportVideoCompressor.maxChatSourceBytes))
-    }
-
-    func localFileURLForSaving(
-        localURL: URL?,
-        storagePath: String?,
-        onProgress: @escaping (Double) -> Void
-    ) async throws -> URL {
-        if let localURL, localURL.isFileURL {
-            onProgress(1.0)
-            return localURL
-        }
-
-        if let storagePath,
-           let cached = await videoDiskCache.exists(forKey: storagePath) {
-            onProgress(1.0)
-            return cached
-        }
-
-        if let storagePath,
-           !storagePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let remote = try await storageURLResolver.url(for: storagePath)
-            return try await fileDownloader.downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-
-        if let remote = localURL,
-           let scheme = remote.scheme?.lowercased(),
-           scheme == "http" || scheme == "https" {
-            return try await fileDownloader.downloadToTemporaryFile(from: remote, onProgress: onProgress)
-        }
-
-        throw ChatMediaPreviewError.missingSaveSource
-    }
-
-    private static func localFileURL(from path: String) -> URL? {
-        if path.hasPrefix("file://"),
-           let url = URL(string: path),
-           url.isFileURL {
-            return url
-        }
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-        return nil
-    }
-
-    private static func directRemoteURL(from path: String) -> URL? {
-        guard let url = URL(string: path),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
-            return nil
-        }
-        return url
-    }
-}
-
-final class URLSessionChatRemoteFileDownloader: ChatRemoteFileDownloading {
-    func downloadToTemporaryFile(from remote: URL, onProgress: @escaping (Double) -> Void) async throws -> URL {
-        let (tmpURL, _) = try await URLSession.shared.download(from: remote)
-        let fileExtension = remote.pathExtension.isEmpty ? "mp4" : remote.pathExtension
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chat-media-\(UUID().uuidString)")
-            .appendingPathExtension(fileExtension)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: tmpURL, to: destination)
-        onProgress(1.0)
-        return destination
+        guard asset.url.isFileURL else { throw ChatMediaPreviewError.missingSaveSource }
+        return try await originalFiles.acquireOriginal(
+            ChatOriginalResource(path: asset.sourcePath ?? asset.url.path,
+                                 maximumBytes: Int(AVAssetExportVideoCompressor.maxChatSourceBytes)), purpose: .saving)
     }
 }
 

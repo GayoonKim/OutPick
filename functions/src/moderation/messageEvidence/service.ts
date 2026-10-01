@@ -2,6 +2,10 @@
 import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 import {db} from "../../core/firebase.js";
+import {
+  CHAT_MEDIA_EXPIRY_JOBS,
+  chatMediaExpiryJobID,
+} from "../../chat/media/retentionContracts.js";
 import {requireAccountCapabilityData} from "../../shared/accountStatus.js";
 import {
   REPORT_RATE_BUCKET_TTL_MILLIS,
@@ -163,9 +167,12 @@ function requestDocument(input: {
 export async function submitMessageReportService(
   reporterUID: string,
   input: SubmitMessageReportInput,
-  now = new Date(),
+  nowInput?: Date,
   firestore: Firestore = db,
+  clock?: () => Date,
 ): Promise<MessageReportReceipt> {
+  const now = nowInput ?? new Date();
+  const currentTime = clock ?? (nowInput ? () => nowInput : () => new Date());
   const nowTimestamp = Timestamp.fromDate(now);
   const incidentID = messageIncidentID(input.roomID, input.messageID);
   const roomRef = firestore.collection("Rooms").doc(input.roomID);
@@ -313,6 +320,7 @@ export async function submitMessageReportService(
       return {...receiptFromData(document), deduplicated: false};
     }
 
+    const kind = supportedMessageKind(messageData);
     const reviewState = incident.get("reviewState");
     const reviewRevision = nextMessageReviewRevision({
       exists: incident.exists,
@@ -329,9 +337,12 @@ export async function submitMessageReportService(
     const bundleRef = firestore.collection("moderationMessageEvidence").doc(bundleID);
     const copyJobRef = firestore.collection("moderationEvidenceCopyJobs")
       .doc(messageEvidenceCopyJobID(bundleID));
-    const [existingReporter, preparation, bundle, copyJob] = await Promise.all([
+    const mediaExpiryRef = kind === "media" ? firestore.collection(CHAT_MEDIA_EXPIRY_JOBS)
+      .doc(chatMediaExpiryJobID(input.roomID, input.messageID)) : null;
+    const [existingReporter, preparation, bundle, copyJob, mediaExpiryJob] = await Promise.all([
       transaction.get(reporterRef), transaction.get(preparationRef),
       transaction.get(bundleRef), transaction.get(copyJobRef),
+      mediaExpiryRef ? transaction.get(mediaExpiryRef) : Promise.resolve(null),
     ]);
     const submissionID = messageReportSubmissionID({incidentID, reviewRevision, reporterModerationPrincipalID: reporterPrincipalID, clientRequestID: input.clientRequestID});
     if (existingReporter.exists) {
@@ -348,7 +359,18 @@ export async function submitMessageReportService(
       return {...receiptFromData(document), deduplicated: false};
     }
 
-    const kind = supportedMessageKind(messageData);
+    if (kind === "media") {
+      const mediaExpiresAt = messageData.mediaExpiresAt;
+      if (!(mediaExpiresAt instanceof Timestamp) ||
+          mediaExpiresAt.toMillis() <= currentTime().getTime()) {
+        throw new HttpsError("failed-precondition", "미디어 보관 기한이 종료됐습니다.", {
+          errorCode: "MEDIA_EXPIRED",
+        });
+      }
+      if (!mediaExpiryJob?.exists || mediaExpiryJob.get("status") === "processing") {
+        throw new HttpsError("failed-precondition", "채팅 미디어 보존 작업 상태를 확인할 수 없습니다.");
+      }
+    }
     const objects = kind === "media" ? sourceObjects(messageData) : [];
     const bundleState = bundle.get("state");
     const bundleGeneration = integer(bundle.get("attemptGeneration"));
@@ -467,6 +489,18 @@ export async function submitMessageReportService(
         transaction.set(authorAggregateRef.collection("reportedMessages").doc(incidentID), {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, roomID: input.roomID, messageID: input.messageID, latestReviewRevision: reviewRevision, firstReportedAt: reportedMessageMarker.exists ? reportedMessageMarker.get("firstReportedAt") ?? nowTimestamp : nowTimestamp, lastReportedAt: nowTimestamp, updatedAt: nowTimestamp}, {merge: true});
         transaction.set(authorAggregateRef.collection("messageReporters").doc(reporterID), {schemaVersion: MESSAGE_EVIDENCE_CONTRACT_VERSION, firstReportedAt: messageReporterMarker.exists ? messageReporterMarker.get("firstReportedAt") ?? nowTimestamp : nowTimestamp, lastReportedAt: nowTimestamp, updatedAt: nowTimestamp}, {merge: true});
       }
+    }
+    if (kind === "media" && !immediatelyAccepted && mediaExpiryRef && mediaExpiryJob?.exists &&
+        mediaExpiryJob.get("status") !== "awaitingEvidence") {
+      transaction.update(mediaExpiryRef, {
+        status: "awaitingEvidence",
+        attemptsInRun: 0,
+        nextAttemptAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        updatedAt: nowTimestamp,
+      });
     }
     return {...receiptFromData(requestDoc), deduplicated: false};
   });

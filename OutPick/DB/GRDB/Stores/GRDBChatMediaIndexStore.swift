@@ -60,20 +60,25 @@ final class GRDBChatMediaIndexStore: ChatMediaIndexPersisting {
                 case .image:
                     try db.execute(sql: """
                         INSERT OR REPLACE INTO imageIndex
-                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, generationThumb, generationOriginal, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt, mediaExpiresAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
-                                      entry.thumbResourcePath, entry.originalResourcePath, entry.width, entry.height, entry.bytesOriginal,
-                                      entry.hash, false, nil, entry.sentAt])
+                                      entry.thumbResourcePath, entry.originalResourcePath, entry.generationThumb, entry.generationOriginal,
+                                      entry.width, entry.height, entry.bytesOriginal,
+                                      entry.hash, false, nil, entry.sentAt, entry.mediaExpiresAt])
                 case .video:
                     try db.execute(sql: """
                         INSERT OR REPLACE INTO videoIndex
-                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (roomID, messageID, senderUID, idx, thumbKey, originalKey, thumbURL, originalURL, generationThumb, generationOriginal, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt, mediaExpiresAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [entry.roomID, entry.messageID, entry.senderUID, entry.idx, entry.thumbKey, entry.originalKey,
-                                      entry.thumbResourcePath, entry.originalResourcePath, entry.width, entry.height, entry.bytesOriginal,
-                                      entry.duration, nil, nil, entry.hash, false, nil, entry.sentAt])
+                                      entry.thumbResourcePath, entry.originalResourcePath, entry.generationThumb, entry.generationOriginal,
+                                      entry.width, entry.height, entry.bytesOriginal,
+                                      entry.duration, nil, nil, entry.hash, false, nil, entry.sentAt,
+                                      entry.mediaExpiresAt])
                 }
+                try db.execute(sql: "UPDATE \(entry.type == .image ? "imageIndex" : "videoIndex") SET attachmentID = ? WHERE roomID = ? AND messageID = ? AND idx = ?",
+                               arguments: [entry.attachmentID, entry.roomID, entry.messageID, entry.idx])
             }
         }
     }

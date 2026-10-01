@@ -134,6 +134,8 @@ const callableNames = [
   "resignRoomModerator",
   "leaveChatRoom",
   "transferRoomOwnershipAndLeave",
+  "issueChatVideoPlaybackURL",
+  "issueChatMediaURL",
 ] as const;
 
 const firestoreEndpoints = {
@@ -281,6 +283,13 @@ const scheduleEndpoints = {
     availableMemoryMb: 512,
     maxInstances: 1,
   },
+  cleanupExpiredChatMedia: {
+    schedule: "0 * * * *",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 300,
+    availableMemoryMb: 512,
+    maxInstances: 1,
+  },
 } as const;
 
 const callableOverrides = {
@@ -307,7 +316,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 117개를 유지한다", () => {
+test("Firebase deployment export 이름 120개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -318,7 +327,7 @@ test("Firebase deployment export 이름 117개를 유지한다", () => {
     "dispatchChatMediaProcessing",
     "runRoomOwnershipSuccessionTask",
   ].sort();
-  assert.equal(expected.length, 117);
+  assert.equal(expected.length, 120);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
 });
 
@@ -378,9 +387,16 @@ test("chat media trigger와 scheduler는 전용 identity 경계를 유지한다"
     "onChatMediaWorkerCompleted",
     "reconcileChatMediaProcessing",
     "reconcileChatMediaObjectCleanup",
+    "cleanupExpiredChatMedia",
   ]) {
     assert.equal(endpoint(name).serviceAccountEmail, cleanup, name);
   }
+  assert.equal(
+    endpoint("issueChatVideoPlaybackURL").serviceAccountEmail,
+    chatMediaServiceAccountEmailForProject("outpick-test", "videoPlayback"),
+  );
+  assert.equal(endpoint("issueChatMediaURL").serviceAccountEmail,
+    chatMediaServiceAccountEmailForProject("outpick-test", "videoPlayback"));
 });
 
 test("callable runtime metadata를 유지한다", () => {
@@ -712,6 +728,26 @@ test("chat media v2 watchdog query와 terminal TTL 인덱스를 유지한다", (
     override.collectionGroup === "chatMediaDeliveryJobs" &&
     override.fieldPath === "expiresAt" && override.ttl === true
   ));
+});
+
+test("chat media 만료 원장 due·lease recovery 복합 인덱스를 유지한다", () => {
+  const config = JSON.parse(
+    readFileSync("../firestore.indexes.json", "utf8")
+  ) as {
+    indexes?: Array<{
+      collectionGroup?: string;
+      queryScope?: string;
+      fields?: Array<{fieldPath?: string; order?: string}>;
+    }>;
+  };
+  for (const dueField of ["nextAttemptAt", "leaseExpiresAt"]) {
+    assert.ok(config.indexes?.some((index) =>
+      index.collectionGroup === "chatMediaExpiryJobs" &&
+      index.queryScope === "COLLECTION" &&
+      index.fields?.[0]?.fieldPath === "status" &&
+      index.fields?.[1]?.fieldPath === dueField
+    ), `chatMediaExpiryJobs ${dueField} recovery index가 필요합니다.`);
+  }
 });
 
 test("댓글·답글 rate bucket TTL 인덱스를 유지한다", () => {

@@ -7,6 +7,7 @@ const MAX_PHOTO_FILE_BYTES = 300_000_000;
 const MAX_PHOTO_BATCH_BYTES = 300_000_000;
 const DAY = 86400000;
 const millis = value => value?.toMillis?.() ?? 0;
+const iso = value => value?.toDate?.().toISOString?.() ?? null;
 const failure = error => ({ok: false, error});
 
 export function validateDirectSources(kind, contract, sources) {
@@ -37,11 +38,15 @@ export function validateDirectSources(kind, contract, sources) {
 export function createDirectMediaUploadService({db, admin, clock, bucket, logger = console}) {
   const stamp = n => admin.firestore.Timestamp.fromMillis(n);
   const refFor = a => db.collection("Rooms").doc(a.roomID).collection("MediaUploads").doc(a.uploadID);
+  const expiryRefFor = (roomID, messageID) => db.collection("chatMediaExpiryJobs").doc(
+    createHash("sha256").update(`${roomID}\0${messageID}`).digest("hex")
+  );
   const matches = (d, a) => d?.contractVersion === 3 && d.senderUID === a.senderUID &&
     d.moderationPrincipalID === a.moderationPrincipalID && d.clientMutationID === a.clientMutationID;
   const response = d => ({ok: true, contractVersion: 3, uploadID: d.uploadID,
     processingStatus: d.processingStatus, messageID: d.processingStatus === "ready" ? d.uploadID : null,
-    seq: d.seq ?? null, retryable: false, failureCode: d.failureCode ?? null});
+    seq: d.seq ?? null, sentAt: iso(d.sentAt), mediaExpiresAt: iso(d.mediaExpiresAt),
+    retryable: false, failureCode: d.failureCode ?? null});
   const terminal = (status, now) => ({processingStatus: status, terminalAt: stamp(now),
     expiresAt: stamp(now + 7 * DAY), cleanupStatus: "pending", retryable: false});
 
@@ -148,22 +153,27 @@ export function createDirectMediaUploadService({db, admin, clock, bucket, logger
       const permission = await access(tx, a);
       const messageRef = permission.roomRef.collection("Messages").doc(a.uploadID);
       const deliveryRef = db.collection("chatMediaDeliveryJobs").doc(`${a.roomID}_${a.uploadID}`);
-      const [message, delivery] = await Promise.all([tx.get(messageRef), tx.get(deliveryRef)]);
+      const expiryRef = expiryRefFor(a.roomID, a.uploadID);
+      const [message, delivery, expiryJob] = await Promise.all([
+        tx.get(messageRef), tx.get(deliveryRef), tx.get(expiryRef)
+      ]);
       const now = clock.nowMillis();
       if (!permission.ok || millis(current.uploadExpiresAt) <= now) {
         const error = !permission.ok ? "room_access_revoked" : "media_reservation_expired";
         tx.update(ref, {...terminal("failed", now), failureCode: error});
         return failure(error);
       }
-      if (message.exists || delivery.exists) return failure("media_message_conflict");
+      if (message.exists || delivery.exists || expiryJob.exists) return failure("media_message_conflict");
       const seq = (Number.isSafeInteger(permission.room.seq) ? permission.room.seq : 0) + 1;
       const unreadMessageSeq = (Number.isSafeInteger(permission.room.unreadMessageSeq) ? permission.room.unreadMessageSeq : seq - 1) + 1;
       const sentAt = stamp(now);
+      const mediaExpiresAt = stamp(now + 7 * DAY);
       const attachments = d.targets.filter(t => t.role === "display").map(t => {
         const thumb = d.targets.find(other => other.attachmentID === t.attachmentID && other.role === "thumbnail");
         return {attachmentID: t.attachmentID, index: t.attachmentIndex, type: d.kind === "images" ? "image" : "video",
           pathOriginal: t.path, pathThumb: thumb.path, bucketOriginal: d.bucket, bucketThumb: d.bucket,
-          generationOriginal: String(checked.objects[t.index].generation), contentTypeOriginal: t.contentType,
+          generationOriginal: String(checked.objects[t.index].generation),
+          generationThumb: String(checked.objects[thumb.index].generation), contentTypeOriginal: t.contentType,
           bytesOriginal: t.sizeBytes, w: t.width, h: t.height, hash: "", blurhash: null,
           mediaFormat: t.contentType.split("/")[1], animated: t.contentType === "image/gif" && t.isAnimated,
           ...(d.kind === "video" ? {duration: t.duration} : {})};
@@ -171,22 +181,46 @@ export function createDirectMediaUploadService({db, admin, clock, bucket, logger
       tx.create(messageRef, {ID: a.uploadID, roomID: a.roomID, roomName: a.roomID, senderUID: a.senderUID,
         senderNickname: String(permission.profile.nickname ?? ""),
         senderAvatarPath: permission.profile.avatarThumbPath ?? permission.profile.avatarOriginalPath ?? "",
-        msg: "", message: "", sentAt: sentAt.toDate().toISOString(), messageType: d.kind === "images" ? "Image" : "Video",
+        msg: "", message: "", sentAt: sentAt.toDate().toISOString(), mediaExpiresAt,
+        messageType: d.kind === "images" ? "Image" : "Video",
         attachments, replyPreview: null, isFailed: false, isDeleted: false, moderationVisibilityState: "visible",
         mediaContractVersion: 3, mediaUploadPath: ref.path, readyAttachmentIDs: attachments.map(t => t.attachmentID), seq, unreadMessageSeq});
       for (const t of attachments) tx.set(permission.roomRef.collection("mediaIndex").doc(`${a.uploadID}_${t.index}`), {
-        roomID: a.roomID, messageID: a.uploadID, idx: t.index, seq, senderUID: a.senderUID, type: t.type,
+        roomID: a.roomID, messageID: a.uploadID, attachmentID: t.attachmentID, idx: t.index, seq, senderUID: a.senderUID, type: t.type,
         thumbURL: t.pathThumb, originalURL: t.pathOriginal, bucketThumb: t.bucketThumb, bucketOriginal: t.bucketOriginal,
-        width: t.w, height: t.h, bytesOriginal: t.bytesOriginal, generationOriginal: t.generationOriginal,
+        width: t.w, height: t.h, bytesOriginal: t.bytesOriginal,
+        generationOriginal: t.generationOriginal, generationThumb: t.generationThumb,
         contentTypeOriginal: t.contentTypeOriginal, mediaFormat: t.mediaFormat, animated: t.animated,
-        ...(d.kind === "video" ? {duration: t.duration} : {}), isDeleted: false, sentAt});
+        ...(d.kind === "video" ? {duration: t.duration} : {}), isDeleted: false, sentAt, mediaExpiresAt});
       tx.set(permission.roomRef, {seq, unreadMessageSeq, lastMessage: d.kind === "video" ? "[동영상]" : attachments.length === 1 ? "[사진]" : `[사진 ${attachments.length}장]`, lastMessageAt: sentAt, lastMessageSeq: seq}, {merge: true});
       tx.create(deliveryRef, {schemaVersion: 1, roomID: a.roomID, messageID: a.uploadID, seq,
         eventKind: d.kind === "images" ? "receiveImages" : "receiveVideo", status: "pending", attempt: 0,
         nextAttemptAt: sentAt, leaseToken: null, leaseExpiresAt: null, createdAt: sentAt, updatedAt: sentAt,
         expiresAt: stamp(now + 7 * DAY)});
-      tx.update(ref, {processingStatus: "ready", seq, cleanupStatus: "completed", terminalAt: sentAt, expiresAt: stamp(now + 7 * DAY)});
-      return response({...current, processingStatus: "ready", seq});
+      tx.create(expiryRef, {
+        schemaVersion: 1,
+        roomID: a.roomID,
+        messageID: a.uploadID,
+        sentAt,
+        mediaExpiresAt,
+        objects: attachments.flatMap(attachment => [
+          {bucket: attachment.bucketOriginal, path: attachment.pathOriginal,
+            generation: attachment.generationOriginal, role: "original"},
+          {bucket: attachment.bucketThumb, path: attachment.pathThumb,
+            generation: attachment.generationThumb, role: "thumbnail"}
+        ]),
+        status: "scheduled",
+        attemptsInRun: 0,
+        nextAttemptAt: mediaExpiresAt,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        createdAt: sentAt,
+        updatedAt: sentAt
+      });
+      tx.update(ref, {processingStatus: "ready", seq, sentAt, mediaExpiresAt,
+        cleanupStatus: "completed", terminalAt: sentAt, expiresAt: stamp(now + 7 * DAY)});
+      return response({...current, processingStatus: "ready", seq, sentAt, mediaExpiresAt});
     });
   }
 

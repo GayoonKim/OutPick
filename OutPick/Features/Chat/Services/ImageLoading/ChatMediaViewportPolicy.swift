@@ -4,6 +4,14 @@ struct ChatMediaViewportItem {
     let id: String
     let path: String
     let frame: CGRect
+    let cacheResource: ChatMediaCacheResource?
+
+    init(id: String, path: String, frame: CGRect, cacheResource: ChatMediaCacheResource? = nil) {
+        self.id = id
+        self.path = path
+        self.frame = frame
+        self.cacheResource = cacheResource
+    }
 }
 
 struct ChatMediaViewportPolicy {

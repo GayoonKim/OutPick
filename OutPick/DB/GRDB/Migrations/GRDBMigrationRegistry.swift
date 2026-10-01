@@ -24,7 +24,9 @@ enum GRDBMigrationRegistry {
         "createChatDeletionSync",
         "addDeletionMarkerSenderPolicy",
         "addRoomRoleEventToChatMessage",
-        "addUnreadMessageSeqToChatMessage"
+        "addUnreadMessageSeqToChatMessage",
+        "addMediaExpiresAtToChatModels",
+        "addMediaGenerationsToIndexes"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -60,6 +62,7 @@ enum GRDBMigrationRegistry {
                 table.column("senderAvatarPath", .text)
                 table.column("msg", .text)
                 table.column("sentAt", .datetime)
+                table.column("mediaExpiresAt", .datetime)
                 table.column("attachments", .text)
                 table.column("isFailed", .boolean).notNull().defaults(to: false)
                 table.column("replyTo", .text)
@@ -240,6 +243,29 @@ enum GRDBMigrationRegistry {
                    AND (messageType IS NULL OR messageType != 'roomRoleEvent')
             """)
         }
+        migrator.registerMigration("addMediaExpiresAtToChatModels") { db in
+            try addColumnIfMissing("mediaExpiresAt", to: "chatMessage", in: db) {
+                $0.add(column: "mediaExpiresAt", .datetime)
+            }
+            for tableName in ["imageIndex", "videoIndex"] {
+                try addColumnIfMissing("mediaExpiresAt", to: tableName, in: db) {
+                    $0.add(column: "mediaExpiresAt", .datetime)
+                }
+            }
+        }
+        migrator.registerMigration("addMediaGenerationsToIndexes") { db in
+            for tableName in ["imageIndex", "videoIndex"] {
+                try addColumnIfMissing("attachmentID", to: tableName, in: db) {
+                    $0.add(column: "attachmentID", .text)
+                }
+                try addColumnIfMissing("generationThumb", to: tableName, in: db) {
+                    $0.add(column: "generationThumb", .text)
+                }
+                try addColumnIfMissing("generationOriginal", to: tableName, in: db) {
+                    $0.add(column: "generationOriginal", .text)
+                }
+            }
+        }
 
         return migrator
     }
@@ -257,6 +283,7 @@ enum GRDBMigrationRegistry {
             table.column("roleEvent", .text)
             table.column("msg", .text)
             table.column("sentAt", .datetime)
+            table.column("mediaExpiresAt", .datetime)
             table.column("attachments", .text)
             table.column("sharedContent", .text)
             table.column("isFailed", .boolean).notNull().defaults(to: false)
@@ -318,12 +345,16 @@ enum GRDBMigrationRegistry {
         table.column("originalKey", .text)
         table.column("thumbURL", .text)
         table.column("originalURL", .text)
+        table.column("generationThumb", .text)
+        table.column("generationOriginal", .text)
+        table.column("attachmentID", .text)
         table.column("width", .integer)
         table.column("height", .integer)
         table.column("bytesOriginal", .integer)
         table.column("hash", .text)
         table.column("isFailed", .boolean).notNull().defaults(to: false)
         table.column("localThumb", .text)
+        table.column("mediaExpiresAt", .datetime)
         if includeSentAt {
             table.column("sentAt", .datetime).notNull()
         }

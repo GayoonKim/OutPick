@@ -73,6 +73,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     private let currentUserProvider: any CurrentUserProviding
     private var lastRoomCoverKey: String? = nil
     private var coverPrefetchTask: Task<Void, Never>? = nil
+    private var mediaExpiryTimer: Timer?
     private var hasStartedScrolling = false
     private lazy var roomActionsStack: UIStackView = {
         let stack = UIStackView(arrangedSubviews: [floatingLeaveButton, floatingBanButton, floatingNoticeButton])
@@ -151,6 +152,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     }
     
     deinit {
+        mediaExpiryTimer?.invalidate()
         print("💧 ChatRoomSettingViewController deinit")
     }
     
@@ -166,6 +168,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        refreshMediaExpiry()
         avatarViewport.activate()
         updateAvatarViewport()
         collectionView.visibleCells.compactMap { $0 as? ParticipantsSectionParticipantCell }.forEach { $0.setAvatarVisible(true) }
@@ -214,6 +217,13 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         
         configureCollectionView()
         bindViewModel()
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.viewIfLoaded?.window != nil else { return }
+                self.refreshMediaExpiry()
+            }
+            .store(in: &cancellables)
         applyInitialSnapshot()
         floatingBanButton.isHidden = !viewModel.isRoleManagementEnabled
         updateRoomInfoSection()
@@ -244,6 +254,8 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         coverPrefetchTask?.cancel()
+        mediaExpiryTimer?.invalidate()
+        mediaExpiryTimer = nil
     }
 
     private static func configureLayout(_ room: ChatRoom, participantCount: Int, mediaCount: Int) -> UICollectionViewCompositionalLayout {
@@ -319,6 +331,7 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateMediaSection()
+                self?.scheduleMediaExpiry()
             }
             .store(in: &cancellables)
 
@@ -438,11 +451,11 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 originalFiles: self.originalFiles
             )
             let attachmentImageLoader = self.attachmentImageLoader
-            vc.cachedImageProvider = { path in
-                await attachmentImageLoader.cachedImage(for: path)
+            vc.cachedImageProvider = { resource in
+                await attachmentImageLoader.cachedImage(for: resource)
             }
-            vc.loadImageProvider = { path, maxBytes in
-                try? await attachmentImageLoader.loadImage(for: path, maxBytes: maxBytes)
+            vc.loadImageProvider = { resource, maxBytes in
+                try? await attachmentImageLoader.loadImage(for: resource, maxBytes: maxBytes)
             }
             vc.modalPresentationStyle = .fullScreen
             self.pushOrPresent(vc)
@@ -460,7 +473,11 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
                 sentAt: item.sentAt,
                 thumbnailPath: item.thumbnailPath,
                 originalPath: item.originalPath,
-                videoPath: item.videoPath
+                videoPath: item.videoPath,
+                generationThumb: item.generationThumb,
+                generationOriginal: item.generationOriginal,
+                mediaExpiresAt: item.mediaExpiresAt,
+                playbackResource: item.playbackResource
             )
         }
     }
@@ -538,6 +555,22 @@ class ChatRoomSettingViewController: UICollectionViewController, UIGestureRecogn
         }
     }
     
+    private func refreshMediaExpiry() {
+        viewModel.purgeExpiredMediaItems()
+        scheduleMediaExpiry()
+    }
+
+    private func scheduleMediaExpiry() {
+        mediaExpiryTimer?.invalidate()
+        mediaExpiryTimer = nil
+        guard viewIfLoaded?.window != nil,
+              let expiry = mediaItems.compactMap(\.mediaExpiresAt).min() else { return }
+        mediaExpiryTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, expiry.timeIntervalSinceNow), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMediaExpiry() }
+        }
+        if let mediaExpiryTimer { RunLoop.main.add(mediaExpiryTimer, forMode: .common) }
+    }
+
     private func updateMediaSection() {
         guard let dataSource = self.dataSource else {
             print("dataSource가 아직 초기화되지 않았습니다.")

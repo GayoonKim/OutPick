@@ -1,14 +1,19 @@
 # Test Entrypoints
 
-## 프로그램적 검증 게이트
+## 채팅 미디어 7일 만료 검증
 
-- 공용 원본·회귀 테스트·설치: `tools/verification-gate/{gate.mjs,node-reporter.mjs,gate.test.mjs,install.mjs}`. [설명](../../../tools/verification-gate/README.md).
-- `verification/gate.json`: 게이트 자체·Firebase 환경·Socket 검사. `functions.json`: Node 24의 lint·테스트. `firestore.json`: Firestore/Storage Emulator. `ios.json`: AppRuntimeConfigurationTests 13개. [설정과 환경 준비](../../../verification/README.md).
-- runner 연결: `functions/scripts/run-tests.mjs`, `Socket/scripts/run-tests.mjs`, `firestore-tests/run-firestore-tests.mjs`. Node JSONL과 Xcode xcresult를 원본으로 대조한다.
-- 프로젝트 루트에서 `node tools/verification-gate/gate.mjs --project . --config verification/<설정>.json` 실행. 결과는 `output/verification/<실행 ID>/`에 기록하고 종료 코드 0/1/2는 통과/실패/차단이다. 필수 누락·skip·0개·손상·시간 초과·입력 변경을 통과시키지 않는다.
-- [검증 기록](../tasks/programmatic-verification-gates/progress.md). 과거 실행 결과는 새 코드의 통과 근거로 재사용하지 않는다. 제품 UI·실기기·운영 검사는 별도 연결 대상이다.
+[최종 결과·실기기 범위](../architecture/CHAT_MEDIA_RETENTION.md), [게이트 실행 기준](../architecture/PROGRAMMATIC_VERIFICATION.md).
 
-## 기존 검사와 실행 기록
+- 공용 원본·reporter·자체 검사·설치: `tools/verification-gate/{gate.mjs,node-reporter.mjs,gate.test.mjs,install.mjs}`. [설명](../../../tools/verification-gate/README.md)과 [환경 준비](../../../verification/README.md)를 따른다. 각 Node runner가 JSONL을 연결하고 Xcode는 xcresult를 수집한다. 종료 코드 0/1/2는 통과/실패/차단이다.
+- `verification/gate.json`: 실행기 자체 검사, Firebase 빌드 설정, Socket 정적 검사·전송 확정/답장/이벤트 계약.
+- `verification/functions.json`: lint·clean build·단위 테스트. `retentionContracts/Storage.test.ts`, `videoPlaybackContracts/Functions/Service.test.ts`, 구형 확정 거부·export 계약을 포함한다.
+- `verification/firestore.json`: Rules·Storage 거절과 에뮬레이터 transaction. `chat-moderation.emulator.test.mjs`는 만료 정리와 메시지 삭제·방 종료·탈퇴 경합, `moderation-reports.emulator.test.mjs`는 증거 보류·부분 실패 재시도를 검사한다.
+- `verification/ios.json`: Development/Production 환경 경계. `verification/chat-media-retention.json`: 28 suite, 필수 ID 91개, 만료/캐시/화면/영상/Photos/QA 제어 회귀.
+- `ChatMediaExpiryCacheIndexTests`, `ChatAttachmentImageServiceTests`, `ChatOriginalFileStoreTests`, `ImageCacheRevisionTests`: 계정·generation·기한, hit/write/lease·늦은 응답 정리.
+- `ChatMediaSignedDownloadTests`, `ChatVideoPlaybackSessionTests`: 권한·HTTP 만료 분류, 갱신 횟수와 위치/상태 복원, AVKit 조작 경계·만료 화면의 다운로드/저장 0회.
+- `ImageViewerOriginalFileTests`, `PhotoLibrarySaverBoundaryTests`, `VideoSaveLifetimeTests`: 만료·닫힘·Photos 권한 대기/제출 경계, 완료 전 파일 수명과 늦은 UI 차단.
+- `ChatMediaBoundaryQATests` 8개와 `ChatSignedURLHTTPQATests`/`ChatSignedURLQAHTTPClientTests`: DEV·지정 객체 제한, 보류·취소·HTTP 관측 경계. 실제 장치 조작 검증과 구분한다.
+- 실제 Simulator Photos 검사는 photos-add 사전 권한이 필요하다. skip/0개 실행은 통과가 아니다. 게이트 후 로그인 QA용 DEV 앱은 서명 빌드로 복구한다.
 
 - `PhotoLibraryOriginalIntegrationTests`는 `photos-add` 권한이 사전 부여된 Simulator에서 합성 JPEG를 실제 Photos에 저장한다. 권한이 없거나 실제 기기이면 skip하므로 실제 executed/skip 결과를 확인해야 한다. `.bin` 직접 제출3302 실패를 재현했고, `PhotoLibraryPreparedResource`의 올바른 확장자 임시 사본으로 같은 제품 API를 검증한다. Simulator Photos에는 합성 작은 테스트 이미지가 생성될 수 있다.
 

@@ -1,13 +1,15 @@
 # 프로그램적 검증 — 간소화 운영 기준
 
-상태: 2026-09-30 사용자 승인으로 운영 방식을 간소화하고 Node.js 공용 실행기와 OutPick 검사 설정을 구현했다. 실행 범위와 결과는 [진행 기록](../tasks/programmatic-verification-gates/progress.md)에서 확인한다.
+상태: 로컬 공용 Node 실행기와 OutPick의 기본·Functions·Firestore·iOS·채팅 미디어 설정 연결 완료. [채팅 미디어 최종 검증 범위](CHAT_MEDIA_RETENTION.md)를 참고한다. 다른 프로젝트나 실기기·운영 검증까지 자동 연결됐다는 뜻은 아니다.
 
 ## 역할과 작업 순서
 
-1. 사용자가 모델을 직접 선택·변경한다. 설계·세부 구현 계획·테스트 설계·결과 분석은 GPT-6 Astra High, 구현은 GPT-6 Sol Extra High를 사용한다.
-2. 사용자와 Astra가 요구사항·범위·계획·필수 검사·합격 기준을 검토하고 구현을 승인한다.
-3. 사용자가 Sol로 변경하면 승인된 범위를 구현하고 프로젝트의 게이트 명령을 실행한다.
-4. Sol은 변경 내용·프로그램 판정·검사 대상·원본 결과·미검증 항목을 보고한다. 사용자가 Astra로 변경하면 결과를 분석한다.
+2026-10-01 사용자 결정으로 기존 설계·분석 역할은 GPT-6.1 Sol High, 기존 구현 역할은 GPT-6.1 Sol Light로 변경했다. 역할과 프로그램적 검증 절차는 유지한다. High/Light는 사용자가 선택하는 설정 표기이며 내부 reasoning 값으로 임의 변환하지 않는다.
+
+1. 사용자가 모델을 직접 선택·변경한다. 설계·세부 구현 계획·테스트 설계·결과 분석은 GPT-6.1 Sol High, 구현은 GPT-6.1 Sol Light를 사용한다.
+2. 사용자와 GPT-6.1 Sol High가 요구사항·범위·계획·필수 검사·합격 기준을 검토하고 구현을 승인한다.
+3. 사용자가 GPT-6.1 Sol Light로 변경하면 승인된 범위를 구현하고 프로젝트의 게이트 명령을 실행한다.
+4. GPT-6.1 Sol Light는 변경 내용·프로그램 판정·검사 대상·원본 결과·미검증 항목을 보고한다. 사용자가 GPT-6.1 Sol High로 변경하면 결과를 분석한다.
 5. 요구사항·기준 변경이나 실제로 모호한 선택이 필요할 때 사용자와 논의한다. 합의된 범위의 일반 구현 세부사항은 구체화한다.
 
 별도 채팅 생성·자동 전달·모델 전환 서버는 두지 않는다. 모델 설정을 확인하지 못한 경우 실제 모델을 임의로 단정하지 않는다.
@@ -21,17 +23,22 @@
 - 검사한 코드 상태와 실행 결과를 연결한다. 코드가 바뀌면 이전 결과를 새 코드의 통과로 사용하지 않는다.
 - 필수 검사·기대값·판정 기준을 약화하거나 제외해야 하면 사용자와 논의한다. 실패를 없애려고 검사를 삭제하지 않는다.
 - 게이트가 없거나 필요한 검사가 아직 연결되지 않았으면 미검증/차단으로 보고한다. 존재하지 않는 게이트 명령을 실행했다고 주장하지 않는다.
-- 테스트의 요구사항 충족 범위와 충분성은 사용자와 Astra가 검토한다. 프로그램은 코드화된 검사와 기준을 실행·판정한다.
+- 테스트의 요구사항 충족 범위와 충분성은 사용자와 GPT-6.1 Sol High가 검토한다. 프로그램은 코드화된 검사와 기준을 실행·판정한다.
 - 사람이 확인해야 하는 항목을 자동 검증한 것으로 기록하지 않는다. 필수 확인이 남으면 미완료로 남긴다.
 
 ## 이번 범위에서 제외
 
 이전 설계의 자동 전달, 별도 작업/검증 OS 계정, 개발·발행 GitHub App 분리, 전용 clone·고정 복사본·격리 인프라, 승인 증거 서비스, 관리자 우회 방지·신규 병합 보호 구성은 이번 도입에서 제외한다. 기존 보안 설정을 해제하는 작업은 아니다.
 
-독립 공개 Go 제품·3개 OS 배포·전용 테스트 연결 프로토콜을 먼저 완성해야 한다는 조건도 제거했다. 사용자 선택에 따라 Node.js 공용 실행기와 프로젝트별 JSON 설정으로 재사용한다.
+독립 공개 Go 제품·3개 OS 배포·전용 테스트 연결 프로토콜은 포함하지 않는다. 현재는 공용 Node 실행기와 프로젝트별 JSON 설정을 사용한다.
 
 AGENTS.md는 운영 지침이다. 실제 게이트 실행기와 다르며 에이전트/관리자의 의도적인 우회까지 기술적으로 차단하는 보장은 이번 범위에 없다. 운영 배포·자동 병합을 승인한 것도 아니다.
 
-## 구현과 실행 기록
+## 실행과 재현 조건
 
-[간단한 구현 계획](../tasks/programmatic-verification-gates/plan.md)과 [현재 상태](../tasks/programmatic-verification-gates/progress.md)를 따른다.
+- 실행기 원본·reporter·자체 테스트는 `tools/verification-gate/`에서 버전 관리한다. `node tools/verification-gate/install.mjs`로 공용 위치에 설치하며 이 환경은 `/Users/gy/.codex/tools/verification-gate/gate.mjs`를 사용한다. 새 checkout만으로 자동 설치되거나 GitHub CI에서 실행되는 구성은 아니다. 다른 환경은 [설치 안내](../../../tools/verification-gate/README.md)와 검사 설정의 로컬 경로를 먼저 확인한다.
+- `node /Users/gy/.codex/tools/verification-gate/gate.mjs --project /Users/gy/Desktop/OutPick --config verification/<설정>.json`으로 실행한다. 설정은 `gate`, `functions`, `firestore`, `ios`, `chat-media-retention` 다섯 가지다.
+- Functions/Firestore는 Node 24, Firestore/Storage 에뮬레이터는 Java와 Firebase CLI가 필요하다. 두 설정은 같은 Functions 산출물을 재빌드하므로 동시에 실행하지 않는다.
+- iOS는 Xcode·설정에 지정한 Simulator·Development Firebase 로컬 plist가 필요하다. 두 iOS 게이트는 같은 derived data를 사용하므로 순차 실행한다. Photos 통합 검사는 Simulator photos-add 권한을 요구하며 skip을 허용하지 않는다.
+- `output/verification/<실행 ID>/summary.json`에서 판정·소스 식별·필수 ID·누락·실패를 확인하고 각 check 원본 결과와 함께 보관한다. 원본 로그·토큰·로컬 설정은 공개 저장소에 올리지 않는다.
+- 이 저장소에 GitHub Actions workflow나 필수 게이트 status check는 연결하지 않았다. 로컬 판정과 코드 리뷰를 거친 병합이며 관리자 우회 방지를 보장하지 않는다.

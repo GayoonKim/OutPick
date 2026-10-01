@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import {after, beforeEach, describe, test} from "node:test";
 import {db} from "../functions/lib/core/firebase.js";
+import {Timestamp} from "../functions/node_modules/firebase-admin/lib/firestore/index.js";
+import {chatMediaExpiryJobID} from "../functions/lib/chat/media/retentionContracts.js";
+import {processChatMediaExpiryJob} from "../functions/lib/chat/media/retentionService.js";
+import {chatMediaRetentionStorage} from "../functions/lib/chat/media/retentionStorage.js";
 import {
   acknowledgeRoomClosureService,
   closeOwnedChatRoomService,
@@ -70,6 +74,8 @@ async function clearFixtures() {
     db.recursiveDelete(db.collection("userPublicProfiles").doc(moderatorUID)),
     db.recursiveDelete(db.collection("userPublicProfiles").doc(memberUID)),
     db.recursiveDelete(db.collection("chatMessageCleanupJobs")),
+    db.recursiveDelete(db.collection("chatMediaExpiryJobs")),
+    db.recursiveDelete(db.collection("moderationMessageGuards")),
     db.recursiveDelete(db.collection("chatMessageDeletionDeliveryJobs")),
     db.recursiveDelete(db.collection("moderationRoomCleanupJobs")),
     db.recursiveDelete(db.collection("roomOwnershipSuccessionJobs")),
@@ -165,6 +171,123 @@ beforeEach(async () => {
 after(clearFixtures);
 
 describe("chat moderation lifecycle transactions", () => {
+  for (const kind of ["메시지 삭제", "방 종료", "계정 탈퇴"]) {
+    test(`만료 정리와 ${kind} 경합은 두 삭제 순서에서 수렴하고 무관한 객체를 보존한다`, {timeout: 30_000}, async () => {
+      for (const first of ["expiry", "cleanup"]) {
+        await clearFixtures();
+        await seedFixtures();
+        const prefix = `rooms/${roomID}/messages/${messageID}/attachments/media-1`;
+        const objects = [
+          {bucket: "ready-bucket", path: `${prefix}/display`, generation: "1", role: "original"},
+          {bucket: "ready-bucket", path: `${prefix}/thumbnail`, generation: "2", role: "thumbnail"},
+        ];
+        const unrelated = "rooms/other-room/messages/other-message/attachments/media-1/display";
+        const evidence = "evidence/other-incident/original";
+        const files = new Map([...objects.map((object) => [object.path, object.generation]), [unrelated, "9"], [evidence, "10"]]);
+        const removed = [];
+        const calls = {expiry: 0, cleanup: 0};
+        // 두 작업이 Storage 삭제에 도달한 뒤 실제 삭제 순서를 제어한다.
+        const barriers = Object.fromEntries(["expiry", "cleanup"].map((name) => {
+          let arrive, release;
+          const arrived = new Promise((resolve) => { arrive = resolve; });
+          const released = new Promise((resolve) => { release = resolve; });
+          return [name, {arrive, release, arrived, released}];
+        }));
+        const storage = chatMediaRetentionStorage({bucket: (name) => {
+          assert.equal(name, "ready-bucket");
+          return {file: (path, options) => ({
+            getMetadata: async () => {
+              if (!files.has(path)) throw Object.assign(new Error("합성 객체 없음"), {code: 404});
+              if (options && files.get(path) !== options.generation) {
+                throw Object.assign(new Error("합성 generation 없음"), {code: 404});
+              }
+              return [{generation: files.get(path)}];
+            },
+            delete: async () => {
+              calls.expiry++;
+              barriers.expiry.arrive();
+              await barriers.expiry.released;
+              assert.equal(options.preconditionOpts.ifGenerationMatch, options.generation);
+              if (!files.has(path)) throw Object.assign(new Error("합성 객체 없음"), {code: 404});
+              assert.equal(files.get(path), options.generation);
+              files.delete(path);
+              removed.push(path);
+            },
+          })};
+        }});
+        const bucket = {deleteFiles: async ({prefix: target, force}) => {
+          calls.cleanup++;
+          assert.equal(force, true);
+          barriers.cleanup.arrive();
+          await barriers.cleanup.released;
+          for (const path of [...files.keys()]) {
+            if (path.startsWith(target)) { files.delete(path); removed.push(path); }
+          }
+        }};
+        const expiryRef = db.collection("chatMediaExpiryJobs").doc(chatMediaExpiryJobID(roomID, messageID));
+        await expiryRef.set({
+          schemaVersion: 1, roomID, messageID, objects,
+          sentAt: Timestamp.fromMillis(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+          mediaExpiresAt: Timestamp.fromDate(now), nextAttemptAt: Timestamp.fromDate(now),
+          status: "scheduled",
+        });
+        await db.collection("Rooms").doc(roomID).collection("Messages").doc(messageID).update({
+          attachments: [{pathOriginal: objects[0].path, pathThumbnail: objects[1].path}],
+        });
+        const expiryInput = {jobID: expiryRef.id, firestore: db, storage, readyBucket: "ready-bucket", now};
+        const expiryRun = processChatMediaExpiryJob(expiryInput);
+        await barriers.expiry.arrived;
+        let cleanupRun;
+        const jobID = messageCleanupJobID(roomID, messageID);
+        const deletionRequestID = "expiry-race-account-request";
+        if (kind === "방 종료") {
+          await closeOwnedChatRoomService(ownerUID, {roomID, expectedLifecycleVersion: 1, clientRequestID: requestID}, now, db);
+          cleanupRun = processRoomCleanupJob(roomID, db, cleanupBucketResolver(bucket), now);
+        } else {
+          if (kind === "계정 탈퇴") {
+            await db.collection("users").doc(ownerUID).set({accountStatus: "deletionPending", accountGenerationID: "race-generation"}, {merge: true});
+            assert.equal(await scrubMessagePage(ownerUID, deletionRequestID, "race-generation", now), true);
+            assert.equal(await hasIncompleteAccountDeletionMessageCleanup(deletionRequestID), true);
+          } else {
+            await deleteChatMessageService(ownerUID, null, {
+              roomID, messageID, expectedSeq: 1, reasonCode: "chatMessageDeletion",
+              reportTargetType: null, reportTargetID: null, clientRequestID: requestID,
+            }, now, db);
+          }
+          cleanupRun = processMessageCleanupJob(jobID, db, cleanupBucketResolver(bucket), now);
+        }
+        await barriers.cleanup.arrived;
+        try {
+          barriers[first].release();
+          if (first === "expiry") assert.equal(await expiryRun, "deleted");
+          else assert.equal(await cleanupRun, true);
+          barriers[first === "expiry" ? "cleanup" : "expiry"].release();
+          const results = await Promise.all([expiryRun, cleanupRun]);
+          assert.deepEqual(results, ["deleted", true]);
+          assert.equal((await expiryRef.get()).exists, false);
+          assert.deepEqual([...files.entries()].sort(), [[evidence, "10"], [unrelated, "9"]].sort());
+          assert.deepEqual(removed.sort(), objects.map((object) => object.path).sort());
+          const beforeReplay = {...calls};
+          assert.equal(await processChatMediaExpiryJob(expiryInput), "skipped");
+          if (kind === "방 종료") {
+            assert.equal((await db.collection("moderationRoomCleanupJobs").doc(roomID).get()).get("status"), "awaitingExpiry");
+            assert.equal((await db.collection("Rooms").doc(roomID).get()).get("tombstoneSchemaVersion"), 1);
+            assert.equal(await processRoomCleanupJob(roomID, db, cleanupBucketResolver(bucket), now), false);
+          } else {
+            assert.equal((await db.collection("chatMessageCleanupJobs").doc(jobID).get()).get("status"), "completed");
+            assert.equal(await processMessageCleanupJob(jobID, db, cleanupBucketResolver(bucket), now), false);
+            if (kind === "계정 탈퇴") assert.equal(await hasIncompleteAccountDeletionMessageCleanup(deletionRequestID), false);
+          }
+          assert.deepEqual(calls, beforeReplay);
+        } finally {
+          barriers.expiry.release();
+          barriers.cleanup.release();
+          await Promise.allSettled([expiryRun, cleanupRun]);
+        }
+      }
+    });
+  }
+
   test("관리자 임명·재생·회수는 projection, count, event, receipt를 원자 갱신한다", async () => {
     await db.collection("roomModerationStates").doc(roomID).delete();
     const assigned = await assignRoomModeratorService(ownerUID, {

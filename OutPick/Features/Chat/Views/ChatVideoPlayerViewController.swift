@@ -9,19 +9,21 @@ import UIKit
 import AVKit
 
 final class ChatVideoPlayerViewController: UIViewController {
-    private let playbackAsset: ChatVideoPlaybackAsset
+    private let playback: ChatVideoPlaybackSession
     private let videoResolver: ChatVideoPlaybackResolving
     private let photoLibrarySaver: PhotoLibrarySaving
     private let playerViewController = AVPlayerViewController()
     private var saveTask: Task<Void, Never>?
     private var closed = false
+    private let saveButton = UIButton(type: .system)
+    private let statusView = ChatVideoPlaybackStatusView()
 
     init(
-        playbackAsset: ChatVideoPlaybackAsset,
+        playbackAsset: ChatVideoPlaybackAsset?,
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving
     ) {
-        self.playbackAsset = playbackAsset
+        self.playback = ChatVideoPlaybackSession(asset: playbackAsset, resolver: videoResolver)
         self.videoResolver = videoResolver
         self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
@@ -37,11 +39,16 @@ final class ChatVideoPlayerViewController: UIViewController {
         view.backgroundColor = .black
         configurePlayer()
         configureSaveButton()
+        statusView.attach(to: view)
+        statusView.onRetry = { [weak self] in self?.playback.retry() }
+        statusView.onClose = { [weak self] in self?.dismiss(animated: true) }
+        playback.onState = { [weak self] state in self?.renderPlayback(state) }
+        renderPlayback(playback.state)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        playerViewController.player?.play()
+        playback.start()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -49,16 +56,14 @@ final class ChatVideoPlayerViewController: UIViewController {
         guard isBeingDismissed || navigationController?.isBeingDismissed == true else { return }
         closed = true
         saveTask?.cancel()
-        playerViewController.player?.pause()
+        playback.close()
         playerViewController.player = nil
-        if let lease = playbackAsset.fileLease { Task { await lease.release() } }
     }
 
     deinit { saveTask?.cancel() }
 
     private func configurePlayer() {
-        let player = AVPlayer(url: playbackAsset.url)
-        playerViewController.player = player
+        playerViewController.player = playback.player
         addChild(playerViewController)
         view.addSubview(playerViewController.view)
         playerViewController.view.translatesAutoresizingMaskIntoConstraints = false
@@ -74,7 +79,8 @@ final class ChatVideoPlayerViewController: UIViewController {
     private func configureSaveButton() {
         guard let overlay = playerViewController.contentOverlayView else { return }
 
-        let button = UIButton(type: .system)
+        let button = saveButton
+        button.accessibilityIdentifier = "chatVideoSaveButton"
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setImage(UIImage(systemName: "square.and.arrow.down"), for: .normal)
         button.tintColor = .white
@@ -82,7 +88,7 @@ final class ChatVideoPlayerViewController: UIViewController {
         button.layer.cornerRadius = 22
         button.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            guard self.saveTask == nil, !self.closed else { return }
+            guard self.saveTask == nil, !self.closed, self.playback.canSave else { return }
             self.saveTask = Task { await self.handleSaveTapped() }
         }, for: .touchUpInside)
 
@@ -95,9 +101,20 @@ final class ChatVideoPlayerViewController: UIViewController {
         ])
     }
 
+    private func renderPlayback(_ state: ChatVideoPlaybackSession.State) {
+        statusView.render(state)
+        saveButton.isEnabled = playback.canSave && saveTask == nil
+        playerViewController.showsPlaybackControls = state == .ready
+        if state == .expired || state == .closed {
+            saveTask?.cancel()
+            playerViewController.player = nil
+        }
+    }
+
     @MainActor
     private func handleSaveTapped() async {
-        defer { saveTask = nil }
+        defer { saveTask = nil; saveButton.isEnabled = playback.canSave }
+        guard let playbackAsset = playback.asset, playback.canSave else { return }
         let hud = CircularProgressHUD.show(in: view, title: nil)
         hud.setProgress(0.15)
 
@@ -105,7 +122,7 @@ final class ChatVideoPlayerViewController: UIViewController {
             let lease = try await videoResolver.acquireFileForSaving(playbackAsset)
             do {
                 try Task.checkCancellation()
-                guard !closed, lease.isValid else { throw CancellationError() }
+                guard !closed, playback.canSave, lease.isValid else { throw CancellationError() }
                 try await photoLibrarySaver.saveOriginal(lease, isVideo: true)
                 await lease.release()
             } catch { await lease.release(); throw error }

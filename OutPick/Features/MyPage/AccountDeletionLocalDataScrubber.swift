@@ -62,6 +62,7 @@ final class AccountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing 
             "AvatarImageCache",
             "RoomCoverImageCache",
             "ChatImageCache",
+            "ChatImageCacheRetentionV1",
             "ThumbCache"
         ] {
             await ImageCacheDiskStore(folderName: folderName).removeAll()

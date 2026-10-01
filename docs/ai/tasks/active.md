@@ -1,5 +1,8 @@
 # Active Task Index
 
+> **채팅 미디어 7일 만료: 구현·개발 QA·다섯 게이트·최종 리뷰 완료.** [공개 최종 계약·검증·운영 주의사항](../architecture/CHAT_MEDIA_RETENTION.md)을 기준으로 한다. 작업 단위 커밋을 정리했고 PR/병합 상태는 저장소 기록을 따른다. 로컬 상세 실행 기록은 `chat-media-retention/progress.md`에 보존한다. 운영 배포는 포함하지 않는다. 아래의 “다음 작업/미구현” 표기는 과거 작업의 이력이다.
+
+
 > **다음 핵심 작업 확정:** [전송 시점+7일 만료 설계·구현 인계](chat-media-first-view-loading/retention-next-handoff.md)를 먼저 읽는다. 이번 완료 미디어 개선 커밋/PR/자체리뷰/머지 진행, [리뷰 기록](chat-media-first-view-loading/review.md). 아래 QA 진행 문구는 당시 이력이다.
 
 > **최신 — 계정 왕복 QA 완료:** B에서 A사진오표시없음 사용자 확인. 동일resource B miss/별도 namespace, A복귀 hit/재다운로드0. A80파일 보존+B1파일 생성/temporary0. 일반실행복원. 전송시점+7일 만료는 확정 정책/별도 미구현 후속. [결과](chat-media-first-view-loading/original-media-results.md).

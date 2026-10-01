@@ -15,6 +15,7 @@ struct ChatMessageRecord: Codable, FetchableRecord, PersistableRecord {
     let roleEvent: String?
     let msg: String?
     let sentAt: Date?
+    let mediaExpiresAt: Date?
     let attachments: String
     let sharedContent: String?
     let isFailed: Bool

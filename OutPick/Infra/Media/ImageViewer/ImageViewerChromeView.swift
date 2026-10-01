@@ -85,11 +85,12 @@ final class ImageViewerChromeView: UIView {
         return hit is UIControl ? hit : nil
     }
 
-    func render(index: Int, count: Int, saving: Bool) {
+    func render(index: Int, count: Int, saving: Bool, canSave: Bool = true) {
         counter.text = count > 1 ? String(format: "%02d / %02d", index + 1, count) : ""
         counter.accessibilityLabel = count > 1 ? "총 \(count)장 중 \(index + 1)번째 사진" : nil
         saveButton.setTitle(saving ? " 저장 중…" : " 저장", for: .normal)
-        saveButton.isEnabled = !saving && count > 0
+        saveButton.isEnabled = !saving && count > 0 && canSave
+        reportButton.isEnabled = canSave
         saveButton.setTitleColor(saving ? OutPickTheme.ColorToken.accent : OutPickTheme.ColorToken.textSecondary, for: .disabled)
         saveButton.tintColor = saving ? OutPickTheme.ColorToken.accent : OutPickTheme.ColorToken.textPrimary
     }

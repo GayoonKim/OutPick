@@ -15,6 +15,8 @@ struct ImageIndexMeta: Decodable, Equatable {
     let originalKey: String?
     let thumbURL: String?
     let originalURL: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let width: Int?
     let height: Int?
     let bytesOriginal: Int?
@@ -22,6 +24,8 @@ struct ImageIndexMeta: Decodable, Equatable {
     let isFailed: Bool
     let localThumb: String?
     let sentAt: Date
+    let mediaExpiresAt: Date?
+    var attachmentID: String? = nil
 }
 
 struct VideoIndexMeta: Decodable, Equatable {
@@ -33,6 +37,8 @@ struct VideoIndexMeta: Decodable, Equatable {
     let originalKey: String?
     let thumbURL: String?
     let originalURL: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let width: Int?
     let height: Int?
     let bytesOriginal: Int?
@@ -43,4 +49,6 @@ struct VideoIndexMeta: Decodable, Equatable {
     let isFailed: Bool
     let localThumb: String?
     let sentAt: Date
+    let mediaExpiresAt: Date?
+    var attachmentID: String? = nil
 }

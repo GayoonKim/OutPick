@@ -126,6 +126,8 @@ final class ImageCachePipeline {
     private let disk: ImageCacheDiskStore
     private let coordinator: ImageLoadCoordinator
     private let resources: ImagePipelineResources
+    private let cacheIdentityLock = NSLock()
+    private var pathsByCacheIdentity: [String: Set<String>] = [:]
     private static let registryLock = NSLock()
     private static let registry = NSHashTable<ImageCachePipeline>.weakObjects()
 
@@ -159,12 +161,14 @@ final class ImageCachePipeline {
     }
 
     func cachedImage(path: String) async -> UIImage? {
-        try? await cachedValue(path: path, priority: .visible).image
+        rememberCachePath(path)
+        return try? await cachedValue(path: path, priority: .visible).image
     }
 
     var canPrepareDiskImage: Bool { memory.canPrepareDiskImage }
 
     func prepareDiskImage(path: String) async {
+        rememberCachePath(path)
         guard canPrepareDiskImage, !Task.isCancelled else { return }
         let metric = ImageCacheMetrics.shared.begin("chatDiskPreparation", key: path)
         let value = try? await cachedValue(path: path, priority: .diskPreparation)
@@ -173,10 +177,12 @@ final class ImageCachePipeline {
 
     /// 표시용 메모리 조회만 수행하며 디스크 읽기·저장 승격은 기존 비동기 경로가 담당한다.
     func cachedMemoryImageImmediately(path: String) -> UIImage? {
-        memory.image(forKey: "imageCache|\(path)")
+        rememberCachePath(path)
+        return memory.image(forKey: "imageCache|\(path)")
     }
 
     func cachedImage(path: String, storePolicy: ImageCacheStorePolicy) async -> UIImage? {
+        rememberCachePath(path)
         guard storePolicy != .transient else { return nil }
         guard let image = await cachedImage(path: path), !Task.isCancelled else { return nil }
         if storePolicy == .memoryAndDisk {
@@ -186,6 +192,7 @@ final class ImageCachePipeline {
     }
 
     private func cachedValue(path: String, priority: ImageRequestPriority) async throws -> ImageLoadValue {
+        rememberCachePath(path)
         try Task.checkCancellation()
         let request = ImageRequest(path: path, work: .cache)
         if let image = memory.image(forKey: request.cacheKey) {
@@ -207,7 +214,8 @@ final class ImageCachePipeline {
     }
 
     func loadImage(path: String, maxBytes: Int, storePolicy: ImageCacheStorePolicy, priority: ImageRequestPriority) async throws -> UIImage {
-        try await ImageCacheMetrics.shared.request("pipelineRequest", key: path) {
+        rememberCachePath(path)
+        return try await ImageCacheMetrics.shared.request("pipelineRequest", key: path) {
             try Task.checkCancellation()
             let request = ImageRequest(path: path, work: storePolicy == .transient
                 ? .transient(maxBytes: maxBytes) : .load(maxBytes: maxBytes))
@@ -236,6 +244,7 @@ final class ImageCachePipeline {
     }
 
     func storeImageData(_ data: Data, path: String) async throws {
+        rememberCachePath(path)
         let revision = try await coordinator.beginPreparedStore(path: path)
         let value = try await processor.stored(data)
         do {
@@ -246,7 +255,19 @@ final class ImageCachePipeline {
     func flushPendingWrites() async { await coordinator.flushPendingWrites() }
 
     func removeImage(path: String) async {
+        rememberCachePath(path)
         await coordinator.remove(path: path)
+    }
+
+    @discardableResult
+    func removeExpiredCacheIdentities(_ identities: Set<String>) async -> Bool {
+        var succeeded = true
+        for identity in identities {
+            let paths = rememberedPaths(forCacheIdentity: identity)
+            for path in paths { await coordinator.remove(path: path) }
+            if !(await disk.remove(cacheIdentity: identity)) { succeeded = false }
+        }
+        return succeeded
     }
 
     func removeAllCachedImages() async {
@@ -270,6 +291,7 @@ final class ImageCachePipeline {
 
     func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int, storePolicy: ImageCacheStorePolicy = .memoryAndDisk) async {
         guard !items.isEmpty else { return }
+        items.forEach { rememberCachePath($0.path) }
         await withTaskGroup(of: Void.self) { group in
             var iterator = items.makeIterator()
             var running = 0
@@ -290,6 +312,20 @@ final class ImageCachePipeline {
                 spawnNext()
             }
         }
+    }
+
+    private func rememberCachePath(_ path: String) {
+        guard !path.isEmpty else { return }
+        let identity = "imageCache|\(path)".sha256()
+        cacheIdentityLock.lock()
+        pathsByCacheIdentity[identity, default: []].insert(path)
+        cacheIdentityLock.unlock()
+    }
+
+    private func rememberedPaths(forCacheIdentity identity: String) -> Set<String> {
+        cacheIdentityLock.lock()
+        defer { cacheIdentityLock.unlock() }
+        return pathsByCacheIdentity[identity] ?? []
     }
 
 

@@ -51,6 +51,10 @@ final class ChatRoomSettingViewModel {
         let thumbnailPath: String?
         let originalPath: String?
         let videoPath: String?
+        let generationThumb: String?
+        let generationOriginal: String?
+        let mediaExpiresAt: Date?
+        var playbackResource: ChatVideoPlaybackResource? = nil
     }
 
     private struct MaterializedMedia {
@@ -291,7 +295,17 @@ final class ChatRoomSettingViewModel {
         }
     }
 
+    func purgeExpiredMediaItems() {
+        let available = mediaItems.filter { !$0.isExpired }
+        syncGalleryCache(with: available)
+        if available.count != mediaItems.count { mediaItems = available }
+    }
+
     func thumbnailImage(for item: ChatRoomSettingMediaItem) async -> UIImage? {
+        guard !item.isExpired else {
+            galleryItemsByID[item.id] = nil
+            return nil
+        }
         if let cached = galleryItemsByID[item.id] {
             return cached.image
         }
@@ -299,20 +313,24 @@ final class ChatRoomSettingViewModel {
         guard let materialized = await materializeMediaThumb(for: item) else {
             return nil
         }
+        guard !item.isExpired else { return nil }
 
-        let galleryItem = Self.makeGalleryItem(from: materialized)
+        let galleryItem = makeGalleryItem(from: materialized)
         galleryItemsByID[item.id] = galleryItem
         return galleryItem.image
     }
 
     func buildGalleryItems() async -> [GalleryItemModel] {
-        let items = mediaItems
+        let items = mediaItems.filter { !$0.isExpired }
+        let validIDs = Set(items.map(\.id))
+        galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
         let missingItems = items.filter { galleryItemsByID[$0.id] == nil }
 
         if !missingItems.isEmpty {
             let materialized = await materializeMediaThumbs(for: missingItems)
             for media in materialized {
-                galleryItemsByID[media.item.id] = Self.makeGalleryItem(from: media)
+                guard !media.item.isExpired else { continue }
+                galleryItemsByID[media.item.id] = makeGalleryItem(from: media)
             }
         }
 
@@ -340,8 +358,10 @@ final class ChatRoomSettingViewModel {
     }
 
     private func materializeMediaThumb(for item: ChatRoomSettingMediaItem) async -> MaterializedMedia? {
+        guard !item.isExpired else { return nil }
         for path in item.previewPaths {
-            if let image = await attachmentImageLoader.cachedImage(for: path) {
+            let resource = mediaCacheResource(for: path, item: item)
+            if let image = await attachmentImageLoader.cachedImage(for: resource), !item.isExpired {
                 let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
                 return MaterializedMedia(item: item, image: composed)
             }
@@ -349,7 +369,9 @@ final class ChatRoomSettingViewModel {
 
         for path in item.previewPaths {
             do {
-                let image = try await attachmentImageLoader.loadImage(for: path, maxBytes: mediaThumbMaxBytes)
+                let resource = mediaCacheResource(for: path, item: item)
+                let image = try await attachmentImageLoader.loadImage(for: resource, maxBytes: mediaThumbMaxBytes)
+                guard !item.isExpired else { return nil }
                 let composed = item.isVideo ? Self.drawPlayBadge(on: image) : image
                 return MaterializedMedia(item: item, image: composed)
             } catch {
@@ -361,8 +383,13 @@ final class ChatRoomSettingViewModel {
     }
 
     private func syncGalleryCache(with items: [ChatRoomSettingMediaItem]) {
-        let validIDs = Set(items.map(\.id))
+        let validIDs = Set(items.filter { !$0.isExpired }.map(\.id))
         galleryItemsByID = galleryItemsByID.filter { validIDs.contains($0.key) }
+    }
+
+    private func mediaCacheResource(for path: String, item: ChatRoomSettingMediaItem) -> ChatMediaCacheResource {
+        let generation = path == item.originalURL ? item.generationOriginal : item.generationThumb
+        return .attachment(path: path, generation: generation, mediaExpiresAt: item.mediaExpiresAt)
     }
 
     private func applyCurrentUserRole(_ role: ChatRoomMemberRole?) {
@@ -403,7 +430,7 @@ final class ChatRoomSettingViewModel {
         )
     }
 
-    private static func makeGalleryItem(from media: MaterializedMedia) -> GalleryItemModel {
+    private func makeGalleryItem(from media: MaterializedMedia) -> GalleryItemModel {
         return GalleryItemModel(
             id: media.item.id,
             image: media.image,
@@ -411,7 +438,14 @@ final class ChatRoomSettingViewModel {
             sentAt: media.item.sentAt,
             thumbnailPath: media.item.thumbnailPath,
             originalPath: media.item.originalURL,
-            videoPath: media.item.isVideo ? media.item.originalURL : nil
+            videoPath: media.item.isVideo ? media.item.originalURL : nil,
+            generationThumb: media.item.generationThumb,
+            generationOriginal: media.item.generationOriginal,
+            mediaExpiresAt: media.item.mediaExpiresAt,
+            playbackResource: media.item.isVideo ? ChatVideoPlaybackResource(
+                roomID: roomInfo.id, messageID: media.item.messageID,
+                attachmentID: media.item.attachmentID, path: media.item.originalURL,
+                generation: media.item.generationOriginal, mediaExpiresAt: media.item.mediaExpiresAt) : nil
         )
     }
 

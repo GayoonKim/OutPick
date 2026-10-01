@@ -136,19 +136,45 @@ actor ImageCacheDiskStore {
         _ = try? await resources.io.withPermit(kind: .write) { await self.removeNow(key: key, revision: revision) }
     }
 
+    @discardableResult
+    func remove(cacheIdentity: String) async -> Bool {
+        let revision = ImageCacheRevisionClock.next()
+        return (try? await resources.io.withPermit(kind: .write) {
+            await self.removeCacheIdentityNow(cacheIdentity, revision: revision)
+        }) ?? false
+    }
+
     private func removeNow(key: String, revision: UInt64) {
         guard accept(revision: revision, forKey: key) else { return }
         if revision == 0 { removeFile(forKey: key) }
     }
 
+    private func removeCacheIdentityNow(_ cacheIdentity: String, revision: UInt64) -> Bool {
+        let current = max(globalRevision, revisions[cacheIdentity] ?? 0)
+        guard revision >= current else { return false }
+        revisions[cacheIdentity] = revision
+        return removeFile(cacheIdentity: cacheIdentity)
+    }
+
     private func removeFile(forKey key: String) {
         ensureCurrentSizeLoaded()
 
-        let url = fileURL(forKey: key)
+        _ = removeFile(cacheIdentity: key.sha256Hex)
+    }
+
+    private func removeFile(cacheIdentity: String) -> Bool {
+        ensureCurrentSizeLoaded()
+
+        let url = fileURL(cacheIdentity: cacheIdentity)
         if let existing = fileSize(at: url) {
             currentSizeBytes = max(0, currentSizeBytes - existing)
         }
-        try? fileManager.removeItem(at: url)
+        do {
+            try fileManager.removeItem(at: url)
+            return true
+        } catch {
+            return !fileManager.fileExists(atPath: url.path)
+        }
     }
 
     func removeAll(revision: UInt64 = 0) async {
@@ -159,7 +185,7 @@ actor ImageCacheDiskStore {
         guard revision >= globalRevision else { return }
         globalRevision = revision
         // 더 최신인 특정 이미지 저장이 먼저 도착했다면 해당 파일은 보존한다.
-        let protectedNames = Set(revisions.filter { $0.value >= revision && revision > 0 }.map { fileURL(forKey: $0.key).lastPathComponent })
+        let protectedNames = Set(revisions.filter { $0.value >= revision && revision > 0 }.map { "\($0.key).bin" })
         revisions = revisions.filter { $0.value >= revision && revision > 0 }
         guard let files = try? fileManager.contentsOfDirectory(
             at: baseDir,
@@ -179,11 +205,12 @@ actor ImageCacheDiskStore {
 
     /// 무효화와 쓰기가 역순으로 도착해도 이전 세대가 최신 파일을 되살리지 못한다.
     private func accept(revision: UInt64, forKey key: String) -> Bool {
-        let current = max(globalRevision, revisions[key] ?? 0)
+        let cacheIdentity = key.sha256Hex
+        let current = max(globalRevision, revisions[cacheIdentity] ?? 0)
         guard revision >= current else { return false }
         if revision > current {
-            removeFile(forKey: key)
-            revisions[key] = revision
+            _ = removeFile(cacheIdentity: cacheIdentity)
+            revisions[cacheIdentity] = revision
         }
         return true
     }
@@ -219,7 +246,11 @@ actor ImageCacheDiskStore {
     private func fileURL(forKey key: String) -> URL {
         ImageCacheMetrics.shared.linkCacheKey(key)
         let hashed = key.sha256Hex
-        return baseDir.appendingPathComponent("\(hashed).bin")
+        return fileURL(cacheIdentity: hashed)
+    }
+
+    private func fileURL(cacheIdentity: String) -> URL {
+        baseDir.appendingPathComponent("\(cacheIdentity).bin")
     }
 
     private func bootstrapTrimIfNeeded() {

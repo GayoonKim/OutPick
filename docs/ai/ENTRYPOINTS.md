@@ -1,8 +1,8 @@
 # OutPick Entrypoints
 
-- **프로그램적 검증 게이트:** 공용 원본 `tools/verification-gate/` → [OutPick 설정·실행 방법](../../verification/README.md) → `verification/{gate,functions,firestore,ios}.json` → `output/verification/<실행 ID>/summary.json`. [운영 기준](architecture/PROGRAMMATIC_VERIFICATION.md)·[검증 기록](tasks/programmatic-verification-gates/progress.md). 모델은 사용자가 직접 변경한다.
-
-- **다음 핵심 작업:** [전송 시점+7일 만료 인계](tasks/chat-media-first-view-loading/retention-next-handoff.md). Storage 썸네일/원본·앱 디스크/메모리 공통 만료, 로그인/다운로드로 기한 연장 없음. 정책 확정/구현 전. 완료한 미디어 작업의 [리뷰·최종 검증](tasks/chat-media-first-view-loading/review.md).
+- **채팅 미디어 7일 만료 구현·개발 QA 완료:** [최종 계약·검증·운영 주의사항](architecture/CHAT_MEDIA_RETENTION.md). 서버 확정 시각+168시간, 모든 채팅 미디어의 서명 URL, 시간당 generation 지정 정리, 캐시·화면·Photos 경계를 적용했다. 운영 배포와 실제 1시간 대기·개인정보처리방침 원문 대조는 별도 후속이다.
+- **코드 지도:** [CHAT](entrypoints/CHAT.md) → [DATA](entrypoints/DATA.md) → [FIREBASE](entrypoints/FIREBASE.md) → [TESTS](entrypoints/TESTS.md).
+- **프로그램적 검증:** [운영 기준](architecture/PROGRAMMATIC_VERIFICATION.md), `verification/{gate,functions,firestore,ios,chat-media-retention}.json`. 원본·설치는 [tools/verification-gate](../../tools/verification-gate/README.md), 환경 준비는 [verification](../../verification/README.md)를 따른다. 공용 설치본의 로컬 실행이며 GitHub CI 연결을 의미하지 않는다.
 
 - **영상 저장 중 닫기 검증:** `OutPickTests/VideoSaveLifetimeTests.swift`가 실제 UIKit present/dismiss와 지연 resolver/saver를 사용해 두 영상 VC의 준비 중 닫기·제출 후 성공/실패·늦은 UI 차단·재생 링크/저장 파일 해제를 확인한다. 사용자 영상/Photos/서버 자료 없이 전용 임시 파일만 사용.
 

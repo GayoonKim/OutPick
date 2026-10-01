@@ -51,6 +51,22 @@
       ]
     },
     {
+      "collectionGroup": "chatMediaExpiryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextAttemptAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chatMediaExpiryJobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "leaseExpiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chatMediaDeliveryJobs",
       "queryScope": "COLLECTION",
       "fields": [

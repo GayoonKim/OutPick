@@ -91,6 +91,10 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             "isDeleted": entry.isDeleted,
             "sentAt": Timestamp(date: entry.sentAt)
         ]
+        if let mediaExpiresAt = entry.mediaExpiresAt {
+            data["mediaExpiresAt"] = Timestamp(date: mediaExpiresAt)
+        }
+        if let attachmentID = entry.attachmentID { data["attachmentID"] = attachmentID }
 
         if let thumbKey = entry.thumbKey, !thumbKey.isEmpty {
             data["thumbKey"] = thumbKey
@@ -103,6 +107,12 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
         }
         if let bucketOriginal = entry.bucketOriginal, !bucketOriginal.isEmpty {
             data["bucketOriginal"] = bucketOriginal
+        }
+        if let generationThumb = entry.generationThumb, !generationThumb.isEmpty {
+            data["generationThumb"] = generationThumb
+        }
+        if let generationOriginal = entry.generationOriginal, !generationOriginal.isEmpty {
+            data["generationOriginal"] = generationOriginal
         }
         if let thumbURL = entry.thumbURL, !thumbURL.isEmpty {
             data["thumbURL"] = thumbURL
@@ -142,6 +152,7 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
         let senderUID = data["senderUID"] as? String ?? ""
         let type = Attachment.AttachmentType(rawValue: data["type"] as? String ?? "image") ?? .image
         let sentAt = (data["sentAt"] as? Timestamp)?.dateValue() ?? Date.distantPast
+        let mediaExpiresAt = (data["mediaExpiresAt"] as? Timestamp)?.dateValue()
 
         return ChatRoomMediaIndexEntry(
             roomID: roomID,
@@ -152,6 +163,8 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             type: type,
             bucketThumb: data["bucketThumb"] as? String,
             bucketOriginal: data["bucketOriginal"] as? String,
+            generationThumb: data["generationThumb"] as? String,
+            generationOriginal: data["generationOriginal"] as? String,
             thumbKey: data["thumbKey"] as? String,
             originalKey: data["originalKey"] as? String,
             thumbURL: data["thumbURL"] as? String,
@@ -162,7 +175,9 @@ final class FirebaseChatRoomMediaIndexRepository: FirebaseChatRoomMediaIndexRepo
             duration: doubleValue(from: data["duration"]),
             hash: data["hash"] as? String,
             isDeleted: data["isDeleted"] as? Bool ?? false,
-            sentAt: sentAt
+            sentAt: sentAt,
+            mediaExpiresAt: mediaExpiresAt,
+            attachmentID: data["attachmentID"] as? String
         )
     }
 

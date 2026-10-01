@@ -130,6 +130,48 @@ final class ChatMediaViewportControllerTests: XCTestCase {
         controller.endSession()
     }
 
+    func testLateLoadCompletingAfterExpiryNeverReassignsImage() async throws {
+        let started = expectation(description: "다운로드가 만료 전에 시작")
+        let deliveredImage = expectation(description: "만료 후에는 이미지 전달 안 함")
+        deliveredImage.isInverted = true
+        let initialTime = Date(timeIntervalSince1970: 2_000_000_000)
+        let expiry = initialTime.addingTimeInterval(10)
+        var now = initialTime
+        var pending: CheckedContinuation<UIImage, Error>?
+        let resource = ChatMediaCacheResource.attachment(
+            path: "rooms/expired/thumb.jpg",
+            generation: "generation-1",
+            mediaExpiresAt: expiry
+        )
+        let item = ChatMediaViewportItem(
+            id: "expired-item",
+            path: resource.path,
+            frame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            cacheResource: resource
+        )
+        let controller = ChatMediaViewportController(
+            load: { _, _ in XCTFail("typed resource loader가 사용되어야 함"); return UIImage() },
+            loadResource: { _, _ in
+                try await withCheckedThrowingContinuation { continuation in
+                    pending = continuation
+                    started.fulfill()
+                }
+            },
+            now: { now }
+        )
+        controller.onChange = { _, _, presentation in
+            if case .image = presentation { deliveredImage.fulfill() }
+        }
+        controller.resume()
+        controller.update(items: [item], demands: [item.id: .visible], validIDs: [item.id])
+        await fulfillment(of: [started], timeout: 1)
+        now = expiry
+        pending?.resume(returning: UIImage())
+
+        await fulfillment(of: [deliveredImage], timeout: 0.1)
+        controller.endSession()
+    }
+
     func testMemoryHitOnReentryPublishesImageWithoutLoadingOrAsyncRequest() {
         let image = UIImage()
         var lookups: [String] = []

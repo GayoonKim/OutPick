@@ -9,7 +9,7 @@ import AVKit
 import UIKit
 
 final class VideoPlayerOverlayVC: UIViewController {
-    private let playbackAsset: ChatVideoPlaybackAsset
+    private let playback: ChatVideoPlaybackSession
     private let videoResolver: ChatVideoPlaybackResolving
     private let photoLibrarySaver: PhotoLibrarySaving
     private let playerVC = AVPlayerViewController()
@@ -17,13 +17,14 @@ final class VideoPlayerOverlayVC: UIViewController {
     private let saveButton = UIButton(type: .system)
     private var saveTask: Task<Void, Never>?
     private var closed = false
+    private let statusView = ChatVideoPlaybackStatusView()
 
     init(
         playbackAsset: ChatVideoPlaybackAsset,
         videoResolver: ChatVideoPlaybackResolving,
         photoLibrarySaver: PhotoLibrarySaving
     ) {
-        self.playbackAsset = playbackAsset
+        self.playback = ChatVideoPlaybackSession(asset: playbackAsset, resolver: videoResolver)
         self.videoResolver = videoResolver
         self.photoLibrarySaver = photoLibrarySaver
         super.init(nibName: nil, bundle: nil)
@@ -46,7 +47,7 @@ final class VideoPlayerOverlayVC: UIViewController {
             playerVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
         playerVC.didMove(toParent: self)
-        playerVC.player = AVPlayer(url: playbackAsset.url)
+        playerVC.player = playback.player
         playerVC.showsPlaybackControls = true
 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
@@ -84,11 +85,16 @@ final class VideoPlayerOverlayVC: UIViewController {
             saveButton.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 12),
             saveButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -20)
         ])
+        statusView.attach(to: view)
+        statusView.onRetry = { [weak self] in self?.playback.retry() }
+        statusView.onClose = { [weak self] in self?.closeTapped() }
+        playback.onState = { [weak self] state in self?.renderPlayback(state) }
+        renderPlayback(playback.state)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        playerVC.player?.play()
+        playback.start()
     }
 
     @objc private func closeTapped() {
@@ -106,24 +112,33 @@ final class VideoPlayerOverlayVC: UIViewController {
         guard !closed else { return }
         closed = true
         saveTask?.cancel()
-        playerVC.player?.pause()
+        playback.close()
         playerVC.player = nil
-        if let lease = playbackAsset.fileLease { Task { await lease.release() } }
     }
 
     deinit { saveTask?.cancel() }
 
+    private func renderPlayback(_ state: ChatVideoPlaybackSession.State) {
+        statusView.render(state)
+        saveButton.isEnabled = playback.canSave && saveTask == nil
+        playerVC.showsPlaybackControls = state == .ready
+        if state == .expired || state == .closed {
+            saveTask?.cancel()
+            playerVC.player = nil
+        }
+    }
+
     @objc private func saveTapped() {
-        guard saveTask == nil, !closed else { return }
+        guard saveTask == nil, !closed, playback.canSave, let playbackAsset = playback.asset else { return }
         saveButton.isEnabled = false
         saveTask = Task { [weak self] in
             guard let self = self else { return }
-            defer { self.saveTask = nil; self.saveButton.isEnabled = true }
+            defer { self.saveTask = nil; self.saveButton.isEnabled = self.playback.canSave }
             do {
-                let lease = try await self.videoResolver.acquireFileForSaving(self.playbackAsset)
+                let lease = try await self.videoResolver.acquireFileForSaving(playbackAsset)
                 do {
                     try Task.checkCancellation()
-                    guard !self.closed, lease.isValid else { throw CancellationError() }
+                    guard !self.closed, self.playback.canSave, lease.isValid else { throw CancellationError() }
                     try await self.photoLibrarySaver.saveOriginal(lease, isVideo: true)
                     await lease.release()
                 } catch { await lease.release(); throw error }

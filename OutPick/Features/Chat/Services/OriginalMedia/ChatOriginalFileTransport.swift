@@ -7,11 +7,18 @@ protocol ChatOriginalFileTransport: Sendable {
 
 final class FirebaseChatOriginalFileTransport: ChatOriginalFileTransport, @unchecked Sendable {
     private let repository: FirebaseImageStorageRepositoryProtocol
+    private let signedDownloads: ChatMediaSignedDownloadService?
 
-    init(repository: FirebaseImageStorageRepositoryProtocol) { self.repository = repository }
+    init(repository: FirebaseImageStorageRepositoryProtocol, signedDownloads: ChatMediaSignedDownloadService? = nil) {
+        self.repository = repository; self.signedDownloads = signedDownloads
+    }
 
     func download(_ resource: ChatOriginalResource, to destination: URL) async throws {
         try Task.checkCancellation()
+        if let signedDownloads, !resource.path.hasPrefix("/"), !resource.path.hasPrefix("file://") {
+            try await signedDownloads.file(resource: resource, maxBytes: resource.maximumBytes, to: destination)
+            return
+        }
         if resource.path.hasPrefix("/") || resource.path.hasPrefix("file://") {
             let source = resource.path.hasPrefix("/") ? URL(fileURLWithPath: resource.path) : URL(string: resource.path)!
             let bytes = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0

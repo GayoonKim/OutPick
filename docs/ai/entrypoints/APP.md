@@ -1,5 +1,12 @@
 # App Entrypoints
 
+## 채팅 미디어 만료 수명
+
+- `AppCoordinator.swift`는 앱 시작·활성화 시 로그인 여부와 무관하게 전 계정의 만료 미디어 캐시를 정리한다.
+- `AccountDeletionLocalDataScrubber.swift`는 탈퇴 시 미디어 세션·캐시 정리를 연결한다. 로그아웃은 세션을 무효화하고 미만료 계정별 캐시는 보존한다.
+- [최종 계약·QA](../architecture/CHAT_MEDIA_RETENTION.md).
+
+
 - 아바타 세션: `AppCompositionRoot.swift`는 단일 AvatarImageService·사용처별 scoped manager·AvatarObservingPublicProfileRepository·JPEG0.8 승격 encoder를 조립한다. `AppCoordinator.swift`의 인증 후 route/login/deletion reset이 아바타 세션을 전환하고 이전 reset 완료 후 새 계정을 연다. AccountDeletionLocalDataScrubber도 같은 서비스 종료를 호출한다.
 
 ## Development/Production 빌드 환경

@@ -35,8 +35,8 @@
 
 ## 작업 원칙
 
-- 모델은 사용자가 직접 변경한다. Astra High에서 설계·계획·결과 분석, Sol Extra High에서 승인된 구현을 진행한다. 별도 모델 자동 전달 구성은 기본으로 두지 않는다.
-- 필수 검증은 [프로그램적 검증 기준](docs/ai/architecture/PROGRAMMATIC_VERIFICATION.md)을 따른다. 공용 원본은 `tools/verification-gate/`, 설치 위치는 `~/.codex/tools/verification-gate/`, OutPick 검사 설정은 `verification/{gate,functions,firestore,ios}.json`이다. 프로젝트 루트에서 합의된 검사 설정을 `node tools/verification-gate/gate.mjs --project . --config verification/<설정>.json`으로 실행하고 `output/verification/<실행 ID>/summary.json`의 결과를 확인한다. 설치·준비 방법은 `verification/README.md`, 실제 연결 범위는 [진행 상태](docs/ai/tasks/programmatic-verification-gates/progress.md)를 따른다.
+- 모델은 사용자가 직접 변경한다. GPT-6.1 Sol High에서 설계·세부 구현 계획·테스트 설계·결과 분석, GPT-6.1 Sol Light에서 승인된 구현·필수 게이트 실행·결과 보고를 진행한다. 별도 모델 자동 전달 구성은 기본으로 두지 않는다. 확인할 수 없는 현재 모델 설정을 임의로 단정하지 않는다.
+- 필수 검증은 [프로그램적 검증 기준](docs/ai/architecture/PROGRAMMATIC_VERIFICATION.md)을 따른다. 공용 원본은 `tools/verification-gate/`, 설치 위치는 `~/.codex/tools/verification-gate/`, OutPick 검사 설정은 `verification/{gate,functions,firestore,ios,chat-media-retention}.json`이다. 프로젝트 루트에서 합의된 검사 설정을 `node tools/verification-gate/gate.mjs --project . --config verification/<설정>.json`으로 실행하고 `output/verification/<실행 ID>/summary.json`의 결과를 확인한다. 설치·준비 방법은 `verification/README.md`를 따른다. 연결되지 않은 검사 범위는 미검증으로 보고한다.
 
 - 구현 전 변경 파일 후보, 구현 계획, 테스트/검증 계획을 먼저 정리한다.
 - 기능 범위, 완료 기준, 화면 이동, 데이터 구조, API/Firebase Functions 필요 여부, 정책 리스크, 아키텍처 변경처럼 제품 또는 기술 결정이 모호하면 임의로 확정하지 않고 사용자와 논의한다.

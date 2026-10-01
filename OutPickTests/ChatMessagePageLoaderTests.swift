@@ -3,6 +3,36 @@ import Testing
 @testable import OutPick
 
 struct ChatMessagePageLoaderTests {
+    @Test func offlineKeepsLocalRowsAndReconnectRepairsOnlyMissingRanges() async throws {
+        let data = RangeData()
+        let connection = PageConnection()
+        let loader = ChatMessagePageLoader(local: { _, range in await data.local(range) },
+            remote: { _, range in try await data.remote(range) }, allowsRemote: { connection.isOnline })
+        let request = try ChatMessagePageRequest(roomID: "room", direction: .older, boundarySeq: 201, upperSeq: 200)
+        let offline = try await loader.load(request)
+        #expect(!offline.isComplete)
+        #expect(!offline.contiguousMessages.isEmpty)
+        #expect(offline.nextBoundarySeq == 181)
+        #expect(await data.queries.isEmpty)
+        connection.setOnline()
+        let online = try await loader.load(request)
+        #expect(online.isComplete)
+        #expect(online.contiguousMessages.count == 100)
+        #expect(await data.queries.count == 2)
+    }
+
+    @Test func offlineIdentityConflictNeverReadsServer() async throws {
+        let data = RangeData()
+        let rows = ["first", "second"].map { id in
+            ChatMessage(ID: id, seq: 1, roomID: "room", senderUID: "user",
+                senderNickname: "사용자", msg: "본문", sentAt: nil, attachments: [], replyPreview: nil)
+        }
+        let loader = ChatMessagePageLoader(local: { _, _ in rows },
+            remote: { _, range in try await data.remote(range) }, allowsRemote: { false })
+        let request = try ChatMessagePageRequest(roomID: "room", direction: .older, boundarySeq: 2, limit: 1, upperSeq: 1)
+        await #expect(throws: ChatMessagePageError.identityConflict) { try await loader.load(request) }
+        #expect(await data.queries.isEmpty)
+    }
     @Test func twoRangesActuallyOverlap() async throws {
         let data = RangeData()
         let gate = RangeOverlapGate()
@@ -83,6 +113,13 @@ struct ChatMessagePageLoaderTests {
         #expect(result.nextBoundarySeq == 181)
         #expect(result.unresolvedRanges == [ChatMessageSequenceRange(lower: 180, upper: 180)!])
     }
+}
+
+private final class PageConnection: @unchecked Sendable {
+    private let lock = NSLock()
+    private var online = false
+    var isOnline: Bool { lock.withLock { online } }
+    func setOnline() { lock.withLock { online = true } }
 }
 
 private actor RangeData {

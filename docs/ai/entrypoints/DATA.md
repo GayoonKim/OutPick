@@ -1,5 +1,14 @@
 # Data Entrypoints
 
+## 채팅 미디어 만료 계약
+
+- 서버 contract 3 확정이 `sentAt`, `mediaExpiresAt = sentAt + 168시간`, `attachmentID`, 원본·썸네일 bucket/path/generation을 생성한다. 메시지·mediaIndex·delivery 응답·답장 preview에 필요한 계약을 전달한다.
+- `ChatMessage`/`Attachment`/`ReplyPreview`/`ChatRoomMediaIndexEntry`와 GRDB record·mapper·migration이 이 필드를 보존한다. 재로그인·다운로드·캐시 hit로 기한을 연장하지 않는다.
+- `chatMediaExpiryJobs/{hash(roomID,messageID)}`는 서버 전용 작업이다. 상태는 scheduled/processing/awaitingEvidence이며 전체 삭제 성공 시 문서를 제거한다. 완료 이력 문서를 별도로 만들지 않는다.
+- `ChatMediaExpiryCacheIndex`는 계정과 객체 generation·만료 시각을 디스크 리소스에 연결한다. 서명 URL은 영구 저장하지 않는다.
+- [최종 데이터/API 계약·검증](../architecture/CHAT_MEDIA_RETENTION.md).
+
+
 ## 미디어 선택·실패 복구 데이터
 
 - `ChatMediaSelection.swift`/`ChatMediaSelectionRepository.swift`: 기존 `chatOutgoingOutbox.localPayloadJSON`에 `selectionID`, room/sender, 원본 index/path/type, `pendingChunk(messageID, indices)`를 기록한다. 신규 SQLite table/migration은 없다. 원본은 Application Support/ChatMediaSelections에 저장하고 backup에서 제외한다.

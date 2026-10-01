@@ -49,6 +49,7 @@ final class ChatRoomViewModel {
     private let searchUseCase: ChatRoomSearchUseCaseProtocol
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let currentUserProvider: CurrentUserProviding
+    private let networkStatusProvider: NetworkStatusProviding?
     private let joinedRoomsStore: JoinedRoomsSessionStoring?
     private let roomReadStateStore: ChatRoomReadStateStore?
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
@@ -107,7 +108,14 @@ final class ChatRoomViewModel {
     private var pageBoundaries: [ChatMessagePageDirection: Int64] = [:]
     private var pendingPageRequests: [ChatMessagePageDirection: ChatMessagePageRequest] = [:]
     private var activePageDirections: Set<ChatMessagePageDirection> = []
-    private(set) var pageRetryDirections: Set<ChatMessagePageDirection> = []
+    private var pendingPageRetryDirections: Set<ChatMessagePageDirection> = []
+    var pageRetryDirections: Set<ChatMessagePageDirection> {
+        networkStatusProvider?.currentStatus.isOnline == false ? [] : pendingPageRetryDirections
+    }
+    var pageRetryVisibilityPublisher: AnyPublisher<Void, Never> {
+        networkStatusProvider?.statusPublisher.map { _ in () }.eraseToAnyPublisher()
+            ?? Empty<Void, Never>().eraseToAnyPublisher()
+    }
     private var repairedPageMessageIDs: Set<String> = []
 
     func consumeRepairedPageMessageIDs() -> Set<String> {
@@ -120,7 +128,7 @@ final class ChatRoomViewModel {
         pageBoundaries.removeAll()
         pendingPageRequests.removeAll()
         activePageDirections.removeAll()
-        pageRetryDirections.removeAll()
+        pendingPageRetryDirections.removeAll()
         repairedPageMessageIDs.removeAll()
     }
 
@@ -139,17 +147,17 @@ final class ChatRoomViewModel {
                 result = try await messageUseCase.loadMessagePage(request)
             } catch {
                 guard generation == pageGeneration, accountID == currentUserUID else { throw CancellationError() }
-                pageRetryDirections.insert(direction)
+                pendingPageRetryDirections.insert(direction)
                 throw error
             }
             guard generation == pageGeneration, accountID == currentUserUID, !Task.isCancelled else {
                 throw CancellationError()
             }
             if result.isComplete {
-                pageRetryDirections.remove(direction)
+                pendingPageRetryDirections.remove(direction)
                 pendingPageRequests.removeValue(forKey: direction)
             } else {
-                pageRetryDirections.insert(direction)
+                pendingPageRetryDirections.insert(direction)
                 pendingPageRequests[direction] = request
             }
             boundary = result.nextBoundarySeq
@@ -212,7 +220,8 @@ final class ChatRoomViewModel {
         memberModerationUseCase: ChatRoomMemberModerationUseCaseProtocol? = nil,
         deletionSyncUseCase: ChatDeletionSyncUseCaseProtocol? = nil,
         roomRoleSession: ChatRoomRoleSession? = nil,
-        roomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol? = nil
+        roomRoleUseCase: ObserveChatRoomRoleUseCaseProtocol? = nil,
+        networkStatusProvider: NetworkStatusProviding? = nil
     ) {
         self.room = room
         self.initialLoadUseCase = initialLoadUseCase
@@ -222,6 +231,7 @@ final class ChatRoomViewModel {
         self.searchUseCase = searchUseCase
         self.lifecycleUseCase = lifecycleUseCase
         self.currentUserProvider = currentUserProvider
+        self.networkStatusProvider = networkStatusProvider
         self.joinedRoomsStore = joinedRoomsStore
         self.roomReadStateStore = roomReadStateStore
         self.userBlockVisibilityStore = userBlockVisibilityStore

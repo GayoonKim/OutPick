@@ -27,6 +27,31 @@ test("reply preview alias와 optional field를 기존 schema로 정규화한다"
   });
 });
 
+test("답장 미디어 만료 시각은 대상 서버 메시지에서만 가져온다", () => {
+  const preview = normalizeReplyPreview({
+    messageID: "source",
+    sender: "Alice",
+    text: "photo",
+    imagesCount: 1,
+    firstThumbPath: "client/thumb",
+    mediaExpiresAt: "2099-01-01T00:00:00.000Z"
+  }, {replySourceMessage: {
+    attachments: [{type: "image"}],
+    mediaExpiresAt: {toDate: () => new Date("2026-07-21T00:00:00.000Z")}
+  }});
+
+  assert.equal(preview.mediaExpiresAt, "2026-07-21T00:00:00.000Z");
+  assert.equal(preview.firstThumbPath, "client/thumb");
+  const missingSource = normalizeReplyPreview({
+    messageID: "missing",
+    imagesCount: 1,
+    firstThumbPath: "client/thumb",
+    mediaExpiresAt: "2099-01-01T00:00:00.000Z"
+  });
+  assert.equal(Object.hasOwn(missingSource, "mediaExpiresAt"), false);
+  assert.equal(Object.hasOwn(missingSource, "firstThumbPath"), false);
+});
+
 test("text server document 기본 field를 유지한다", () => {
   const value = buildTextMessageDocument({
     data: { senderAvatarPath: "avatar" },

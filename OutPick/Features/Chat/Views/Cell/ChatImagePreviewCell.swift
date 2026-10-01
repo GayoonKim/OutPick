@@ -70,8 +70,25 @@ class ChatImagePreviewCell: UICollectionViewCell {
         return label
     }()
 
+    private let expiredLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.minimumScaleFactor = 0.8
+        label.adjustsFontSizeToFitWidth = true
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+        label.isHidden = true
+        label.isAccessibilityElement = true
+        return label
+    }()
+
     private var representedItemID: String?
     private var representedPath = ""
+    private var representedResource: ChatMediaCacheResource?
+    private var representedIsVideo = false
     private var spinnerSpan: ImageCacheMetrics.Span?
     var diagnostics = ImageCacheMetrics.shared
 
@@ -88,6 +105,8 @@ class ChatImagePreviewCell: UICollectionViewCell {
     func resetContent() {
         stopSpinner(reason: "reset")
         representedPath = ""
+        representedResource = nil
+        representedIsVideo = false
         representedItemID = nil
         accessibilityValue = nil
         imageView.image = nil
@@ -97,6 +116,8 @@ class ChatImagePreviewCell: UICollectionViewCell {
         videoDurationLabel.isHidden = true
         videoDurationLabel.text = nil
         gifBadgeLabel.isHidden = true
+        expiredLabel.isHidden = true
+        expiredLabel.text = nil
     }
     
     override init(frame: CGRect) {
@@ -111,6 +132,7 @@ class ChatImagePreviewCell: UICollectionViewCell {
         contentView.addSubview(loadingIndicator)
         contentView.addSubview(videoBadgeView)
         contentView.addSubview(gifBadgeLabel)
+        contentView.addSubview(expiredLabel)
         videoBadgeView.addSubview(videoIconView)
         videoBadgeView.addSubview(videoDurationLabel)
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -146,6 +168,12 @@ class ChatImagePreviewCell: UICollectionViewCell {
             gifBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 32),
             gifBadgeLabel.heightAnchor.constraint(equalToConstant: 22)
         ])
+        NSLayoutConstraint.activate([
+            expiredLabel.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            expiredLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            expiredLabel.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 4),
+            expiredLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -4)
+        ])
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.isOpaque = true
@@ -167,6 +195,13 @@ class ChatImagePreviewCell: UICollectionViewCell {
             representedItemID = item.id
         }
         representedPath = item.attachment.thumbResourcePath
+        representedResource = item.cacheResource
+        representedIsVideo = item.isVideo
+        if item.cacheResource.isExpired {
+            showExpired(isVideo: item.isVideo)
+            return
+        }
+        expiredLabel.isHidden = true
         if let image { imageView.image = image }
         if imageView.image != nil {
             diagnostics.mark("chatPreview.imageAssigned", key: representedPath, parent: spinnerSpan?.id, outcome: "configure")
@@ -180,6 +215,10 @@ class ChatImagePreviewCell: UICollectionViewCell {
     }
 
     func render(_ state: ChatMediaViewportController.Presentation, memoryCacheHit: Bool? = nil) {
+        if representedResource?.isExpired == true {
+            showExpired(isVideo: representedIsVideo)
+            return
+        }
         switch state {
         case .image(let image):
             if imageView.image !== image { imageView.image = image }
@@ -208,6 +247,19 @@ class ChatImagePreviewCell: UICollectionViewCell {
             accessibilityValue = imageView.image == nil ? "placeholder" : "loaded"
         }
         #endif
+    }
+
+    private func showExpired(isVideo: Bool) {
+        stopSpinner(reason: "expired")
+        imageView.image = nil
+        placeholderImageView.isHidden = false
+        loadingIndicator.stopAnimating()
+        videoBadgeView.isHidden = true
+        videoDurationLabel.isHidden = true
+        gifBadgeLabel.isHidden = true
+        expiredLabel.text = isVideo ? "보관 기간이 만료된 동영상입니다" : "보관 기간이 만료된 사진입니다"
+        expiredLabel.isHidden = true
+        accessibilityValue = expiredLabel.text
     }
 
     deinit { diagnostics.end(spinnerSpan, outcome: "deinit") }

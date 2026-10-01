@@ -2,16 +2,18 @@
 export const DEVELOPMENT_PROJECT_ID = "outpick-test";
 export const PRODUCTION_PROJECT_ID = "outpick-664ae";
 
-export type ChatMediaRuntimeIdentity = "orchestrator" | "cleanup";
+export type ChatMediaRuntimeIdentity = "orchestrator" | "cleanup" | "videoPlayback";
 
 const SERVICE_ACCOUNTS: Record<string, Record<ChatMediaRuntimeIdentity, string>> = {
   [DEVELOPMENT_PROJECT_ID]: {
     orchestrator: "outpick-chat-media-orch-dev@outpick-test.iam.gserviceaccount.com",
     cleanup: "outpick-chat-media-cleanup-dev@outpick-test.iam.gserviceaccount.com",
+    videoPlayback: "outpick-chat-media-video-dev@outpick-test.iam.gserviceaccount.com",
   },
   [PRODUCTION_PROJECT_ID]: {
     orchestrator: "outpick-chat-media-orch@outpick-664ae.iam.gserviceaccount.com",
     cleanup: "outpick-chat-media-cleanup@outpick-664ae.iam.gserviceaccount.com",
+    videoPlayback: "outpick-chat-media-video-prod@outpick-664ae.iam.gserviceaccount.com",
   },
 };
 

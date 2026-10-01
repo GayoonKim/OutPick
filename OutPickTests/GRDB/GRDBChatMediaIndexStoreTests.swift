@@ -14,6 +14,11 @@ struct GRDBChatMediaIndexStoreTests {
 
         #expect(try store.countImageIndex(inRoom: "room-1") == 2)
         #expect(try store.fetchLatestImageIndex(inRoom: "room-1", limit: 2).map(\.messageID) == ["m2", "m1"])
+        #expect(try store.fetchLatestImageIndex(inRoom: "room-1", limit: 1).first?.mediaExpiresAt ==
+            Date(timeIntervalSince1970: 604_802))
+        #expect(try store.fetchLatestImageIndex(inRoom: "room-1", limit: 1).first?.generationThumb == "thumb-gen")
+        #expect(try store.fetchLatestImageIndex(inRoom: "room-1", limit: 1).first?.generationOriginal == "original-gen")
+        #expect(try store.fetchLatestImageIndex(inRoom: "room-1", limit: 1).first?.attachmentID == "attachment-m2")
     }
 
     @Test func mediaEntryStoresResolvedBucketPaths() throws {
@@ -27,6 +32,8 @@ struct GRDBChatMediaIndexStoreTests {
             type: .image,
             bucketThumb: "outpick-test-chat-media",
             bucketOriginal: "outpick-test-chat-media",
+            generationThumb: "thumb-gen",
+            generationOriginal: "original-gen",
             thumbKey: "thumb",
             originalKey: "original",
             thumbURL: "rooms/room-1/thumbnail",
@@ -45,6 +52,8 @@ struct GRDBChatMediaIndexStoreTests {
 
         #expect(stored.thumbURL == "gs://outpick-test-chat-media/rooms/room-1/thumbnail")
         #expect(stored.originalURL == "gs://outpick-test-chat-media/rooms/room-1/display")
+        #expect(stored.generationThumb == "thumb-gen")
+        #expect(stored.generationOriginal == "original-gen")
     }
 
     private func makeEntry(messageID: String, sentAt: Date) -> ChatRoomMediaIndexEntry {
@@ -55,6 +64,8 @@ struct GRDBChatMediaIndexStoreTests {
             seq: 1,
             senderUID: "user-1",
             type: .image,
+            generationThumb: "thumb-gen",
+            generationOriginal: "original-gen",
             thumbKey: "thumb",
             originalKey: "original",
             thumbURL: "thumb-url",
@@ -65,7 +76,9 @@ struct GRDBChatMediaIndexStoreTests {
             duration: nil,
             hash: "hash",
             isDeleted: false,
-            sentAt: sentAt
+            sentAt: sentAt,
+            mediaExpiresAt: sentAt.addingTimeInterval(7 * 24 * 60 * 60),
+            attachmentID: "attachment-" + messageID
         )
     }
 }

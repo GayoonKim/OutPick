@@ -22,6 +22,7 @@ struct ChatMessage: SocketData, Codable, Sendable {
     var roleEvent: RoomRoleEventPayload? = nil
     let msg: String?                    // 메시지 내용
     let sentAt: Date?                   // 메시지 보낸 시간
+    var mediaExpiresAt: Date? = nil
     var attachments: [Attachment]
     var sharedContent: LookbookSharedContent? = nil
     var replyPreview: ReplyPreview?
@@ -54,6 +55,7 @@ struct ChatMessage: SocketData, Codable, Sendable {
         case roleEvent
         case msg
         case sentAt
+        case mediaExpiresAt
         case attachments
         case sharedContent
         case replyPreview
@@ -108,6 +110,9 @@ struct ChatMessage: SocketData, Codable, Sendable {
             if let t = rp.sentAt {
                 rpDict["sentAt"] = ChatMessage.iso8601Formatter.string(from: t)
             }
+            if let expiresAt = rp.mediaExpiresAt {
+                rpDict["mediaExpiresAt"] = ChatMessage.iso8601Formatter.string(from: expiresAt)
+            }
             if let thumb = rp.firstThumbPath, !thumb.isEmpty {
                 rpDict["firstThumbPath"] = thumb
             }
@@ -116,6 +121,9 @@ struct ChatMessage: SocketData, Codable, Sendable {
         
         if let sentAt = sentAt {
             dict["sentAt"] = ChatMessage.iso8601Formatter.string(from: sentAt)
+        }
+        if let mediaExpiresAt {
+            dict["mediaExpiresAt"] = ChatMessage.iso8601Formatter.string(from: mediaExpiresAt)
         }
         
         return dict
@@ -131,13 +139,15 @@ struct ChatMessage: SocketData, Codable, Sendable {
             "senderUID": senderUID,
             "senderNickname": senderNickname,
             "msg": msg ?? "",
-            "sentAt": Timestamp(date: sentAt ?? Date()),
             "isDeleted": isDeleted,
             "searchNormalized": searchIndex.normalizedText,
             "searchChars": searchIndex.searchChars,
             "searchNgrams2": searchIndex.searchNgrams2,
             "searchIndexVersion": searchIndex.version
         ]
+        if let sentAt {
+            dict["sentAt"] = Timestamp(date: sentAt)
+        }
         if let unreadMessageSeq {
             dict["unreadMessageSeq"] = unreadMessageSeq
         }
@@ -155,6 +165,9 @@ struct ChatMessage: SocketData, Codable, Sendable {
         }
 
         dict["attachments"] = attachments.map { $0.toDict() }
+        if let mediaExpiresAt {
+            dict["mediaExpiresAt"] = Timestamp(date: mediaExpiresAt)
+        }
         if let sharedContent {
             dict["sharedContent"] = sharedContent.toDict()
         }
@@ -173,6 +186,9 @@ struct ChatMessage: SocketData, Codable, Sendable {
             }
             if let t = rp.sentAt {
                 rpDict["sentAt"] = Timestamp(date: t)
+            }
+            if let expiresAt = rp.mediaExpiresAt {
+                rpDict["mediaExpiresAt"] = Timestamp(date: expiresAt)
             }
             if let thumb = rp.firstThumbPath, !thumb.isEmpty {
                 rpDict["firstThumbPath"] = thumb
@@ -222,6 +238,7 @@ extension ChatMessage {
             : nil
         msg = try container.decodeIfPresent(String.self, forKey: .msg)
         sentAt = try container.decodeIfPresent(Date.self, forKey: .sentAt)
+        mediaExpiresAt = try container.decodeIfPresent(Date.self, forKey: .mediaExpiresAt)
         attachments = try container.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
         sharedContent = decodedSharedContent
         replyPreview = try container.decodeIfPresent(ReplyPreview.self, forKey: .replyPreview)
@@ -254,6 +271,7 @@ extension ChatMessage {
         try container.encodeIfPresent(roleEvent, forKey: .roleEvent)
         try container.encodeIfPresent(msg, forKey: .msg)
         try container.encodeIfPresent(sentAt, forKey: .sentAt)
+        try container.encodeIfPresent(mediaExpiresAt, forKey: .mediaExpiresAt)
         try container.encode(attachments, forKey: .attachments)
         try container.encodeIfPresent(sharedContent, forKey: .sharedContent)
         try container.encodeIfPresent(replyPreview, forKey: .replyPreview)
@@ -384,6 +402,7 @@ extension ChatMessage {
         if let rpDict = dict["replyPreview"] as? [String: Any],
            let mid = rpDict["messageID"] as? String, !mid.isEmpty {
             let sentAtPreview = parseSentAt(rpDict["sentAt"]) // accepts ISO8601/Timestamp/epoch
+            let mediaExpiresAtPreview = parseSentAt(rpDict["mediaExpiresAt"])
 
             // New fields first
             var images = rpDict["imagesCount"] as? Int
@@ -404,12 +423,14 @@ extension ChatMessage {
                 firstThumbPath: (rpDict["firstThumbPath"] as? String),
                 senderAvatarPath: (rpDict["senderAvatarPath"] as? String),
                 sentAt: sentAtPreview,
+                mediaExpiresAt: mediaExpiresAtPreview,
                 isDeleted: rpDict["isDeleted"] as? Bool ?? false
             )
         }
 
         // Attachments (meta-only)
         let attachments = ChatMessage.parseAttachments(from: dict)
+        let mediaExpiresAt = parseSentAt(dict["mediaExpiresAt"])
 
         // Flags (optional)
         let isFailed = dict["isFailed"] as? Bool ?? false
@@ -429,6 +450,7 @@ extension ChatMessage {
             roleEvent: roleEvent,
             msg: msg,
             sentAt: sentAt,
+            mediaExpiresAt: mediaExpiresAt,
             attachments: attachments,
             sharedContent: sharedContent,
             replyPreview: rp,
@@ -500,6 +522,8 @@ extension ChatMessage {
                 ?? (dict["thumbnailBucket"] as? String),
             bucketOriginal: (dict["bucketOriginal"] as? String)
                 ?? (dict["displayBucket"] as? String),
+            generationThumb: dict["generationThumb"] as? String,
+            generationOriginal: dict["generationOriginal"] as? String,
             pathThumb: pathThumb,
             pathOriginal: pathOriginal,
             width: parseInt(dict["w"]) ?? parseInt(dict["width"]) ?? 0,
