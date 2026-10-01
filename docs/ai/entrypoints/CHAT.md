@@ -227,6 +227,8 @@ Chat 기능 수정 시 관련 화면, ViewModel, UseCase, Repository, 검색 인
 
 채팅방은 `ChatViewController.backgroundTapGesture`가 키보드와 attachment 닫기를 담당한다. text input과 일반 `UIControl` superview chain touch는 제외하고, message/media/profile/retry/Lookbook cell tap은 `cancelsTouchesInView = false`와 동시 인식으로 원래 action과 background dismiss를 함께 실행한다. `ChatMessageCell` 내부 retry control도 cell action 우선순위로 허용한다. message long press는 `UICollectionViewDelegate`의 native context menu가 소유해 touch 종료 뒤 메뉴 유지·항목 선택·외부 탭 종료·safe-area 배치를 시스템에 맡기고, announcement long press와 settings dim tap은 각 leaf view가 소유한다. 공통 `KeyboardDismissSupport` 중복 설치는 Chat에서 사용하지 않는다.
 
+채팅 텍스트 전송은 키보드가 열린 상태에서도 한 번의 버튼 탭으로 실행하고, 입력 내용만 비운 채 키보드를 유지한다. `ChatUIView.onButtonTapped` → `ChatViewController.handleAttachmentButtonTap` → `handleSendButtonTap`이 기존 전송 경로다. 다른 SwiftUI 화면의 `outpickDismissKeyboardOnTap()`이 `UIWindow`에 설치한 공통 제스처도 채팅 터치를 받으므로 `Infra/Utility/Support/KeyboardDismissSupport.swift`는 `UITextView`·`UITextField`·`UIControl` 및 그 하위 뷰의 터치를 제외한다. 이 정책은 공통 제스처가 설치된 다른 화면의 UIKit 버튼에도 적용된다. 대화 배경 dismiss와 채팅 셀 액션은 기존 Chat 전용 제스처가 유지한다. 자동 검증은 `KeyboardDismissSupportTests`, 실제 한 번 전송·포커스 유지 확인은 [TESTS](TESTS.md)의 수동 QA를 따른다.
+
 ## 참여중 채팅방 목록
 
 - 화면: `OutPick/Features/Chat/Controllers/JoinedRoomsViewController.swift`
