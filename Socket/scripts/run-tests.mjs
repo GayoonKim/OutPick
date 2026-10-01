@@ -29,7 +29,18 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-const child = spawn(process.execPath, ["--test", ...testFiles], {
+const reporterPath = process.env.OUTPICK_GATE_REPORTER_PATH;
+const resultPath = process.env.OUTPICK_GATE_RESULT_PATH;
+if (Boolean(reporterPath) !== Boolean(resultPath)) {
+  console.error("게이트 reporter와 결과 경로를 함께 지정해야 합니다.");
+  process.exit(1);
+}
+const reporterArgs = reporterPath ? [
+  "--test-reporter", reporterPath,
+  "--test-reporter-destination", resultPath,
+] : [];
+
+const child = spawn(process.execPath, ["--test", ...reporterArgs, ...testFiles], {
   cwd: socketRoot,
   stdio: "inherit"
 });

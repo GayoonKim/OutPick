@@ -1,5 +1,20 @@
 # Test Entrypoints
 
+## 채팅 미디어 7일 만료 검증
+
+[최종 결과·실기기 범위](../architecture/CHAT_MEDIA_RETENTION.md), [게이트 실행 기준](../architecture/PROGRAMMATIC_VERIFICATION.md).
+
+- `verification/gate.json`: 실행기 자체 검사, Firebase 빌드 설정, Socket 정적 검사·전송 확정/답장/이벤트 계약.
+- `verification/functions.json`: lint·clean build·단위 테스트. `retentionContracts/Storage.test.ts`, `videoPlaybackContracts/Functions/Service.test.ts`, 구형 확정 거부·export 계약을 포함한다.
+- `verification/firestore.json`: Rules·Storage 거절과 에뮬레이터 transaction. `chat-moderation.emulator.test.mjs`는 만료 정리와 메시지 삭제·방 종료·탈퇴 경합, `moderation-reports.emulator.test.mjs`는 증거 보류·부분 실패 재시도를 검사한다.
+- `verification/ios.json`: Development/Production 환경 경계. `verification/chat-media-retention.json`: 28 suite, 필수 ID 91개, 만료/캐시/화면/영상/Photos/QA 제어 회귀.
+- `ChatMediaExpiryCacheIndexTests`, `ChatAttachmentImageServiceTests`, `ChatOriginalFileStoreTests`, `ImageCacheRevisionTests`: 계정·generation·기한, hit/write/lease·늦은 응답 정리.
+- `ChatMediaSignedDownloadTests`, `ChatVideoPlaybackSessionTests`: 권한·HTTP 만료 분류, 갱신 횟수와 위치/상태 복원, AVKit 조작 경계·만료 화면의 다운로드/저장 0회.
+- `ImageViewerOriginalFileTests`, `PhotoLibrarySaverBoundaryTests`, `VideoSaveLifetimeTests`: 만료·닫힘·Photos 권한 대기/제출 경계, 완료 전 파일 수명과 늦은 UI 차단.
+- `ChatMediaBoundaryQATests` 8개와 `ChatSignedURLHTTPQATests`/`ChatSignedURLQAHTTPClientTests`: DEV·지정 객체 제한, 보류·취소·HTTP 관측 경계. 실제 장치 조작 검증과 구분한다.
+- 실제 Simulator Photos 검사는 photos-add 사전 권한이 필요하다. skip/0개 실행은 통과가 아니다. 게이트 후 로그인 QA용 DEV 앱은 서명 빌드로 복구한다.
+
+
 - `PhotoLibraryOriginalIntegrationTests`는 `photos-add` 권한이 사전 부여된 Simulator에서 합성 JPEG를 실제 Photos에 저장한다. 권한이 없거나 실제 기기이면 skip하므로 실제 executed/skip 결과를 확인해야 한다. `.bin` 직접 제출3302 실패를 재현했고, `PhotoLibraryPreparedResource`의 올바른 확장자 임시 사본으로 같은 제품 API를 검증한다. Simulator Photos에는 합성 작은 테스트 이미지가 생성될 수 있다.
 
 - `PhotoLibraryOriginalResourceTests`: `.bin` JPEG·확장자 없는 GIF 2frame·확장자가 잘못된 PNG의 실제 Photos 타입/파일명, 바이트·frame 불변, 잘못된 이미지 제출 전 거부. 실제 Photos 저장 검증은 실기기 QA와 구분한다. [기록](../tasks/chat-media-first-view-loading/original-media-results.md).

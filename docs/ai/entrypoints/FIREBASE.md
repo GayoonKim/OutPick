@@ -1,5 +1,16 @@
 # Firebase Entrypoints
 
+## 채팅 미디어 7일 만료
+
+- `Socket/src/media/directMediaUploadService.js`가 메시지·mediaIndex·delivery job·expiry job을 같은 transaction에서 확정한다. `mediaHandlers`는 contract 3만 허용하며 구형 worker 결과는 `functions/src/chat/media/readyService.ts`에서 새 메시지로 발행하지 않는다.
+- `functions/src/chat/media/videoPlaybackFunctions.ts`의 `issueChatMediaURL`은 App Check·인증을 검사하고 `videoPlaybackService.ts`가 계정 열람 권한·방/메시지 상태·첨부·generation·만료를 확인한다. 사진/GIF/영상 original·thumbnail 모두 공통 callable을 사용하며 기존 영상 callable도 유지한다.
+- `storage.rules`는 ready 버킷의 클라이언트 SDK 직접 읽기를 거절한다. 전용 서명 계정은 ready 객체 읽기·서명과 기본 Firestore DB 읽기를 사용하며 쓰기·삭제 역할과 분리한다.
+- `retentionFunctions.ts` → `retentionService.ts` → `retentionStorage.ts`: 매시간 실행, lease, 한 실행 최대 3회 즉시 삭제 시도, 실패 객체만 다음 시간 재시도, generation 지정 삭제. 완료 시 job을 삭제한다.
+- `moderation/messageEvidence/service.ts`와 `evidenceCopy.ts`가 증거 복사 중 정리 보류·완료/terminal 실패 후 해제를 같은 transaction으로 연결한다.
+- `firestore.rules`는 expiry job 클라이언트 접근을 금지하고 `firestore.indexes.json`은 정리 조회 인덱스를 포함한다.
+- 개발 배포·QA 완료, 운영 배포는 별도 승인 범위다. [최종 계약·환경 전제·검증 한계](../architecture/CHAT_MEDIA_RETENTION.md).
+
+
 - 2026-09-14 배포 후QA 완료: `concurrency-all-0914`에서3장/70장/실패재전송 처리·서버저장 확인.70장 metadata60/60/20 policyall, 합663ms. 실패재전송2장 metadata4/33ms. 기존env 유지, Production 미배포. [결과](../tasks/chat-media-concurrency-qa-rollout/progress.md).
 
 - 2026-09-14 Development 최종 동시성 배포: `outpick-socket-development-concurrency-all-0914`100%, digest `sha256:dda2c4eb9540a28643061d8cd4f153189e504ea5072edb1e76fadb95c20a6d37`, candidate/live readiness 정상. 계약3 조회·서명·취소 정리 전체 실행. env/런타임 계정 유지, rollback `photo300-0911`. 실제 결합 QA 진행 중, [증거](../tasks/chat-media-concurrency-qa-rollout/progress.md).
