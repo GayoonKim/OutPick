@@ -5,13 +5,16 @@ actor ChatMessagePageLoader {
     typealias Fetch = @Sendable (String, ChatMessageSequenceRange) async throws -> [ChatMessage]
     private let local: Fetch
     private let remote: Fetch
+    private let allowsRemote: @Sendable () -> Bool
     private var tasks: [ChatMessagePageRequest: (UUID, Task<ChatMessagePageResult, Error>)] = [:]
     private struct PageKey: Hashable { let roomID: String; let direction: ChatMessagePageDirection }
     private var partialPages: [PageKey: (ChatMessagePageRequest, [ChatMessage])] = [:]
 
-    init(local: @escaping Fetch, remote: @escaping Fetch) {
+    init(local: @escaping Fetch, remote: @escaping Fetch,
+         allowsRemote: @escaping @Sendable () -> Bool = { true }) {
         self.local = local
         self.remote = remote
+        self.allowsRemote = allowsRemote
     }
 
     func load(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
@@ -22,6 +25,7 @@ actor ChatMessagePageLoader {
         partialPages.removeValue(forKey: key)
         let local = self.local
         let remote = self.remote
+        let allowsRemote = self.allowsRemote
         let task = Task<ChatMessagePageResult, Error> {
             guard let range = request.range else {
                 return try ChatMessageCacheGapPolicy.result(for: request, messages: [])
@@ -35,6 +39,7 @@ actor ChatMessagePageLoader {
                 // 정책상 최대 두 범위만 생성되므로 무제한 병렬 요청이 없다.
                 for missing in ranges {
                     group.addTask {
+                        guard allowsRemote(), !Task.isCancelled else { return [] }
                         guard let messages = try? await remote(request.roomID, missing),
                               messages.allSatisfy({ $0.roomID == request.roomID && missing.contains($0.seq) }) else {
                             return []
@@ -47,6 +52,7 @@ actor ChatMessagePageLoader {
             do {
                 return try ChatMessageCacheGapPolicy.result(for: request, messages: cached + fetched)
             } catch ChatMessagePageError.identityConflict {
+                guard allowsRemote(), !Task.isCancelled else { throw ChatMessagePageError.identityConflict }
                 // 로컬의 ID/seq 충돌은 원본 범위를 서버에서 다시 확인한다.
                 let authoritative = try await remote(request.roomID, range)
                 guard authoritative.allSatisfy({ $0.roomID == request.roomID && range.contains($0.seq) }) else {

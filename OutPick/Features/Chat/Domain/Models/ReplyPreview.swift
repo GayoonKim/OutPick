@@ -18,5 +18,6 @@ struct ReplyPreview: Codable, Hashable, Sendable {
     var firstThumbPath: String? = nil
     var senderAvatarPath: String? = nil
     var sentAt: Date? = nil
+    var mediaExpiresAt: Date? = nil
     var isDeleted: Bool = false
 }

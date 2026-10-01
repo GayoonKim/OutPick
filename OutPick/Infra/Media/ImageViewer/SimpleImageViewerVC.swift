@@ -9,13 +9,16 @@ import UIKit
 import Kingfisher
 
 struct ImageViewerPage {
-    let initialImage: UIImage?
-    let thumbnailImage: UIImage?
+    var initialImage: UIImage?
+    var thumbnailImage: UIImage?
     let thumbnailPath: String?
     let originalPath: String?
     let shouldAlwaysResolveThumbnail: Bool
     let isAnimated: Bool
     let attachmentPosition: Int?
+    let generationThumb: String?
+    let generationOriginal: String?
+    let mediaExpiresAt: Date?
 
     init(
         initialImage: UIImage? = nil,
@@ -24,7 +27,10 @@ struct ImageViewerPage {
         originalPath: String?,
         shouldAlwaysResolveThumbnail: Bool = false,
         isAnimated: Bool = false,
-        attachmentPosition: Int? = nil
+        attachmentPosition: Int? = nil,
+        generationThumb: String? = nil,
+        generationOriginal: String? = nil,
+        mediaExpiresAt: Date? = nil
     ) {
         self.initialImage = initialImage
         self.thumbnailImage = thumbnailImage
@@ -33,6 +39,9 @@ struct ImageViewerPage {
         self.shouldAlwaysResolveThumbnail = shouldAlwaysResolveThumbnail
         self.isAnimated = isAnimated
         self.attachmentPosition = attachmentPosition
+        self.generationThumb = generationThumb
+        self.generationOriginal = generationOriginal
+        self.mediaExpiresAt = mediaExpiresAt
     }
 }
 
@@ -64,6 +73,9 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private let minimumZoomEpsilon: CGFloat = 0.001
     private let scrollView = UIScrollView()
     private var imageViews: [AnimatedImageView] = []
+    private var expiryLabels: [UILabel] = []
+    private var pageExpiryTimer: Timer?
+    private var expiredPages = Set<Int>()
     private var pageZoomScrolls: [UIScrollView] = []
     private var pageLoadTasks: [Int: Task<Void, Never>] = [:]
     private var pageLoadRoles: [Int: PageLoadRole] = [:]
@@ -118,11 +130,13 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     deinit {
         saveTask?.cancel()
+        pageExpiryTimer?.invalidate()
         cancelAllPageLoadTasks()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        refreshExpiredPages()
         // Set initial page offset before the view is on screen to avoid flashing page 0.
         if !didSetInitialOffset {
             view.layoutIfNeeded()
@@ -152,6 +166,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         // Build pages: each page has its own zooming UIScrollView containing an imageView.
         pageZoomScrolls.removeAll()
         imageViews.removeAll()
+        expiryLabels.removeAll()
 
         var previousTrailing: NSLayoutXAxisAnchor = scrollView.leadingAnchor
         for index in 0..<pageCount {
@@ -192,12 +207,32 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 iv.heightAnchor.constraint(equalTo: zsv.frameLayoutGuide.heightAnchor)
             ])
 
-            if let initialImage = pages[index].initialImage ?? pages[index].thumbnailImage {
+            if !isPageExpired(index), let initialImage = pages[index].initialImage ?? pages[index].thumbnailImage {
                 iv.image = initialImage
             }
 
+            let expiryLabel = UILabel()
+            expiryLabel.translatesAutoresizingMaskIntoConstraints = false
+            expiryLabel.textColor = .white
+            expiryLabel.font = .systemFont(ofSize: 15, weight: .medium)
+            expiryLabel.textAlignment = .center
+            expiryLabel.numberOfLines = 0
+            expiryLabel.backgroundColor = UIColor.black.withAlphaComponent(0.72)
+            expiryLabel.layer.cornerRadius = 10
+            expiryLabel.clipsToBounds = true
+            expiryLabel.isHidden = true
+            expiryLabel.isAccessibilityElement = true
+            zsv.addSubview(expiryLabel)
+            NSLayoutConstraint.activate([
+                expiryLabel.centerXAnchor.constraint(equalTo: zsv.centerXAnchor),
+                expiryLabel.centerYAnchor.constraint(equalTo: zsv.centerYAnchor, constant: 80),
+                expiryLabel.leadingAnchor.constraint(greaterThanOrEqualTo: zsv.leadingAnchor, constant: 24),
+                expiryLabel.trailingAnchor.constraint(lessThanOrEqualTo: zsv.trailingAnchor, constant: -24)
+            ])
+
             pageZoomScrolls.append(zsv)
             imageViews.append(iv)
+            expiryLabels.append(expiryLabel)
             previousTrailing = zsv.trailingAnchor
         }
 
@@ -205,6 +240,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
         setupChromeUI()
         setupGestures()
+        refreshExpiredPages()
 
         if pageCount > 0 {
             let safeStart = max(0, min(startIndex, pageCount - 1))
@@ -227,6 +263,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        refreshExpiredPages()
+        schedulePageExpiryTimer()
         updateAnimatedPlayback(activeIndex: currentIndex())
     }
 
@@ -235,6 +273,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         imageViews.forEach { $0.stopAnimating() }
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
             viewerClosed = true
+            pageExpiryTimer?.invalidate()
+            pageExpiryTimer = nil
             saveTask?.cancel()
             cancelAllPageLoadTasks()
             releaseTransientImages()
@@ -245,6 +285,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         guard scrollView === self.scrollView, pageCount > 0 else { return }
         let page = Int(round(scrollView.contentOffset.x / max(1, scrollView.bounds.width)))
         let clamped = min(max(0, page), pageCount - 1)
+        markPageExpiredIfNeeded(clamped)
         renderChrome(index: clamped)
         renderLoadStatus(index: clamped)
 
@@ -316,6 +357,8 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     private func closeViewer() {
         viewerClosed = true
+        pageExpiryTimer?.invalidate()
+        pageExpiryTimer = nil
         saveTask?.cancel()
         cancelAllPageLoadTasks()
         releaseTransientImages()
@@ -345,7 +388,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     @objc private func handleDoubleTap(_ gr: UITapGestureRecognizer) {
         let idx = currentIndex()
-        guard idx >= 0 && idx < pageZoomScrolls.count else { return }
+        guard idx >= 0 && idx < pageZoomScrolls.count, !isPageExpired(idx) else { return }
         let zsv = pageZoomScrolls[idx]
         let iv = imageViews[idx]
         let point = gr.location(in: iv)
@@ -371,11 +414,12 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     private func renderChrome(index: Int? = nil) {
-        chrome?.render(index: index ?? currentIndex(), count: pageCount, saving: isSaving)
+        let pageIndex = index ?? currentIndex()
+        chrome?.render(index: pageIndex, count: pageCount, saving: isSaving, canSave: !isPageExpired(pageIndex))
     }
 
     @objc private func saveTapped() {
-        guard !isSaving, !viewerClosed, pages.indices.contains(currentIndex()) else { return }
+        guard !isSaving, !viewerClosed, pages.indices.contains(currentIndex()), !isPageExpired(currentIndex()) else { return }
         let index = currentIndex()
         let page = pages[index]
         let displayed = currentImage(at: index)
@@ -387,10 +431,17 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 var result = "저장 실패"
                 do {
                     guard let path = page.originalPath else { throw ChatMediaPreviewError.missingSaveSource }
-                    let lease = try await originalFiles.acquireOriginal(ChatOriginalResource(path: path), purpose: .saving)
+                    let lease = try await originalFiles.acquireOriginal(
+                        ChatOriginalResource(
+                            path: path,
+                            version: page.generationOriginal ?? "path-v1",
+                            mediaExpiresAt: page.mediaExpiresAt
+                        ),
+                        purpose: .saving
+                    )
                     do {
                         try Task.checkCancellation()
-                        guard !self.viewerClosed, lease.isValid else { throw CancellationError() }
+                        guard !self.viewerClosed, !self.isPageExpired(index), lease.isValid else { throw CancellationError() }
                         try await self.photoLibrarySaver.saveOriginal(lease, isVideo: false)
                         result = "저장 완료"
                         await lease.release()
@@ -432,6 +483,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     }
 
     @objc private func reportTapped() {
+        guard !viewerClosed, !isPageExpired(currentIndex()) else { return }
         onReport?(self)
     }
 
@@ -493,6 +545,11 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     private func renderLoadStatus(index: Int? = nil) {
         guard isViewLoaded, chrome != nil, !viewerClosed else { return }
         let index = index ?? currentIndex()
+        if isPageExpired(index) {
+            statusButton.isHidden = true
+            spinner.stopAnimating()
+            return
+        }
         let loading = requestIDs[index] != nil
         statusButton.isHidden = !failedPages.contains(index)
         statusButton.isEnabled = failedPages.contains(index)
@@ -502,7 +559,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     @objc private func retryCurrentPage() {
         let index = currentIndex()
-        guard pages.indices.contains(index) else { return }
+        guard pages.indices.contains(index), !isPageExpired(index) else { return }
         cancelPageLoadTask(for: index)
         if originalFiles != nil {
             failedPages.remove(index)
@@ -585,6 +642,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     private func startOriginalFileLoad(for index: Int, page: ProgressivePage, adjacent: Bool) {
         guard let originalFiles else { return }
+        guard !isPageExpired(index) else { markPageExpiredIfNeeded(index); return }
         guard let path = page.originalPath else {
             failedPages.insert(index)
             renderLoadStatus()
@@ -595,7 +653,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         requestIDs[index] = id
         pageLoadTasks[index] = Task(priority: adjacent ? .utility : .userInitiated) { [weak self] in
             guard let self else { return }
-            func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == id }
+            @MainActor func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == id }
             let metrics = ImageCacheMetrics.shared
             let total = metrics.begin("original.viewer", key: path)
             var outcome = "cancelled"
@@ -604,9 +662,15 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
             do {
                 let lease = try await metrics.request("original.acquire", key: path) {
                     try await originalFiles.acquireOriginal(
-                        ChatOriginalResource(path: path), purpose: adjacent ? .adjacent : .viewing
+                        ChatOriginalResource(
+                            path: path,
+                            version: page.generationOriginal ?? "path-v1",
+                            mediaExpiresAt: page.mediaExpiresAt
+                        ),
+                        purpose: adjacent ? .adjacent : .viewing
                     )
                 }
+                guard !self.isPageExpired(index) else { await lease.release(); self.markPageExpiredIfNeeded(index); return }
                 guard isCurrent(), lease.isValid else { await lease.release(); return }
                 self.originalLeases[index] = lease
                 // 디코딩 완료를 기다리지 않고 파일 확보 시점에 인접 다운로드를 허용한다.
@@ -614,6 +678,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
                 let decode = metrics.begin("original.decode", key: path, parent: total?.id)
                 let image = await ImageViewerOriginalDecoder.image(fileURL: lease.fileURL, animated: page.isAnimated)
                 metrics.end(decode, outcome: image == nil ? "empty" : "ready")
+                guard !self.isPageExpired(index) else { await lease.release(); self.markPageExpiredIfNeeded(index); return }
                 guard isCurrent(), lease.isValid else { await lease.release(); return }
                 guard let image else {
                     self.originalLeases[index] = nil
@@ -642,25 +707,26 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         page: ProgressivePage,
         role: PageLoadRole
     ) {
+        guard !isPageExpired(index) else { markPageExpiredIfNeeded(index); return }
         let requestID = UUID()
         requestIDs[index] = requestID
         failedPages.remove(index)
         let task = Task(priority: role == .demand ? .userInitiated : .utility) { [weak self] in
             guard let self else { return }
-            func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == requestID }
+            @MainActor func isCurrent() -> Bool { !Task.isCancelled && !self.viewerClosed && self.requestIDs[index] == requestID }
             var original = await self.loadOriginalCached(for: page)
-            guard isCurrent() else { return }
+            guard isCurrent(), !self.isPageExpired(index) else { self.markPageExpiredIfNeeded(index); return }
             if original == nil {
                 if self.shouldResolveThumbnail(for: index, page: page), let thumbnail = await self.loadThumbnail(for: page) {
-                    guard isCurrent() else { return }
+                    guard isCurrent(), !self.isPageExpired(index) else { self.markPageExpiredIfNeeded(index); return }
                     self.setImage(thumbnail, at: index)
                 }
-                guard isCurrent() else { return }
+                guard isCurrent(), !self.isPageExpired(index) else { self.markPageExpiredIfNeeded(index); return }
                 if role == .warmup { try? await Task.sleep(nanoseconds: 150_000_000) }
-                guard isCurrent() else { return }
+                guard isCurrent(), !self.isPageExpired(index) else { self.markPageExpiredIfNeeded(index); return }
                 original = await self.loadOriginalNetwork(for: page)
             }
-            guard isCurrent() else { return }
+            guard isCurrent(), !self.isPageExpired(index) else { self.markPageExpiredIfNeeded(index); return }
             if let original { self.setImage(original, at: index) }
             let hasOriginalPath = !(page.originalPath ?? "").isEmpty
             if original != nil || (!hasOriginalPath && self.currentImage(at: index) != nil) {
@@ -790,7 +856,10 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     @MainActor
     private func setImage(_ image: UIImage, at index: Int) {
-        guard index >= 0, index < imageViews.count else { return }
+        guard index >= 0, index < imageViews.count, !isPageExpired(index) else {
+            markPageExpiredIfNeeded(index)
+            return
+        }
         imageViews[index].image = image
         renderLoadStatus()
         updateAnimatedPlayback(activeIndex: currentIndex())
@@ -799,7 +868,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
     @MainActor
     private func updateAnimatedPlayback(activeIndex: Int) {
         for (index, imageView) in imageViews.enumerated() {
-            if index == activeIndex, index < pages.count, pages[index].isAnimated {
+            if index == activeIndex, index < pages.count, pages[index].isAnimated, !isPageExpired(index) {
                 imageView.startAnimating()
             } else {
                 imageView.stopAnimating()
@@ -809,7 +878,7 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
 
     @MainActor
     private func currentImage(at index: Int) -> UIImage? {
-        guard index >= 0, index < imageViews.count else { return nil }
+        guard index >= 0, index < imageViews.count, !isPageExpired(index) else { return nil }
         return imageViews[index].image
     }
 
@@ -831,6 +900,69 @@ class SimpleImageViewerVC: UIViewController, UIScrollViewDelegate, UIGestureReco
         pageLoadTasks.values.forEach { $0.cancel() }
         pageLoadTasks.removeAll()
         pageLoadRoles.removeAll()
+    }
+
+    private func isPageExpired(_ index: Int) -> Bool {
+        guard pages.indices.contains(index) else { return false }
+        if expiredPages.contains(index) { return true }
+        guard let expiry = pages[index].mediaExpiresAt else { return false }
+        return ChatMediaExpiryPolicy.isExpired(expiry, now: Date())
+    }
+
+    private func refreshExpiredPages() {
+        guard isViewLoaded else { return }
+        for index in pages.indices where isPageExpired(index) { markPageExpiredIfNeeded(index) }
+        schedulePageExpiryTimer()
+        renderChrome()
+        renderLoadStatus()
+    }
+
+    private func markPageExpiredIfNeeded(_ index: Int) {
+        guard pages.indices.contains(index), isPageExpired(index), expiredPages.insert(index).inserted else { return }
+        cancelPageLoadTask(for: index)
+        pages[index].initialImage = nil
+        pages[index].thumbnailImage = nil
+        originalLeases[index] = nil
+        loadedPages.remove(index)
+        failedPages.remove(index)
+        if index < imageViews.count {
+            imageViews[index].stopAnimating()
+            imageViews[index].contentMode = .center
+            imageViews[index].tintColor = .secondaryLabel
+            imageViews[index].image = UIImage(systemName: "photo",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .regular))
+        }
+        if index < pageZoomScrolls.count, abs(pageZoomScrolls[index].zoomScale - 1) > minimumZoomEpsilon {
+            pageZoomScrolls[index].setZoomScale(1, animated: false)
+        }
+        if index < expiryLabels.count {
+            expiryLabels[index].text = "미디어 저장 기간이 만료되었어요."
+            expiryLabels[index].isHidden = false
+        }
+        spinner.stopAnimating()
+        statusButton.isHidden = true
+        if index == currentIndex() {
+            saveTask?.cancel()
+            renderChrome(index: index)
+            renderLoadStatus(index: index)
+        }
+        schedulePageExpiryTimer()
+    }
+
+    private func schedulePageExpiryTimer() {
+        pageExpiryTimer?.invalidate()
+        pageExpiryTimer = nil
+        guard isViewLoaded, !viewerClosed else { return }
+        let nextExpiry = pages.indices
+            .filter { !expiredPages.contains($0) }
+            .compactMap { pages[$0].mediaExpiresAt }
+            .filter { $0 > Date() }
+            .min()
+        guard let nextExpiry else { return }
+        pageExpiryTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, nextExpiry.timeIntervalSinceNow), repeats: false) { [weak self] _ in
+            self?.refreshExpiredPages()
+        }
+        if let pageExpiryTimer { RunLoop.main.add(pageExpiryTimer, forMode: .common) }
     }
 
     // Simple padding label for toast

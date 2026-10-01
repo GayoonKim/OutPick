@@ -20,6 +20,8 @@ struct Attachment: Codable, Hashable, Sendable {
     let index: Int                       // 정렬 보장용
     let bucketThumb: String?
     let bucketOriginal: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let pathThumb: String                // Storage 경로 또는 상대 경로
     let pathOriginal: String             // Storage 경로 또는 상대 경로
     let width: Int                       // 원본 w
@@ -40,6 +42,8 @@ struct Attachment: Codable, Hashable, Sendable {
         index: Int,
         bucketThumb: String? = nil,
         bucketOriginal: String? = nil,
+        generationThumb: String? = nil,
+        generationOriginal: String? = nil,
         pathThumb: String,
         pathOriginal: String,
         width: Int,
@@ -58,6 +62,8 @@ struct Attachment: Codable, Hashable, Sendable {
         self.index = index
         self.bucketThumb = bucketThumb
         self.bucketOriginal = bucketOriginal
+        self.generationThumb = generationThumb
+        self.generationOriginal = generationOriginal
         self.pathThumb = pathThumb
         self.pathOriginal = pathOriginal
         self.width = width
@@ -102,6 +108,8 @@ struct Attachment: Codable, Hashable, Sendable {
         if let attachmentID { dict["attachmentID"] = attachmentID }
         if let bucketThumb { dict["bucketThumb"] = bucketThumb }
         if let bucketOriginal { dict["bucketOriginal"] = bucketOriginal }
+        if let generationThumb { dict["generationThumb"] = generationThumb }
+        if let generationOriginal { dict["generationOriginal"] = generationOriginal }
         if let mediaFormat { dict["mediaFormat"] = mediaFormat }
         if let isAnimated { dict["animated"] = isAnimated }
         if let b = blurhash { dict["blurhash"] = b }

@@ -45,7 +45,8 @@ struct ChatManagerProvider {
             profileCache: persistence.profileStore,
             deletionSanitizer: deletionSanitizer,
             cacheSession: cacheSession,
-            currentAccountID: currentAccountID
+            currentAccountID: currentAccountID,
+            networkStatusProvider: resolvedNetworkStatusProvider
         )
         self.roomImageManager = roomImageManager ?? RoomImageService(
             imageStorageRepository: repositories.imageStorageRepository

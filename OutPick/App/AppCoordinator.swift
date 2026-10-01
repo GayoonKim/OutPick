@@ -141,6 +141,8 @@ final class AppCoordinator {
         Task { [weak self] in
             guard let self else { return }
 
+            await ChatAttachmentImageService.removeExpiredCacheEntries(at: Date())
+
             guard await self.applyCurrentRolloutDecision() else { return }
             self.hasCompletedInitialRolloutCheck = true
 
@@ -686,6 +688,7 @@ final class AppCoordinator {
 
     @MainActor
     func handleSceneDidBecomeActive() async {
+        await ChatAttachmentImageService.removeExpiredCacheEntries(at: Date())
         guard hasCompletedInitialRolloutCheck else { return }
         guard await applyCurrentRolloutDecision() else { return }
         await appSessionRuntime.handleSceneDidBecomeActive()

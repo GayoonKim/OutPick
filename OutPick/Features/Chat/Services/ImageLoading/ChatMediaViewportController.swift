@@ -9,6 +9,7 @@ final class ChatMediaViewportController {
     }
     private final class Entry {
         var path: String
+        var cacheResource: ChatMediaCacheResource?
         var visible = false
         var episode = 0
         var failedEpisode: Int?
@@ -17,7 +18,10 @@ final class ChatMediaViewportController {
         var tasks: [Task<Void, Never>] = []
         var priority: ImageRequestPriority?
         var releaseTask: Task<Void, Never>?
-        init(path: String) { self.path = path }
+        init(path: String, cacheResource: ChatMediaCacheResource? = nil) {
+            self.path = path
+            self.cacheResource = cacheResource
+        }
         func cancel() {
             generation = UUID()
             tasks.forEach { $0.cancel() }
@@ -34,29 +38,41 @@ final class ChatMediaViewportController {
     typealias Loader = (String, ImageRequestPriority) async throws -> UIImage
     private let load: Loader
     private let cached: (String) -> UIImage?
+    private let loadResource: ((ChatMediaCacheResource, ImageRequestPriority) async throws -> UIImage)?
+    private let cachedResource: ((ChatMediaCacheResource) -> UIImage?)?
     private let delay: () async throws -> Void
+    private let now: () -> Date
     private var entries: [String: Entry] = [:]
     private var suspended = true
     private let diskPreparation: ChatDiskPreparationController
     var onChange: ((String, String, Presentation) -> Void)?
 
     init(cached: @escaping (String) -> UIImage? = { _ in nil }, load: @escaping Loader,
+         cachedResource: ((ChatMediaCacheResource) -> UIImage?)? = nil,
+         loadResource: ((ChatMediaCacheResource, ImageRequestPriority) async throws -> UIImage)? = nil,
+         now: @escaping () -> Date = { Date() },
          canPrepareDisk: @escaping () -> Bool = { false }, prepareDisk: @escaping (String) async -> Void = { _ in },
+         prepareResource: ((ChatMediaCacheResource) async -> Void)? = nil,
          delay: @escaping () async throws -> Void = {
         try await Task.sleep(nanoseconds: 300_000_000)
     }) {
         self.load = load
         self.cached = cached
+        self.cachedResource = cachedResource
+        self.loadResource = loadResource
+        self.now = now
         self.delay = delay
         self.diskPreparation = ChatDiskPreparationController(
             maxConcurrent: nil,
-            canPrepare: canPrepareDisk, prepare: prepareDisk)
+            canPrepare: canPrepareDisk, prepare: prepareDisk, prepareResource: prepareResource)
     }
 
     func resume() { suspended = false }
 
     // 화면 배치 전에는 메시지 순서로 준비하고, 배치 후 실제 거리순 후보로 교체한다.
-    func prepareDiskBeforeLayout(paths: [String]) { diskPreparation.update(paths: paths) }
+    func prepareDiskBeforeLayout(paths: [String], resourcesByPath: [String: ChatMediaCacheResource] = [:]) {
+        diskPreparation.update(paths: paths, resourcesByPath: resourcesByPath)
+    }
     func stopDiskPreparation() { diskPreparation.suspend() }
 
     func update(items: [ChatMediaViewportItem], demands: [String: ImageRequestPriority], validIDs: Set<String>, cancelOutsideImmediately: Bool = false, diskPreparationPaths: [String]? = nil) {
@@ -66,23 +82,33 @@ final class ChatMediaViewportController {
         guard !suspended else { return }
         let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
         for (id, entry) in entries {
+            if let resource = itemsByID[id]?.cacheResource,
+               let expiry = resource.mediaExpiresAt, expiry <= now() {
+                entry.cancel()
+                entry.image = nil
+                entry.failedEpisode = nil
+                onChange?(id, entry.path, .idle)
+                continue
+            }
             let visible = demands[id] == .visible
             if visible && !entry.visible { entry.episode += 1 }
             entry.visible = visible
-            if let item = itemsByID[id], item.path != entry.path {
+            if let item = itemsByID[id], item.path != entry.path || item.cacheResource != entry.cacheResource {
                 let preservesLocal = entry.path.hasPrefix("/") || entry.path.hasPrefix("file://")
                 entry.cancel()
                 if !preservesLocal { entry.image = nil }
                 entry.path = item.path
+                entry.cacheResource = item.cacheResource
                 entry.failedEpisode = nil
             }
         }
         for (id, priority) in demands {
             guard let item = itemsByID[id] else { continue }
+            if let expiry = item.cacheResource?.mediaExpiresAt, expiry <= now() { continue }
             let entry: Entry
             if let existing = entries[id] { entry = existing }
             else {
-                entry = Entry(path: item.path)
+                entry = Entry(path: item.path, cacheResource: item.cacheResource)
                 entry.visible = priority == .visible
                 entry.episode = entry.visible ? 1 : 0
                 entries[id] = entry
@@ -90,7 +116,13 @@ final class ChatMediaViewportController {
             entry.releaseTask?.cancel()
             entry.releaseTask = nil
             if let image = entry.image { onChange?(id, entry.path, .image(image)); continue }
-            if entry.tasks.isEmpty, let image = cached(entry.path) {
+            let cachedImage: UIImage?
+            if let resource = entry.cacheResource {
+                cachedImage = cachedResource?(resource)
+            } else {
+                cachedImage = cached(entry.path)
+            }
+            if entry.tasks.isEmpty, let image = cachedImage {
                 entry.image = image
                 entry.failedEpisode = nil
                 ImageCacheMetrics.shared.mark("chatPreview.presentation", key: entry.path, outcome: "memoryImmediate")
@@ -131,21 +163,32 @@ final class ChatMediaViewportController {
                 self.onChange?(id, entry.path, .idle)
             }
         }
-        if let diskPreparationPaths { diskPreparation.update(paths: diskPreparationPaths) }
+        if let diskPreparationPaths {
+            let resourcesByPath = Dictionary(items.compactMap { item in
+                item.cacheResource.map { (item.path, $0) }
+            }, uniquingKeysWith: { first, _ in first })
+            diskPreparation.update(paths: diskPreparationPaths, resourcesByPath: resourcesByPath)
+        }
     }
 
     private func start(id: String, entry: Entry, priority: ImageRequestPriority) {
         entry.priority = priority
         let generation = entry.generation
         let path = entry.path
+        let cacheResource = entry.cacheResource
         let load = load
+        let loadResource = loadResource
         ImageCacheMetrics.shared.mark("chatPreview.presentation", key: path, outcome: "loading")
         onChange?(id, path, .loading)
         let task = Task { [weak self, weak entry] in
             let result: Result<UIImage, Error>
             do {
                 result = .success(try await ImageCacheMetrics.shared.request("chatPreview.load", key: path) {
-                    try await load(path, priority)
+                    if let cacheResource {
+                        guard let loadResource else { throw URLError(.resourceUnavailable) }
+                        return try await loadResource(cacheResource, priority)
+                    }
+                    return try await load(path, priority)
                 })
             }
             catch { result = .failure(error) }
@@ -157,6 +200,11 @@ final class ChatMediaViewportController {
             entry.priority = nil
             switch result {
             case .success(let image):
+                guard cacheResource?.mediaExpiresAt.map({ $0 <= self.now() }) != true else {
+                    entry.image = nil
+                    self.onChange?(id, path, .idle)
+                    return
+                }
                 entry.image = image
                 entry.failedEpisode = nil
                 ImageCacheMetrics.shared.mark("chatPreview.presentation", key: path, outcome: "image")
@@ -194,20 +242,25 @@ final class ChatMediaViewportController {
 final class ChatDiskPreparationController {
     private let canPrepare: () -> Bool
     private let prepare: (String) async -> Void
+    private let prepareResource: ((ChatMediaCacheResource) async -> Void)?
     private var paths: [String] = []
+    private var resourcesByPath: [String: ChatMediaCacheResource] = [:]
     private var attempted = Set<String>()
     private let maxConcurrent: Int?
     private var tasks: [String: Task<Void, Never>] = [:]
     private var generation = UUID()
 
-    init(maxConcurrent: Int? = 1, canPrepare: @escaping () -> Bool, prepare: @escaping (String) async -> Void) {
+    init(maxConcurrent: Int? = 1, canPrepare: @escaping () -> Bool, prepare: @escaping (String) async -> Void,
+         prepareResource: ((ChatMediaCacheResource) async -> Void)? = nil) {
         self.maxConcurrent = maxConcurrent.map { max(1, $0) }
         self.canPrepare = canPrepare
         self.prepare = prepare
+        self.prepareResource = prepareResource
     }
 
-    func update(paths: [String]) {
+    func update(paths: [String], resourcesByPath: [String: ChatMediaCacheResource] = [:]) {
         self.paths = paths
+        self.resourcesByPath = resourcesByPath
         attempted.formIntersection(Set(paths))
         let valid = Set(paths)
         for path in Array(tasks.keys) where !valid.contains(path) {
@@ -221,8 +274,11 @@ final class ChatDiskPreparationController {
               let path = paths.first(where: { !attempted.contains($0) && tasks[$0] == nil }) {
             let generation = generation
             let prepare = prepare
+            let prepareResource = prepareResource
+            let resource = resourcesByPath[path]
             tasks[path] = Task { [weak self] in
-                await prepare(path)
+                if let resource, let prepareResource { await prepareResource(resource) }
+                else { await prepare(path) }
                 guard !Task.isCancelled, let self, self.generation == generation else { return }
                 self.attempted.insert(path)
                 self.tasks.removeValue(forKey: path)

@@ -4,8 +4,10 @@ enum ChatMediaIndexRecordMapper {
             roomID: record.roomID, messageID: record.messageID, senderUID: record.senderUID, idx: record.idx,
             thumbKey: record.thumbKey, originalKey: record.originalKey,
             thumbURL: record.thumbURL, originalURL: record.originalURL,
+            generationThumb: record.generationThumb, generationOriginal: record.generationOriginal,
             width: record.width, height: record.height, bytesOriginal: record.bytesOriginal,
-            hash: record.hash, isFailed: record.isFailed, localThumb: record.localThumb, sentAt: record.sentAt
+            hash: record.hash, isFailed: record.isFailed, localThumb: record.localThumb,
+            sentAt: record.sentAt, mediaExpiresAt: record.mediaExpiresAt, attachmentID: record.attachmentID
         )
     }
 
@@ -14,9 +16,11 @@ enum ChatMediaIndexRecordMapper {
             roomID: record.roomID, messageID: record.messageID, senderUID: record.senderUID, idx: record.idx,
             thumbKey: record.thumbKey, originalKey: record.originalKey,
             thumbURL: record.thumbURL, originalURL: record.originalURL,
+            generationThumb: record.generationThumb, generationOriginal: record.generationOriginal,
             width: record.width, height: record.height, bytesOriginal: record.bytesOriginal,
             duration: record.duration, approxBitrateMbps: record.approxBitrateMbps, preset: record.preset,
-            hash: record.hash, isFailed: record.isFailed, localThumb: record.localThumb, sentAt: record.sentAt
+            hash: record.hash, isFailed: record.isFailed, localThumb: record.localThumb,
+            sentAt: record.sentAt, mediaExpiresAt: record.mediaExpiresAt, attachmentID: record.attachmentID
         )
     }
 }

@@ -19,6 +19,7 @@ final class ChatMessageManager: ChatMessageManaging {
     private let pageLoader: ChatMessagePageLoader
     private let cacheSession: ChatMessageCacheSession
     private let accountID: String
+    private let networkStatusProvider: NetworkStatusProviding?
     private var saveQueue: ChatMessageSaveQueue?
     private var confirmedReconciler: ChatServerConfirmedMessageReconciling?
 
@@ -35,7 +36,8 @@ final class ChatMessageManager: ChatMessageManaging {
         profileCache: ChatProfileCachePersisting,
         deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
         cacheSession: ChatMessageCacheSession = ChatMessageCacheSession(),
-        currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID }
+        currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
+        networkStatusProvider: NetworkStatusProviding? = nil
     ) {
         self.messageRepository = messageRepository
         self.moderationLifecycleRepository = moderationLifecycleRepository
@@ -45,13 +47,14 @@ final class ChatMessageManager: ChatMessageManaging {
         self.currentAccountID = currentAccountID
         self.cacheSession = cacheSession
         self.accountID = currentAccountID()
+        self.networkStatusProvider = networkStatusProvider
         self.pageLoader = ChatMessagePageLoader(local: { roomID, range in
             try await messagePersistence.fetchMessagesAfterSeq(inRoom: roomID,
                 afterSeq: range.lower - 1, limit: Int(range.upper - range.lower + 1))
                 .filter { range.contains($0.seq) }
         }, remote: { roomID, range in
             try await messageRepository.fetchMessageRange(roomID: roomID, range: range)
-        })
+        }, allowsRemote: { networkStatusProvider?.currentStatus.isOnline ?? true })
     }
 
     func loadMessagePage(_ request: ChatMessagePageRequest) async throws -> ChatMessagePageResult {
@@ -123,6 +126,9 @@ final class ChatMessageManager: ChatMessageManaging {
         mode: ChatInitialOpenMode,
         policy: ChatInitialLoadPolicy
     ) async throws -> ChatInitialWindow {
+        guard networkStatusProvider?.currentStatus.isOnline != false else {
+            return try await loadLocalInitialWindow(roomID: room.id, mode: mode, policy: policy)
+        }
         switch mode {
         case .latestTail(let latestSeq):
             let fetched = try await messageRepository.fetchLatestMessages(
@@ -191,7 +197,7 @@ final class ChatMessageManager: ChatMessageManaging {
     func loadMessagesAroundAnchor(
         room: ChatRoom, anchor: ChatMessage, beforeLimit: Int, afterLimit: Int
     ) async throws -> [ChatMessage] {
-        let latest = try await messageRepository.fetchLatestMessages(for: room, limit: 1).first?.seq ?? anchor.seq
+        let latest = try await latestSequence(room: room, fallback: anchor.seq)
         let before = try ChatMessagePageRequest(roomID: room.id, direction: .older,
             boundarySeq: anchor.seq, limit: max(1, min(100, beforeLimit)), upperSeq: latest)
         let after = try ChatMessagePageRequest(roomID: room.id, direction: .newer,
@@ -219,7 +225,7 @@ final class ChatMessageManager: ChatMessageManaging {
               let anchor = try await messagePersistence.fetchMessage(id: messageID, inRoom: room.id) else {
             throw ChatMessagePageError.invalidRequest
         }
-        let latest = try await messageRepository.fetchLatestMessages(for: room, limit: 1).first?.seq ?? anchor.seq
+        let latest = try await latestSequence(room: room, fallback: anchor.seq)
         let request = try ChatMessagePageRequest(roomID: room.id, direction: .newer,
             boundarySeq: anchor.seq, upperSeq: max(latest, anchor.seq))
         return try await loadMessagePage(request).contiguousMessages
@@ -233,14 +239,20 @@ final class ChatMessageManager: ChatMessageManaging {
         let fetched: [ChatMessage]
         switch query {
         case .latest(let limit):
-            let raw = try await messageRepository.fetchLatestMessages(for: room, limit: limit)
+            let raw: [ChatMessage]
+            if networkStatusProvider?.currentStatus.isOnline == false {
+                raw = try await messagePersistence.fetchRecentMessages(inRoom: room.id, limit: limit)
+            } else {
+                raw = try await messageRepository.fetchLatestMessages(for: room, limit: limit)
+            }
             fetched = try await sanitizeForAdmission(raw, roomID: room.id)
         case .beforeSeq(let beforeSeq, let limit):
-            let raw = try await messageRepository.fetchMessagesBeforeSeq(
-                room: room,
-                beforeSeq: beforeSeq,
-                limit: limit
-            )
+            let raw: [ChatMessage]
+            if networkStatusProvider?.currentStatus.isOnline == false {
+                raw = try await messagePersistence.fetchMessagesBeforeSeq(inRoom: room.id, beforeSeq: beforeSeq, limit: limit)
+            } else {
+                raw = try await messageRepository.fetchMessagesBeforeSeq(room: room, beforeSeq: beforeSeq, limit: limit)
+            }
             fetched = try await sanitizeForAdmission(raw, roomID: room.id)
         }
 
@@ -251,6 +263,13 @@ final class ChatMessageManager: ChatMessageManaging {
         return window
     }
     
+    private func latestSequence(room: ChatRoom, fallback: Int64) async throws -> Int64 {
+        guard networkStatusProvider?.currentStatus.isOnline != false else {
+            return max(Int64(room.seq), fallback)
+        }
+        return try await messageRepository.fetchLatestMessages(for: room, limit: 1).first?.seq ?? fallback
+    }
+
     func deleteMessage(message: ChatMessage, room: ChatRoom) async throws {
         let messageID = message.ID
         let roomID = room.id

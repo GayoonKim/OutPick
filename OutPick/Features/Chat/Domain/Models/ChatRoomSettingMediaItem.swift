@@ -16,9 +16,18 @@ struct ChatRoomSettingMediaItem: Hashable {
     let originalKey: String?
     let thumbURL: String?
     let originalURL: String?
+    let generationThumb: String?
+    let generationOriginal: String?
     let localThumb: String?
     let sentAt: Date
+    let mediaExpiresAt: Date?
     let isVideo: Bool
+    var attachmentID: String? = nil
+
+    var isExpired: Bool {
+        guard let mediaExpiresAt else { return true }
+        return ChatMediaExpiryPolicy.isExpired(mediaExpiresAt, now: Date())
+    }
 
     var id: String {
         "\(messageID)#\(idx)"

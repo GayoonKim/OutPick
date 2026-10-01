@@ -37,7 +37,7 @@ protocol ChatRoomRouting: AnyObject {
         loadImageProvider: SimpleImageViewerVC.LoadImageProvider?,
         loadImageDataProvider: SimpleImageViewerVC.LoadImageDataProvider?
     )
-    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String)
+    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String, resource: ChatVideoPlaybackResource?)
     func dismissPresentedMedia(from source: ChatViewController, deletedMessageIDs: Set<String>)
     func handleRoomExit(from source: ChatViewController, roomID: String)
     func handleRoomClosure(from source: ChatViewController, event: RealtimeRoomClosureEvent)
@@ -598,13 +598,20 @@ extension ChatCoordinator: ChatRoomRouting {
         source.present(viewer, animated: true)
     }
 
-    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String) {
+    func showVideoPlayer(from source: ChatViewController, messageID: String, path: String, resource: ChatVideoPlaybackResource?) {
         Task { @MainActor [weak self, weak source] in
             guard let self, let source else { return }
-
+            let videoResolver = container.makeChatVideoPlaybackResolver()
             do {
-                let videoResolver = container.makeChatVideoPlaybackResolver()
-                let playbackAsset = try await videoResolver.playbackAsset(forPath: path)
+                let playbackAsset: ChatVideoPlaybackAsset?
+                if let resource, resource.mediaExpiresAt <= Date() { playbackAsset = nil }
+                else if let resource { playbackAsset = try await videoResolver.playbackAsset(for: resource, forceRefresh: false) }
+                else { playbackAsset = try await videoResolver.playbackAsset(forPath: path) }
+                guard source.viewIfLoaded?.window != nil, source.presentedViewController == nil,
+                      videoResolver.isSessionValid else {
+                    await playbackAsset?.fileLease?.release()
+                    return
+                }
                 let playerViewController = ChatVideoPlayerViewController(
                     playbackAsset: playbackAsset,
                     videoResolver: videoResolver,
@@ -614,9 +621,19 @@ extension ChatCoordinator: ChatRoomRouting {
                 self.trackPresentedMedia(playerViewController, messageID: messageID)
                 source.present(playerViewController, animated: true)
             } catch {
+                guard !(error is CancellationError), source.viewIfLoaded?.window != nil else { return }
+                if error as? ChatVideoPlaybackError == .expired,
+                   source.presentedViewController == nil, videoResolver.isSessionValid {
+                    let player = ChatVideoPlayerViewController(playbackAsset: nil,
+                        videoResolver: videoResolver, photoLibrarySaver: container.makePhotoLibrarySaver())
+                    player.modalPresentationStyle = .fullScreen
+                    self.trackPresentedMedia(player, messageID: messageID)
+                    source.present(player, animated: true)
+                    return
+                }
                 AlertManager.showAlertNoHandler(
                     title: "재생 실패",
-                    message: "동영상을 불러오지 못했습니다.\n\(error.localizedDescription)",
+                    message: (error as? ChatVideoPlaybackError)?.errorDescription ?? "동영상을 불러오지 못했습니다.",
                     viewController: source
                 )
             }

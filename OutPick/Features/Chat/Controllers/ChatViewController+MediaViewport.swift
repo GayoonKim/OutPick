@@ -14,8 +14,17 @@ extension ChatViewController {
             return message.displayableAttachments.map(\.thumbResourcePath)
         }
         let paths = ChatMediaViewportPolicy().initialDiskPreparationPaths(groups: groups, anchor: anchor)
+        let resourcesByPath = Dictionary(messages.flatMap { message in
+            message.displayableAttachments.map { attachment in
+                (attachment.thumbResourcePath, ChatMediaCacheResource.attachment(
+                    path: attachment.thumbResourcePath,
+                    generation: attachment.generationThumb,
+                    mediaExpiresAt: message.mediaExpiresAt
+                ))
+            }
+        }, uniquingKeysWith: { first, _ in first })
         ImageCacheMetrics.shared.mark("chatDiskPreparation.initial", outcome: "candidates_\(paths.count)")
-        mediaViewport.prepareDiskBeforeLayout(paths: paths)
+        mediaViewport.prepareDiskBeforeLayout(paths: paths, resourcesByPath: resourcesByPath)
     }
 
     func resetMediaScrollPrediction() {
@@ -96,7 +105,8 @@ extension ChatViewController {
                 guard let path = message.sharedContent?.thumbnailPathSnapshot else { continue }
                 let x = isMine ? frame.maxX - 8 - frame.width * 0.72 + 10 : frame.minX + 63
                 candidates.append(ChatMediaViewportItem(id: message.ID + "#share", path: path,
-                    frame: CGRect(x: x, y: frame.maxY - 8 - 76 + 10, width: 56, height: 56)))
+                    frame: CGRect(x: x, y: frame.maxY - 8 - 76 + 10, width: 56, height: 56),
+                    cacheResource: .sharedContent(path: path)))
             } else {
                 let width = frame.width * 0.7
                 let height = ChatMediaPreviewLayout.height(count: attachments.count, width: width)
@@ -106,7 +116,13 @@ extension ChatViewController {
                 for (attachment, localFrame) in zip(attachments, frames) {
                     candidates.append(ChatMediaViewportItem(
                         id: ChatImagePreviewItem.stableID(messageID: message.ID, attachment: attachment),
-                        path: attachment.thumbResourcePath, frame: localFrame.offsetBy(dx: x, dy: y)))
+                        path: attachment.thumbResourcePath,
+                        frame: localFrame.offsetBy(dx: x, dy: y),
+                        cacheResource: ChatMediaCacheResource.attachment(
+                            path: attachment.thumbResourcePath,
+                            generation: attachment.generationThumb,
+                            mediaExpiresAt: message.mediaExpiresAt
+                        )))
                 }
             }
         }

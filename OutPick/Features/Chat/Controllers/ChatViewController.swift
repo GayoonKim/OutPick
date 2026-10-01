@@ -38,6 +38,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var isUserInCurrentRoom = false
     
     private var replyMessage: ReplyPreview?
+    private var replyThumbnailTask: Task<Void, Never>?
     private lazy var centeredStatusLabel: UILabel = {
         let label = UILabel()
         label.numberOfLines = 0
@@ -70,6 +71,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     private var latestJumpErrorTask: Task<Void, Never>?
     private var latestJumpPreviewImageTask: Task<Void, Never>?
     private var latestPreviewAutoDismissTask: Task<Void, Never>?
+    private var mediaExpiryTimer: Timer?
+    private var lastPrunedMediaExpiryMillis: Int64 = 0
 
     private let latestMessageJumpView = ChatLatestMessageJumpView()
     private lazy var latestJumpErrorLabel: UILabel = {
@@ -186,12 +189,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             realtimeSubscription?.stop()
         }
         convertImagesTask?.cancel()
+        replyThumbnailTask?.cancel()
         convertVideosTask?.cancel()
         roomAccessTask?.cancel()
         latestJumpTask?.cancel()
         latestJumpErrorTask?.cancel()
         latestJumpPreviewImageTask?.cancel()
         latestPreviewAutoDismissTask?.cancel()
+        mediaExpiryTimer?.invalidate()
+        mediaExpiryTimer = nil
         let chatRoomViewModel = chatRoomViewModel
         Task { @MainActor in
             chatRoomViewModel.cancelSearchWork()
@@ -277,6 +283,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     private lazy var replyView: ChatReplyView = {
         let view = ChatReplyView()
+        view.onCancel = { [weak self] in
+            self?.replyThumbnailTask?.cancel()
+            self?.replyMessage = nil
+        }
         view.translatesAutoresizingMaskIntoConstraints = false
         view.clipsToBounds = true
         view.isHidden = true
@@ -404,6 +414,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         setupInitialMessages()
         setupPageRetryButtons()
+        chatRoomViewModel.pageRetryVisibilityPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.renderPageRetryButtons() }
+            .store(in: &cancellables)
         
         bindKeyboardPublisher()
         bindSearchEvents()
@@ -421,6 +435,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewWillAppear(animated)
         ImageCacheMetrics.shared.mark("chatEntry.willAppear")
         mediaViewportActive = true
+        scheduleMediaExpiryTimer()
         bindMediaViewport()
         mediaViewport.resume()
         scheduleMediaViewportUpdate()
@@ -443,6 +458,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        mediaExpiryTimer?.invalidate()
+        mediaExpiryTimer = nil
         mediaDiskPreparationActive = false
         mediaLocalPreparationWindow = nil
         mediaViewport.stopDiskPreparation()
@@ -777,8 +794,15 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             switch imageSource {
             case .avatar(let path):
                 image = await self.avatarImageManager.cachedAvatar(for: path)
-            case .attachment(let path):
-                image = await self.attachmentImageLoader.cachedImage(for: path)
+            case .attachment(let path, let generation, let mediaExpiresAt):
+                let resource = ChatMediaCacheResource.attachment(
+                    path: path,
+                    generation: generation,
+                    mediaExpiresAt: mediaExpiresAt
+                )
+                image = await self.attachmentImageLoader.cachedImage(for: resource)
+            case .sharedContent(let path):
+                image = await self.attachmentImageLoader.cachedImage(for: .sharedContent(path: path))
             }
             guard !Task.isCancelled,
                   self.chatRoomViewModel.latestJumpPresentation.preview?.targetSeq == preview.targetSeq,
@@ -1203,7 +1227,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             if let local = stagedMessageForOutbox(messageID: message.ID) {
                 for attachment in message.attachments {
                     if let old = local.attachments.first(where: { $0.index == attachment.index }) {
-                        await attachmentImageLoader.preserveLocalPreview(from: old.pathThumb, for: attachment.thumbResourcePath)
+                        let resource = ChatMediaCacheResource.attachment(
+                            path: attachment.thumbResourcePath,
+                            generation: attachment.generationThumb,
+                            mediaExpiresAt: message.mediaExpiresAt
+                        )
+                        await attachmentImageLoader.preserveLocalPreview(from: old.pathThumb, for: resource)
                     }
                 }
             }
@@ -1391,6 +1420,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         }
         
         if self.replyMessage != nil {
+            self.replyThumbnailTask?.cancel()
             self.replyMessage = nil
             self.replyView.isHidden = true
         }
@@ -1859,6 +1889,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         super.viewDidAppear(animated)
         ImageCacheMetrics.shared.mark("chatEntry.didAppear")
         mediaViewportActive = true
+        scheduleMediaExpiryTimer()
         bindMediaViewport()
         mediaViewport.resume()
         scheduleMediaViewportUpdate()
@@ -2380,10 +2411,33 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             return
         }
         print(#function, "답장:", message)
-        let replyText = message.isLookbookShareMessage ? message.lookbookSharePreviewText : (message.msg ?? "")
-        self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname, text: replyText, isDeleted: false)
+        replyThumbnailTask?.cancel()
+        let attachments = message.displayableAttachments
+        self.replyMessage = ReplyPreview(messageID: message.ID, sender: message.senderNickname,
+            text: ChatReplyView.previewText(for: message),
+            imagesCount: attachments.filter { $0.type == .image }.count,
+            videosCount: attachments.filter { $0.type == .video }.count,
+            firstThumbPath: attachments.first?.thumbResourcePath,
+            senderAvatarPath: message.senderAvatarPath, sentAt: message.sentAt,
+            mediaExpiresAt: message.mediaExpiresAt, isDeleted: message.isDeleted)
         replyView.configure(with: message)
         replyView.isHidden = false
+        guard !message.isDeleted, let attachment = attachments.first else { return }
+        let resource = ChatMediaCacheResource.attachment(path: attachment.thumbResourcePath,
+            generation: attachment.generationThumb, mediaExpiresAt: message.mediaExpiresAt)
+        guard !resource.path.isEmpty, resource.isAvailable(at: Date()) else { return }
+        let loader = attachmentImageLoader
+        replyThumbnailTask = Task { @MainActor [weak self] in
+            let image: UIImage?
+            if let cached = await loader.cachedImage(for: resource) {
+                image = cached
+            } else {
+                image = try? await loader.loadImage(for: resource, maxBytes: 15 * 1024 * 1024)
+            }
+            guard !Task.isCancelled, resource.isAvailable(at: Date()),
+                  let self, self.replyMessage?.messageID == message.ID, let image else { return }
+            self.replyView.setThumbnail(image, messageID: message.ID)
+        }
     }
     
     private func handleCopy(message: ChatMessage) {
@@ -3411,8 +3465,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                         return try await self.avatarImage(for: path)
                     })
                 } else if latestMessage.hasDisplayableAttachments {
-                    cell.configureWithImage(with: latestMessage, cachedImage: { [weak self] path in
-                        self?.attachmentImageLoader.cachedMemoryImageImmediately(for: path)
+                    cell.configureWithImage(with: latestMessage, cachedImage: { [weak self] resource in
+                        self?.attachmentImageLoader.cachedMemoryImageImmediately(for: resource)
                     }, avatarLoader: { [weak self] path in
                         guard let self else { return nil }
                         return try await self.avatarImage(for: path)
@@ -3606,9 +3660,52 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             animatingDifferences: animatingDifferences,
             completion: { [weak self] in
                 self?.scheduleMediaViewportUpdate()
+                self?.scheduleMediaExpiryTimer()
                 completion?()
             }
         )
+    }
+
+    @MainActor
+    private func scheduleMediaExpiryTimer() {
+        mediaExpiryTimer?.invalidate()
+        mediaExpiryTimer = nil
+        guard viewIfLoaded?.window != nil else { return }
+        let now = Date()
+        let messages = messageWindowStore.visibleMessages
+        let mediaExpiries = messages.flatMap { message -> [Date] in
+            var dates: [Date] = []
+            if !message.attachments.isEmpty, let expiry = message.mediaExpiresAt { dates.append(expiry) }
+            if (message.replyPreview?.attachmentsCount ?? 0) > 0,
+               let expiry = message.replyPreview?.mediaExpiresAt { dates.append(expiry) }
+            return dates
+        }
+        let expiredIDs = Set(messages.compactMap { message -> String? in
+            let ownMediaExpired = !message.attachments.isEmpty &&
+                (message.mediaExpiresAt.map { $0 <= now } ?? false)
+            let replyAttachmentCount = message.replyPreview?.attachmentsCount ?? 0
+            let replyMediaExpired = replyAttachmentCount > 0 &&
+                (message.replyPreview?.mediaExpiresAt.map { $0 <= now } ?? false)
+            return ownMediaExpired || replyMediaExpired ? message.ID : nil
+        })
+        if !expiredIDs.isEmpty {
+            reconfigureMessageItems(messageIDs: expiredIDs)
+            scheduleMediaViewportUpdate()
+            let latestExpiredMillis = mediaExpiries
+                .filter { $0 <= now }
+                .map { Int64(($0.timeIntervalSince1970 * 1_000).rounded(.down)) }
+                .max() ?? 0
+            if latestExpiredMillis > lastPrunedMediaExpiryMillis {
+                lastPrunedMediaExpiryMillis = latestExpiredMillis
+                let attachmentImageLoader = attachmentImageLoader
+                Task { await attachmentImageLoader.pruneExpiredCacheEntries(at: now) }
+            }
+        }
+        guard let nextExpiry = mediaExpiries.filter({ $0 > now }).min() else { return }
+        mediaExpiryTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, nextExpiry.timeIntervalSince(now)), repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.scheduleMediaExpiryTimer() }
+        }
+        if let mediaExpiryTimer { RunLoop.main.add(mediaExpiryTimer, forMode: .common) }
     }
     
     // 캐시된 포맷터
@@ -3741,12 +3838,18 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         guard let currentMessage = messageForCommand(messageID: messageID) else { return }
         let attachments = currentMessage.displayableAttachments
         guard attachmentIndex >= 0, attachmentIndex < attachments.count else { return }
+        if let expiry = currentMessage.mediaExpiresAt, expiry <= Date() {
+            reconfigureMessageItems(messageIDs: [messageID])
+        }
         let attachment = attachments[attachmentIndex]
 
         if attachment.type == .video {
             let path = attachment.originalResourcePath
             guard !path.isEmpty, let router else { return }
-            router.showVideoPlayer(from: self, messageID: messageID, path: path)
+            let resource = ChatVideoPlaybackResource(roomID: currentMessage.roomID, messageID: messageID,
+                attachmentID: attachment.attachmentID, path: path,
+                generation: attachment.generationOriginal, mediaExpiresAt: currentMessage.mediaExpiresAt)
+            router.showVideoPlayer(from: self, messageID: messageID, path: path, resource: resource)
         } else {
             presentImageViewer(messageID: messageID, tappedIndex: attachmentIndex)
         }
@@ -3834,11 +3937,34 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
                 thumbnailPath: thumbnailPath,
                 originalPath: originalPath,
                 isAnimated: att.isAnimatedGIF,
-                attachmentPosition: entry.mediaIndex
+                attachmentPosition: entry.mediaIndex,
+                generationThumb: att.generationThumb,
+                generationOriginal: att.generationOriginal,
+                mediaExpiresAt: latestMessage.mediaExpiresAt
             )
         }
         guard !pages.isEmpty else { return }
 
+        let cacheResourceForPath: (String) -> ChatMediaCacheResource? = { path in
+            for entry in imageEntries {
+                let attachment = entry.attachment
+                if path == attachment.thumbResourcePath {
+                    return .attachment(
+                        path: path,
+                        generation: attachment.generationThumb,
+                        mediaExpiresAt: latestMessage.mediaExpiresAt
+                    )
+                }
+                if path == attachment.originalResourcePath {
+                    return .attachment(
+                        path: path,
+                        generation: attachment.generationOriginal,
+                        mediaExpiresAt: latestMessage.mediaExpiresAt
+                    )
+                }
+            }
+            return nil
+        }
 
         router?.showImageViewer(
             from: self,
@@ -3847,16 +3973,16 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             pages: pages,
             startIndex: start,
             cachedImageProvider: { [weak self] path in
-                guard let self else { return nil }
-                return await self.attachmentImageLoader.cachedImage(for: path)
+                guard let self, let resource = cacheResourceForPath(path) else { return nil }
+                return await self.attachmentImageLoader.cachedImage(for: resource)
             },
             loadImageProvider: { [weak self] path, maxBytes in
-                guard let self else { return nil }
-                return try? await self.attachmentImageLoader.loadImage(for: path, maxBytes: maxBytes)
+                guard let self, let resource = cacheResourceForPath(path) else { return nil }
+                return try? await self.attachmentImageLoader.loadImage(for: resource, maxBytes: maxBytes)
             },
             loadImageDataProvider: { [weak self] path, maxBytes in
-                guard let self else { return nil }
-                return try? await self.attachmentImageLoader.loadImageData(for: path, maxBytes: maxBytes)
+                guard let self, let resource = cacheResourceForPath(path) else { return nil }
+                return try? await self.attachmentImageLoader.loadImageData(for: resource, maxBytes: maxBytes)
             }
         )
 
@@ -4057,6 +4183,7 @@ extension ChatViewController {
                 if name == UIApplication.didBecomeActiveNotification {
                     Task { @MainActor [weak self] in
                         if let self, self.mediaViewportActive { self.mediaViewport.resume(); self.scheduleMediaViewportUpdate() }
+                        self?.scheduleMediaExpiryTimer()
                         self?.refreshRoomAccessIfNeeded(force: true)
                         if let self, self.mediaSessionStopped, self.viewIfLoaded?.window != nil {
                             self.mediaSessionStopped = false

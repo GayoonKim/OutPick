@@ -13,6 +13,29 @@ struct ChatImagePreviewItem {
     let displayIndex: Int
     let attachment: Attachment
     let durationText: String?
+    let mediaExpiresAt: Date?
+
+    init(
+        id: String,
+        displayIndex: Int,
+        attachment: Attachment,
+        durationText: String?,
+        mediaExpiresAt: Date? = nil
+    ) {
+        self.id = id
+        self.displayIndex = displayIndex
+        self.attachment = attachment
+        self.durationText = durationText
+        self.mediaExpiresAt = mediaExpiresAt
+    }
+
+    var cacheResource: ChatMediaCacheResource {
+        .attachment(
+            path: attachment.thumbResourcePath,
+            generation: attachment.generationThumb,
+            mediaExpiresAt: mediaExpiresAt
+        )
+    }
 
     static func stableID(messageID: String, attachment: Attachment) -> String {
         "\(messageID)#\(attachment.type.rawValue)#\(attachment.index)"
@@ -50,7 +73,7 @@ class ChatImagePreviewCollectionView: UIView {
     private var previewItems: [ChatImagePreviewItem] = []
     private var itemsByID: [String: ChatImagePreviewItem] = [:]
     private var renderedImagesByItemID: [String: UIImage] = [:]
-    private var cachedImage: (String) -> UIImage? = { _ in nil }
+    private var cachedImage: (ChatMediaCacheResource) -> UIImage? = { _ in nil }
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -121,7 +144,7 @@ class ChatImagePreviewCollectionView: UIView {
         _ items: [ChatImagePreviewItem],
         _ height: CGFloat,
         _ rows: [Int],
-        cachedImage: @escaping (String) -> UIImage? = { _ in nil }
+        cachedImage: @escaping (ChatMediaCacheResource) -> UIImage? = { _ in nil }
     ) {
         self.cachedImage = cachedImage
         let itemIDs = items.map(\.id)
@@ -129,14 +152,16 @@ class ChatImagePreviewCollectionView: UIView {
         let structureChanged = previewItems.map(\.id) != itemIDs
         let layoutChanged = imagesCount != items.count || contentHeight != height || self.rows != rows
         let changedIDs = Set(items.compactMap { item -> String? in
-            guard let old = itemsByID[item.id], old.attachment.thumbResourcePath != item.attachment.thumbResourcePath else { return nil }
+            guard let old = itemsByID[item.id],
+                  old.attachment.thumbResourcePath != item.attachment.thumbResourcePath || old.cacheResource != item.cacheResource else { return nil }
             let oldPath = old.attachment.thumbResourcePath
             return oldPath.hasPrefix("/") || oldPath.hasPrefix("file://") ? nil : item.id
         })
-        for id in changedIDs { renderedImagesByItemID[id] = nil }
+        let expiredIDs = Set(items.filter { $0.cacheResource.isExpired }.map(\.id))
+        for id in changedIDs.union(expiredIDs) { renderedImagesByItemID[id] = nil }
         // 삭제/초기화된 항목의 요청은 실제 셀 재사용 시점까지 남겨두지 않는다.
         for indexPath in collectionView.indexPathsForVisibleItems {
-            guard let itemID = dataSource.itemIdentifier(for: indexPath), !validItemIDs.contains(itemID) || changedIDs.contains(itemID),
+            guard let itemID = dataSource.itemIdentifier(for: indexPath), !validItemIDs.contains(itemID) || changedIDs.contains(itemID) || expiredIDs.contains(itemID),
                   let cell = collectionView.cellForItem(at: indexPath) as? ChatImagePreviewCell else { continue }
             cell.resetContent()
         }
@@ -169,8 +194,13 @@ class ChatImagePreviewCollectionView: UIView {
     }
 
     private func configure(_ cell: ChatImagePreviewCell, with item: ChatImagePreviewItem) {
+        if item.cacheResource.isExpired {
+            renderedImagesByItemID[item.id] = nil
+            cell.configure(with: item, image: nil)
+            return
+        }
         if renderedImagesByItemID[item.id] == nil {
-            let image = cachedImage(item.attachment.thumbResourcePath)
+            let image = cachedImage(item.cacheResource)
             renderedImagesByItemID[item.id] = image
             ImageCacheMetrics.shared.mark("chatPreview.cellCache", key: item.attachment.thumbResourcePath,
                                           outcome: image == nil ? "miss" : "hit")
@@ -182,15 +212,27 @@ class ChatImagePreviewCollectionView: UIView {
         previewItems.enumerated().compactMap { index, item in
             guard let attributes = collectionView.collectionViewLayout.layoutAttributesForItem(at: IndexPath(item: index, section: 0)) else { return nil }
             let frame = collectionView.convert(attributes.frame, to: view).intersection(convert(bounds, to: view))
-            return ChatMediaViewportItem(id: item.id, path: item.attachment.thumbResourcePath, frame: frame)
+            return ChatMediaViewportItem(
+                id: item.id,
+                path: item.attachment.thumbResourcePath,
+                frame: frame,
+                cacheResource: item.cacheResource
+            )
         }
     }
 
     func render(id: String, path: String, state: ChatMediaViewportController.Presentation) {
         guard let item = itemsByID[id], item.attachment.thumbResourcePath == path else { return }
+        guard !item.cacheResource.isExpired else {
+            renderedImagesByItemID[id] = nil
+            guard let index = previewItems.firstIndex(where: { $0.id == id }),
+                  let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? ChatImagePreviewCell else { return }
+            cell.configure(with: item, image: nil)
+            return
+        }
         var loadingCacheHit: Bool?
         if case .loading = state {
-            if let image = renderedImagesByItemID[id] ?? cachedImage(path) {
+            if let image = renderedImagesByItemID[id] ?? cachedImage(item.cacheResource) {
                 ImageCacheMetrics.shared.mark("chatPreview.loadingResolution", key: path, outcome: "imageAvailable")
                 render(id: id, path: path, state: .image(image))
                 return
@@ -210,7 +252,7 @@ class ChatImagePreviewCollectionView: UIView {
     }
 
     func currentImages() -> [UIImage?] {
-        previewItems.map { renderedImagesByItemID[$0.id] }
+        previewItems.map { $0.cacheResource.isExpired ? nil : renderedImagesByItemID[$0.id] }
     }
     
     func index(at point: CGPoint) -> Int? {

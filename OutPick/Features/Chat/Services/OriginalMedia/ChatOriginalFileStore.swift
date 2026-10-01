@@ -8,6 +8,7 @@ actor ChatOriginalFileStore {
         let url: URL
         let bytes: Int
         let persistent: Bool
+        let mediaExpiresAt: Date
         let validity = ChatOriginalValidity()
         var pins = 0
         var accessed: Date
@@ -17,6 +18,7 @@ actor ChatOriginalFileStore {
         let session: ChatOriginalSession
         let cancellation: ChatOriginalValidity
         let maximumBytes: Int
+        let mediaExpiresAt: Date
         let continuation: CheckedContinuation<ChatOriginalFileLease, Error>
     }
     private struct Flight {
@@ -38,21 +40,25 @@ actor ChatOriginalFileStore {
     private let capacity: Int
     private let resources: ImagePipelineResources
     private let legacyRoots: [URL]
+    private let now: @Sendable () -> Date
     private var entries: [ChatOriginalFileKey: Entry] = [:]
     private var flights: [UUID: Flight] = [:]
     private var pending: [ChatOriginalFileKey: UUID] = [:]
     private var removedResources: Set<String> = []
 
     init(root: URL? = nil, capacity: Int = 512 * 1024 * 1024,
-         resources: ImagePipelineResources = .shared, legacyRoots: [URL]? = nil) {
+         resources: ImagePipelineResources = .shared, legacyRoots: [URL]? = nil,
+         now: @escaping @Sendable () -> Date = { Date() }) {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let disk = try? ChatOriginalFileDisk(root: root ?? base.appendingPathComponent("ChatOriginalFiles/v1", isDirectory: true))
+        let disk = try? ChatOriginalFileDisk(root: root ?? base.appendingPathComponent("ChatOriginalFiles/v2", isDirectory: true))
         self.disk = disk
         self.capacity = max(0, capacity)
         self.resources = resources
-        self.legacyRoots = legacyRoots ?? (root == nil ? ["ChatImageCache", "Videos"].map { base.appendingPathComponent($0) } : [])
-        for (key, url, bytes, accessed) in disk?.inventory() ?? [] {
-            entries[key] = Entry(url: url, bytes: bytes, persistent: true, accessed: accessed, permit: nil)
+        self.now = now
+        self.legacyRoots = legacyRoots ?? (root == nil ? ["ChatImageCache", "ChatOriginalFiles/v1", "Videos"].map { base.appendingPathComponent($0) } : [])
+        let currentTime = now()
+        for (key, url, bytes, accessed, mediaExpiresAt) in disk?.inventory() ?? [] where mediaExpiresAt > currentTime {
+            entries[key] = Entry(url: url, bytes: bytes, persistent: true, mediaExpiresAt: mediaExpiresAt, accessed: accessed, permit: nil)
         }
     }
 
@@ -60,6 +66,10 @@ actor ChatOriginalFileStore {
         try validate(resource, accountID: accountID, session: session)
         let key = ChatOriginalFileKey(accountID: accountID, resource: resource)
         guard let entry = entries[key], entry.validity.isValid else { return nil }
+        guard entry.mediaExpiresAt > now() else {
+            invalidate { $0 == key }
+            throw URLError(.resourceUnavailable)
+        }
         guard FileManager.default.fileExists(atPath: entry.url.path) else {
             entries.removeValue(forKey: key)
             return nil
@@ -81,7 +91,13 @@ actor ChatOriginalFileStore {
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             let value = try await withCheckedThrowingContinuation { continuation in
-                let consumer = Consumer(session: session, cancellation: cancellation, maximumBytes: resource.maximumBytes, continuation: continuation)
+                let consumer = Consumer(
+                    session: session,
+                    cancellation: cancellation,
+                    maximumBytes: resource.maximumBytes,
+                    mediaExpiresAt: resource.mediaExpiresAt ?? .distantFuture,
+                    continuation: continuation
+                )
                 if let id = pending[key], flights[id] != nil {
                     ImageCacheMetrics.shared.mark("original.transfer", key: resource.path, outcome: "joined")
                     flights[id]?.consumers[consumerID] = consumer
@@ -155,6 +171,20 @@ actor ChatOriginalFileStore {
         invalidate { _ in true }
     }
 
+    func removeExpired(at now: Date) -> Bool {
+        let expiredConsumers = flights.values.flatMap { flight in
+            flight.consumers.compactMap { id, consumer in
+                consumer.mediaExpiresAt <= now ? id : nil
+            }
+        }
+        for consumerID in expiredConsumers { cancel(consumerID) }
+        let expiredKeys = Set(entries.compactMap { key, entry in entry.mediaExpiresAt <= now ? key : nil })
+        for key in expiredKeys { removedResources.insert(resourceID(key)) }
+        invalidate { expiredKeys.contains($0) }
+        let diskSucceeded = disk?.removeExpiredFiles(at: now, excluding: Set(entries.keys)) ?? true
+        return diskSucceeded && !entries.contains { $0.value.mediaExpiresAt <= now }
+    }
+
     func usage() -> Usage {
         Usage(cachedBytes: entries.values.filter(\.persistent).reduce(0) { $0 + $1.bytes },
               temporaryBytes: ChatOriginalFileDisk.bytes(in: disk.map { [$0.temporary] } ?? []),
@@ -168,6 +198,10 @@ actor ChatOriginalFileStore {
         guard !accountID.isEmpty, !resource.path.isEmpty, resource.maximumBytes > 0 else { throw URLError(.badURL) }
         let key = ChatOriginalFileKey(accountID: accountID, resource: resource)
         guard !removedResources.contains(resourceID(key)) else { throw CancellationError() }
+        if let mediaExpiresAt = resource.mediaExpiresAt,
+           ChatMediaExpiryPolicy.isExpired(mediaExpiresAt, now: now()) {
+            throw URLError(.resourceUnavailable)
+        }
     }
 
     private func resourceID(_ key: ChatOriginalFileKey) -> String { key.account + "/" + key.resource }
@@ -177,9 +211,11 @@ actor ChatOriginalFileStore {
         entries[key]!.accessed = Date()
         let entry = entries[key]!
         let generation = generation
+        let clock = now
         if entry.persistent { disk?.touch(entry.url) }
         return ChatOriginalFileLease(fileURL: entry.url, isValid: {
-            session.validity.isValid && entry.validity.isValid && session.storeGeneration == generation.value
+            session.validity.isValid && entry.validity.isValid && session.storeGeneration == generation.value &&
+                entry.mediaExpiresAt > clock()
         }, release: { await self.release(key, entryID: entry.id) })
     }
 
@@ -238,20 +274,24 @@ actor ChatOriginalFileStore {
             return
         }
         let consumers = flight.consumers.values.filter {
-            $0.session.validity.isValid && $0.cancellation.isValid && !removedResources.contains(resourceID(flight.key))
+            $0.session.validity.isValid && $0.cancellation.isValid && $0.mediaExpiresAt > now() &&
+                !removedResources.contains(resourceID(flight.key))
         }
-        for consumer in flight.consumers.values where !consumer.session.validity.isValid || !consumer.cancellation.isValid || removedResources.contains(resourceID(flight.key)) {
+        for consumer in flight.consumers.values where !consumer.session.validity.isValid || !consumer.cancellation.isValid ||
+            consumer.mediaExpiresAt <= now() || removedResources.contains(resourceID(flight.key)) {
             consumer.continuation.resume(throwing: CancellationError())
         }
         do {
             guard !consumers.isEmpty else { throw CancellationError() }
             let bytes = try disk.size(temporary)
             guard bytes > 0, bytes <= maximumBytes else { throw ImageCachePipelineError.imageTooLarge }
+            let mediaExpiresAt = consumers.compactMap(\.mediaExpiresAt).min() ?? .distantFuture
+            guard mediaExpiresAt > now() else { throw URLError(.resourceUnavailable) }
             trim(reserving: bytes)
             let current = entries.values.filter(\.persistent).reduce(0) { $0 + $1.bytes }
             let persistent = bytes <= capacity && current <= capacity - bytes
-            let url = persistent ? try disk.commit(temporary, key: flight.key) : temporary
-            entries[flight.key] = Entry(url: url, bytes: bytes, persistent: persistent,
+            let url = persistent ? try disk.commit(temporary, key: flight.key, mediaExpiresAt: mediaExpiresAt) : temporary
+            entries[flight.key] = Entry(url: url, bytes: bytes, persistent: persistent, mediaExpiresAt: mediaExpiresAt,
                                        accessed: Date(), permit: persistent ? nil : permit)
             for consumer in consumers {
                 if bytes <= consumer.maximumBytes {

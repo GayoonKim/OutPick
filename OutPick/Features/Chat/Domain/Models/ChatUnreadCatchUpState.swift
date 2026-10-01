@@ -75,7 +75,8 @@ enum ChatLatestMessagePreviewKind: Equatable {
 
 enum ChatLatestMessagePreviewImageSource: Equatable {
     case avatar(String)
-    case attachment(String)
+    case attachment(path: String, generation: String?, mediaExpiresAt: Date?)
+    case sharedContent(String)
 }
 
 struct ChatLatestMessagePreview: Equatable {
@@ -110,18 +111,28 @@ struct ChatLatestMessagePreview: Equatable {
                 senderName: senderName,
                 text: text,
                 kind: .lookbook,
-                imageSource: path.map(ChatLatestMessagePreviewImageSource.attachment)
+                imageSource: path.map(ChatLatestMessagePreviewImageSource.sharedContent)
             )
         }
 
         if let attachment = message.attachments.sorted(by: { $0.index < $1.index }).first {
             let path = normalizedText(attachment.preferredDisplayPath)
+            let generation: String?
+            if path == attachment.thumbResourcePath {
+                generation = attachment.generationThumb
+            } else if path == attachment.originalResourcePath {
+                generation = attachment.generationOriginal
+            } else {
+                generation = nil
+            }
             return Self(
                 targetSeq: message.seq,
                 senderName: senderName,
                 text: text,
                 kind: attachment.type == .video ? .video : .image,
-                imageSource: path.map(ChatLatestMessagePreviewImageSource.attachment)
+                imageSource: path.map {
+                    .attachment(path: $0, generation: generation, mediaExpiresAt: message.mediaExpiresAt)
+                }
             )
         }
 

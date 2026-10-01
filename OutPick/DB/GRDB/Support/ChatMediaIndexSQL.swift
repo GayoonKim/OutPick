@@ -4,32 +4,33 @@ import GRDB
 enum ChatMediaIndexSQL {
     static func replaceProjections(for message: ChatMessage, in db: Database) throws {
         try deleteProjections(messageID: message.ID, roomID: message.roomID, in: db)
-        guard !message.isDeleted else { return }
-
-        let sentAt = message.sentAt ?? Date()
+        guard !message.isDeleted, let sentAt = message.sentAt else { return }
         for attachment in message.attachments.sorted(by: { $0.index < $1.index }) {
             switch attachment.type {
             case .image:
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO imageIndex
-                    (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, generationThumb, generationOriginal, width, height, bytesOriginal, hash, isFailed, localThumb, sentAt, mediaExpiresAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: projectionArguments(message: message, attachment: attachment, sentAt: sentAt))
             case .video:
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO videoIndex
-                    (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (roomID, messageID, idx, thumbKey, originalKey, thumbURL, originalURL, generationThumb, generationOriginal, width, height, bytesOriginal, duration, approxBitrateMbps, preset, hash, isFailed, localThumb, sentAt, mediaExpiresAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: [
                     message.roomID, message.ID, attachment.index,
                     cacheKey(attachment.hash), originalCacheKey(attachment.hash),
                     nonEmpty(attachment.thumbResourcePath), nonEmpty(attachment.originalResourcePath),
+                    attachment.generationThumb, attachment.generationOriginal,
                     attachment.width, attachment.height, attachment.bytesOriginal,
                     attachment.duration, attachment.approxBitrateMbps, attachment.preset,
                     nonEmpty(attachment.hash), message.isFailed,
-                    message.isFailed ? nonEmpty(attachment.pathThumb) : nil, sentAt
+                    message.isFailed ? nonEmpty(attachment.pathThumb) : nil, sentAt, message.mediaExpiresAt
                 ])
             }
+            try db.execute(sql: "UPDATE \(attachment.type == .image ? "imageIndex" : "videoIndex") SET attachmentID = ? WHERE roomID = ? AND messageID = ? AND idx = ?",
+                           arguments: [attachment.attachmentID, message.roomID, message.ID, attachment.index])
         }
     }
 
@@ -55,9 +56,11 @@ enum ChatMediaIndexSQL {
             message.roomID, message.ID, attachment.index,
             cacheKey(attachment.hash), originalCacheKey(attachment.hash),
             nonEmpty(attachment.thumbResourcePath), nonEmpty(attachment.originalResourcePath),
+            attachment.generationThumb, attachment.generationOriginal,
             attachment.width, attachment.height, attachment.bytesOriginal,
             nonEmpty(attachment.hash), message.isFailed,
-            message.isFailed ? nonEmpty(attachment.pathThumb) : nil, sentAt
+            message.isFailed ? nonEmpty(attachment.pathThumb) : nil, sentAt,
+            message.mediaExpiresAt
         ] as [DatabaseValueConvertible?])
     }
 

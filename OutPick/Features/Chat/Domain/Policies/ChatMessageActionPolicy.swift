@@ -57,7 +57,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
         actorRole: ChatRoomMemberRole? = nil,
         targetRole: ChatRoomMemberRole? = nil,
         isTargetRoleResolved: Bool = false,
-        isRoleManagementEnabled: Bool = true
+        isRoleManagementEnabled: Bool = true,
+        now: Date = Date()
     ) -> ChatMessageActionPolicy {
         if message.messageType == .roomRoleEvent
             || message.isDeleted
@@ -81,7 +82,8 @@ struct ChatMessageActionPolicy: Equatable, Sendable {
             isModerator && isTargetRoleResolved && targetRole != .owner && targetRole != .moderator
         )
         let canDelete = isOwner || canModerateTarget
-        let canReport = !isOwner && !message.senderUID.isEmpty && message.seq > 0
+        let isMediaExpired = !message.attachments.isEmpty && (message.mediaExpiresAt.map { $0 <= now } ?? false)
+        let canReport = !isOwner && !message.senderUID.isEmpty && message.seq > 0 && !isMediaExpired
         let canRemoveMember = canModerateTarget && !isOwner && !message.senderUID.isEmpty
 
         if message.isLookbookShareMessage {
