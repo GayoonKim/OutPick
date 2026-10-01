@@ -10,6 +10,19 @@ function timestampMillis(value) {
   return typeof value === "number" ? value : 0;
 }
 
+function socketMessage(data) {
+  const message = {...data};
+  for (const key of ["sentAt", "mediaExpiresAt"]) {
+    const value = message[key];
+    if (value && typeof value.toDate === "function") {
+      message[key] = value.toDate().toISOString();
+    } else if (value instanceof Date) {
+      message[key] = value.toISOString();
+    }
+  }
+  return message;
+}
+
 export function createMediaDeliveryWatcher({
   db,
   admin,
@@ -120,11 +133,12 @@ export function createMediaDeliveryWatcher({
           message.moderationVisibilityState === "hiddenPendingReview" || message.isDeleted === true) {
         throw new Error("delivery_message_not_ready");
       }
-      io.to(job.roomID).emit(job.eventKind, message);
-      notifySenderReady(message, job);
+      const deliveredMessage = socketMessage(message);
+      io.to(job.roomID).emit(job.eventKind, deliveredMessage);
+      notifySenderReady(deliveredMessage, job);
       await fanoutChatPush({
         roomID: job.roomID,
-        messageData: message,
+        messageData: deliveredMessage,
         throwOnError: true
       });
       await complete(jobRef, claimed.token);

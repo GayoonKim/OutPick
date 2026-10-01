@@ -16,8 +16,7 @@ import {
 import {
   normalizeMediaKind,
   validateExistingMediaMessage,
-  validateMediaUploadContract,
-  validateMediaUploadContractV2
+  validateMediaUploadContract
 } from "../media/mediaUploadService.js";
 import { normalizeUID } from "../utils/strings.js";
 import { rejectMissingCapability } from "../moderation/capabilities.js";
@@ -67,12 +66,12 @@ export function registerMediaHandlers({
 
       const mediaKind = normalizeMediaKind(kind);
       if (!mediaKind) return callback?.({ ok: false, error: "invalid_media_kind" });
-      const isV2 = Number(contractVersion) === 2;
       const isDirect = Number(contractVersion) === 3;
-      if ((isV2 || isDirect) && !isValidClientMutationID(String(clientMutationID || ""))) {
+      if (!isDirect) return callback?.({ok: false, error: "unsupported_media_contract"});
+      if (!isValidClientMutationID(String(clientMutationID || ""))) {
         return callback?.({ ok: false, error: "invalid_client_mutation_id" });
       }
-      const contract = (isV2 ? validateMediaUploadContractV2 : validateMediaUploadContract)(
+      const contract = validateMediaUploadContract(
         mediaKind,
         attachmentCount,
         expectedPathCount
@@ -80,7 +79,7 @@ export function registerMediaHandlers({
       if (!contract.ok) return callback?.({ ok: false, error: contract.error });
 
       const senderUID = normalizeUID(socket.userUID);
-      const access = isDirect ? {ok: true} : await authorizeSocketRoom({
+      const access = await authorizeSocketRoom({
         socket,
         roomID,
         senderUID,
@@ -94,28 +93,9 @@ export function registerMediaHandlers({
         return callback?.({ ok: false, error: "rate_limited" });
       }
 
-      const result = isDirect
-        ? await mediaUploadService.preflightDirect({roomID: String(roomID), uploadID: String(effectiveUploadID),
-          clientMutationID: String(clientMutationID), senderUID, moderationPrincipalID: socket.moderationPrincipalID,
-          kind: mediaKind, contract, sources})
-        : isV2
-        ? await mediaUploadService.preflightV2({
-          roomID: String(roomID),
-          uploadID: String(effectiveUploadID),
-          clientMutationID: String(clientMutationID),
-          senderUID,
-          moderationPrincipalID: socket.moderationPrincipalID,
-          kind: mediaKind,
-          contract,
-          sources
-        })
-        : await mediaUploadService.preflight({
-          roomID,
-          messageID: String(effectiveUploadID),
-          senderUID,
-          kind: mediaKind,
-          contract
-        });
+      const result = await mediaUploadService.preflightDirect({roomID: String(roomID), uploadID: String(effectiveUploadID),
+        clientMutationID: String(clientMutationID), senderUID, moderationPrincipalID: socket.moderationPrincipalID,
+        kind: mediaKind, contract, sources});
       return callback?.(result);
     } catch (error) {
       logger.error("[chat:mediaPreflight] handler error:", error);
@@ -493,6 +473,9 @@ export function registerMediaHandlers({
 
   socket.on("chat:mediaFinalize", async (data, callback) => {
     if (rejectMissingCapability(socket, "createUGC", callback)) return;
+    if (Number(data?.contractVersion) !== 3) {
+      return callback?.({ok: false, error: "unsupported_media_contract"});
+    }
     if ([2, 3].includes(Number(data?.contractVersion))) {
       try {
         const roomID = String(data?.roomID || "");
@@ -506,12 +489,7 @@ export function registerMediaHandlers({
           return callback?.({ ok: false, error: "invalid_request" });
         }
         const senderUID = normalizeUID(socket.userUID);
-        const access = Number(data?.contractVersion) === 3 ? {ok: true} : await authorizeSocketRoom({
-          socket,
-          roomID,
-          senderUID,
-          context: "chat:mediaFinalize/v2"
-        });
+        const access = {ok: true};
         if (!access.ok) return callback?.({ ok: false, error: access.error });
         const mediaKind = normalizeMediaKind(data?.kind || data?.mediaKind || data?.type);
         if (!mediaKind) return callback?.({ ok: false, error: "invalid_media_kind" });
@@ -523,9 +501,7 @@ export function registerMediaHandlers({
         )) {
           return callback?.({ ok: false, error: "rate_limited" });
         }
-        const finalize = Number(data?.contractVersion) === 3
-          ? mediaUploadService.finalizeDirect : mediaUploadService.finalizeV2;
-        const result = await finalize({
+        const result = await mediaUploadService.finalizeDirect({
           roomID,
           uploadID,
           clientMutationID,
@@ -544,6 +520,9 @@ export function registerMediaHandlers({
   socket.on("chat:mediaRefreshUploadTargets", async (data, callback) => {
     if (rejectMissingCapability(socket, "createUGC", callback)) return;
     try {
+      if (Number(data?.contractVersion) !== 3) {
+        return callback?.({ok: false, error: "unsupported_media_contract"});
+      }
       const roomID = String(data?.roomID || "");
       const uploadID = String(data?.uploadID || "");
       const clientMutationID = String(data?.clientMutationID || "");
@@ -552,14 +531,9 @@ export function registerMediaHandlers({
         return callback?.({ok: false, error: "invalid_request"});
       }
       const senderUID = normalizeUID(socket.userUID);
-      const access = await authorizeSocketRoom({
-        socket,
-        roomID,
-        senderUID,
-        context: "chat:mediaRefreshUploadTargets"
-      });
+      const access = {ok: true};
       if (!access.ok) return callback?.({ok: false, error: access.error});
-      return callback?.(await mediaUploadService.refreshUploadTargetsV2({
+      return callback?.(await mediaUploadService.refreshDirect({
         roomID,
         uploadID,
         clientMutationID,
@@ -574,6 +548,9 @@ export function registerMediaHandlers({
 
   socket.on("chat:mediaProcessingStatus", async (data, callback) => {
     try {
+      if (Number(data?.contractVersion) !== 3) {
+        return callback?.({ok: false, error: "unsupported_media_contract"});
+      }
       const roomID = String(data?.roomID || "");
       const uploadID = String(data?.uploadID || "");
       const clientMutationID = String(data?.clientMutationID || "");
@@ -581,7 +558,7 @@ export function registerMediaHandlers({
           !isValidClientMutationID(clientMutationID)) {
         return callback?.({ ok: false, error: "invalid_request" });
       }
-      return callback?.(await mediaUploadService.statusV2({
+      return callback?.(await mediaUploadService.statusDirect({
         roomID,
         uploadID,
         clientMutationID,
@@ -596,6 +573,9 @@ export function registerMediaHandlers({
 
   socket.on("chat:mediaCancel", async (data, callback) => {
     try {
+      if (Number(data?.contractVersion) !== 3) {
+        return callback?.({ok: false, error: "unsupported_media_contract"});
+      }
       const roomID = String(data?.roomID || "");
       const uploadID = String(data?.uploadID || "");
       const clientMutationID = String(data?.clientMutationID || "");
@@ -603,7 +583,7 @@ export function registerMediaHandlers({
           !isValidClientMutationID(clientMutationID)) {
         return callback?.({ ok: false, error: "invalid_request" });
       }
-      return callback?.(await mediaUploadService.cancelV2({
+      return callback?.(await mediaUploadService.cancelDirect({
         roomID,
         uploadID,
         clientMutationID,

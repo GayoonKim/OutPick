@@ -1,6 +1,11 @@
 /* eslint-disable require-jsdoc, max-len */
 import {createHash, randomUUID} from "node:crypto";
-import {FieldValue, Firestore, Timestamp} from "firebase-admin/firestore";
+import {FieldValue, Firestore, Timestamp, type Transaction} from "firebase-admin/firestore";
+import {
+  CHAT_MEDIA_EXPIRY_JOBS,
+  chatMediaExpiryJobID,
+  chatMediaExpiryNextAttemptAt,
+} from "../../chat/media/retentionContracts.js";
 import {
   MESSAGE_EVIDENCE_COMPLETED_JOB_TTL_MILLIS,
   MESSAGE_EVIDENCE_CONTRACT_VERSION,
@@ -27,6 +32,36 @@ const MEBIBYTE = 1024 * 1024;
 const MAX_IMAGE_OBJECT_BYTES = 15 * MEBIBYTE;
 const MAX_IMAGE_BUNDLE_BYTES = 150 * MEBIBYTE;
 const MAX_VIDEO_OBJECT_BYTES = 350 * MEBIBYTE;
+
+function releaseMediaExpiryHold(
+  transaction: Transaction,
+  expiryJob: FirebaseFirestore.DocumentSnapshot,
+  now: Date,
+): void {
+  if (!expiryJob.exists || expiryJob.get("status") !== "awaitingEvidence") return;
+  const mediaExpiresAt = expiryJob.get("mediaExpiresAt");
+  if (!(mediaExpiresAt instanceof Timestamp)) {
+    transaction.set(expiryJob.ref, {
+      status: "retryPending",
+      attemptsInRun: 0,
+      nextAttemptAt: Timestamp.fromDate(now),
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastErrorCode: "invalid_expiry_job",
+      updatedAt: Timestamp.fromDate(now),
+    }, {merge: true});
+    return;
+  }
+  transaction.set(expiryJob.ref, {
+    status: "scheduled",
+    attemptsInRun: 0,
+    nextAttemptAt: chatMediaExpiryNextAttemptAt(mediaExpiresAt, now),
+    leaseToken: null,
+    leaseExpiresAt: null,
+    lastErrorCode: null,
+    updatedAt: Timestamp.fromDate(now),
+  }, {merge: true});
+}
 
 export type MessageEvidenceObject = {
   attachmentID: string;
@@ -215,10 +250,13 @@ async function markBundleAvailable(
   const jobRef = firestore.collection(COPY_JOBS).doc(job.jobID);
   const bundleRef = firestore.collection(BUNDLES).doc(job.bundleID);
   const cleanupRef = firestore.collection(PUBLIC_CLEANUP_JOBS).doc(publicCleanupJobID(job.roomID, job.messageID));
+  const expiryJobRef = firestore.collection(CHAT_MEDIA_EXPIRY_JOBS)
+    .doc(chatMediaExpiryJobID(job.roomID, job.messageID));
   const nowTimestamp = Timestamp.fromDate(now);
   await firestore.runTransaction(async (transaction) => {
-    const [jobSnapshot, bundle, cleanup] = await Promise.all([
+    const [jobSnapshot, bundle, cleanup, expiryJob] = await Promise.all([
       transaction.get(jobRef), transaction.get(bundleRef), transaction.get(cleanupRef),
+      transaction.get(expiryJobRef),
     ]);
     if (jobSnapshot.get("leaseToken") !== job.leaseToken ||
         nonNegativeInteger(jobSnapshot.get("attemptGeneration")) !== job.attemptGeneration ||
@@ -239,6 +277,7 @@ async function markBundleAvailable(
     if (cleanup.exists && cleanup.get("status") === "awaitingEvidence") {
       transaction.set(cleanupRef, {status: "pending", nextAttemptAt: nowTimestamp, updatedAt: nowTimestamp}, {merge: true});
     }
+    releaseMediaExpiryHold(transaction, expiryJob, now);
     transaction.update(jobRef, {
       phase: "acceptanceDrain",
       evidenceObjects: objects,
@@ -336,10 +375,13 @@ async function failPreparationBatch(job: ClaimedCopyJob, firestore: Firestore, n
     );
     const selected = preparations.docs.slice(0, DRAIN_LIMIT);
     const requestRefs = selected.map((preparation) => firestore.collection(REQUESTS).doc(String(preparation.get("initialRequestID"))));
-    const [jobSnapshot, bundle, cleanup, ...requests] = await Promise.all([
+    const expiryJobRef = firestore.collection(CHAT_MEDIA_EXPIRY_JOBS)
+      .doc(chatMediaExpiryJobID(job.roomID, job.messageID));
+    const [jobSnapshot, bundle, cleanup, expiryJob, ...requests] = await Promise.all([
       transaction.get(jobRef),
       transaction.get(bundleRef),
       transaction.get(firestore.collection(PUBLIC_CLEANUP_JOBS).doc(publicCleanupJobID(job.roomID, job.messageID))),
+      transaction.get(expiryJobRef),
       ...requestRefs.map((reference) => transaction.get(reference)),
     ]);
     if (!jobSnapshot.exists || jobSnapshot.get("leaseToken") !== job.leaseToken ||
@@ -381,6 +423,7 @@ async function failPreparationBatch(job: ClaimedCopyJob, firestore: Firestore, n
     if (cleanup.exists && cleanup.get("status") === "awaitingEvidence") {
       transaction.set(cleanupRef, {status: "pending", nextAttemptAt: nowTimestamp, updatedAt: nowTimestamp}, {merge: true});
     }
+    releaseMediaExpiryHold(transaction, expiryJob, now);
     transaction.set(jobRef, {
       status: "failed",
       phase: "completed",

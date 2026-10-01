@@ -87,6 +87,8 @@ function fixture() {
       moderationVisibilityState: "visible",
       isDeleted: false,
       seq: 7,
+      sentAt: {toDate: () => new Date("2026-07-14T00:00:00.000Z")},
+      mediaExpiresAt: {toDate: () => new Date("2026-07-21T00:00:00.000Z")},
       attachments: []
     }
   });
@@ -129,6 +131,8 @@ test("pending delivery는 lease 후 기존 media event와 push를 보내고 comp
 
   assert.equal(target.roomEmits.length, 1);
   assert.equal(target.roomEmits[0].event, "receiveImages");
+  assert.equal(target.roomEmits[0].payload.mediaExpiresAt, "2026-07-21T00:00:00.000Z");
+  assert.equal(target.roomEmits[0].payload.sentAt, "2026-07-14T00:00:00.000Z");
   assert.equal(target.pushes.length, 1);
   assert.equal(target.senderEmits[0].event, "chat:mediaProcessingStatusChanged");
   assert.equal(target.values.get("chatMediaDeliveryJobs/room_message").status, "completed");

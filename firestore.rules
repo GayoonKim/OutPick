@@ -327,6 +327,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /chatMediaExpiryJobs/{jobID} {
+      allow read, write: if false;
+    }
+
     match /chatMessageDeletionDeliveryJobs/{jobID} {
       allow read, write: if false;
     }

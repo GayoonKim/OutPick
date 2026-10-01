@@ -74,6 +74,13 @@ export {
   reconcileChatMediaProcessing,
 } from "./chat/media/functions.js";
 export {
+  issueChatVideoPlaybackURL,
+  issueChatMediaURL,
+} from "./chat/media/videoPlaybackFunctions.js";
+export {
+  cleanupExpiredChatMedia,
+} from "./chat/media/retentionFunctions.js";
+export {
   drainChatModerationCleanupJobs,
   onChatMessageCleanupQueued,
   onModerationRoomCleanupQueued,

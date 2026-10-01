@@ -2,10 +2,9 @@ import {after, before, beforeEach, describe, test} from "node:test";
 import {readFileSync} from "node:fs";
 import {
   assertFails,
-  assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import {deleteDoc, doc, setDoc, updateDoc} from "firebase/firestore";
+import {doc, getDoc, setDoc, updateDoc} from "firebase/firestore";
 
 const projectId = "outpick-rules-test";
 const senderUID = "media-sender";
@@ -61,12 +60,6 @@ beforeEach(async () => {
 
 after(async () => testEnvironment.cleanup());
 
-function imageReference(context, messageID, fileName = "thumb.jpg") {
-  return context.storage().ref(
-    `rooms/${roomID}/messages/${messageID}/images/0/${fileName}`,
-  );
-}
-
 function uploadJpeg(reference) {
   return reference.put(
     new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
@@ -80,92 +73,129 @@ function readyReference(context, messageID, variant = "display") {
   );
 }
 
-async function seedReservation(messageID, overrides = {}) {
+function legacyMediaReference(context, messageID, path) {
+  return context.storage().ref(`rooms/${roomID}/messages/${messageID}/${path}`);
+}
+
+async function seedReadyMessage(messageID, overrides = {}) {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
-    await setDoc(doc(
-      context.firestore(),
-      "Rooms", roomID, "MediaUploads", messageID,
-    ), {
-      roomID,
-      messageID,
-      senderUID,
-      kind: "images",
-      status: "pending",
-      storagePrefix: `rooms/${roomID}/messages/${messageID}`,
-      expiresAt: new Date(Date.now() + 60_000),
+    await setDoc(doc(context.firestore(), "Rooms", roomID, "Messages", messageID), {
+      ID: messageID,
+      mediaContractVersion: 3,
+      mediaExpiresAt: new Date(Date.now() + 60_000),
+      readyAttachmentIDs: ["attachment-1"],
+      attachments: [{attachmentID: "attachment-1", type: "video"}],
+      moderationVisibilityState: "visible",
+      isDeleted: false,
       ...overrides,
     });
   });
 }
 
 describe("chat media storage boundary", () => {
-  test("서버가 발급한 유효한 이미지 예약으로만 업로드할 수 있다", async () => {
-    const sender = testEnvironment.authenticatedContext(senderUID);
-    await seedReservation("valid");
-    await assertSucceeds(uploadJpeg(imageReference(sender, "valid")));
-    await assertFails(uploadJpeg(imageReference(sender, "missing")));
+  test("클라이언트는 서버 전용 만료 정리 원장을 읽거나 쓸 수 없다", async () => {
+    const sender = testEnvironment.authenticatedContext(senderUID).firestore();
+    const job = doc(sender, "chatMediaExpiryJobs", "job-1");
 
-    await seedReservation("wrong-kind", {kind: "video"});
-    await assertFails(uploadJpeg(imageReference(sender, "wrong-kind")));
-    await seedReservation("expired", {expiresAt: new Date(Date.now() - 1_000)});
-    await assertFails(uploadJpeg(imageReference(sender, "expired")));
+    await assertFails(setDoc(job, {status: "scheduled"}));
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "chatMediaExpiryJobs", "job-1"), {
+        status: "scheduled",
+        roomID,
+        messageID: "message-1",
+      });
+    });
+    await assertFails(getDoc(job));
+    await assertFails(updateDoc(job, {status: "processing"}));
   });
 
-  test("예약 발급자가 아닌 사용자는 업로드할 수 없다", async () => {
-    const other = testEnvironment.authenticatedContext(otherUID);
-    await seedReservation("owned-by-sender");
-    await assertFails(uploadJpeg(imageReference(other, "owned-by-sender")));
+  test("구형 images/video 경로는 읽기와 클라이언트 업로드를 모두 거부한다", async () => {
+    const sender = testEnvironment.authenticatedContext(senderUID);
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await Promise.all([
+        uploadJpeg(legacyMediaReference(context, "legacy-image", "images/0/thumb.jpg")),
+        uploadJpeg(legacyMediaReference(context, "legacy-video", "video/thumb.jpg")),
+        uploadJpeg(legacyMediaReference(context, "legacy-video", "video/original.mp4")),
+      ]);
+    });
+
+    for (const [messageID, path] of [
+      ["legacy-image", "images/0/thumb.jpg"],
+      ["legacy-video", "video/thumb.jpg"],
+      ["legacy-video", "video/original.mp4"],
+    ]) {
+      const reference = legacyMediaReference(sender, messageID, path);
+      await assertFails(reference.getDownloadURL());
+      await assertFails(uploadJpeg(reference));
+    }
   });
 
-  test("활성·제한 계정은 활성 방 이미지를 읽고 비활성 계정은 읽지 못한다", async () => {
+  test("미만료 ready 원본과 썸네일도 클라이언트 SDK 직접 읽기를 거부한다", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await uploadJpeg(readyReference(context, "ready-message"));
+      await uploadJpeg(readyReference(context, "ready-message", "thumbnail"));
+    });
     const sender = testEnvironment.authenticatedContext(senderUID);
     const other = testEnvironment.authenticatedContext(otherUID);
-    await seedReservation("readable");
-    const reference = imageReference(sender, "readable");
-    await assertSucceeds(uploadJpeg(reference));
-    await assertSucceeds(imageReference(other, "readable").getDownloadURL());
+    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
+    await assertFails(uploadJpeg(readyReference(sender, "ready-message")));
+    await seedReadyMessage("ready-message");
+    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
+    await assertFails(readyReference(other, "ready-message").getDownloadURL());
+    await assertFails(readyReference(sender, "ready-message", "thumbnail").getDownloadURL());
 
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), "moderationAccounts", otherUID), {
-        accountStatus: "deletionPending",
+        moderationStatus: "restricted",
+        restrictedUntil: new Date(Date.now() + 60_000),
       });
     });
-    await assertFails(imageReference(other, "readable").getDownloadURL());
+    await assertFails(readyReference(other, "ready-message").getDownloadURL());
   });
 
-  for (const version of [2, 3]) {
-  test(`v${version} ready 객체는 확정 전 읽기·SDK 쓰기를 거부하고 비노출 이후 읽기를 거부한다`, async () => {
+  test("기한 누락·오류·만료·계약2·삭제·숨김·폐쇄 방의 ready 객체는 읽지 못한다", async () => {
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await uploadJpeg(readyReference(context, "ready-message"));
+      await uploadJpeg(readyReference(context, "bad-contract"));
+      await uploadJpeg(readyReference(context, "missing-expiry"));
+      await uploadJpeg(readyReference(context, "wrong-expiry"));
+      await uploadJpeg(readyReference(context, "expired"));
+      await uploadJpeg(readyReference(context, "deleted"));
+      await uploadJpeg(readyReference(context, "hidden"));
+      await uploadJpeg(readyReference(context, "closed-room"));
     });
     const sender = testEnvironment.authenticatedContext(senderUID);
-    await assertFails(uploadJpeg(readyReference(sender, "ready-message")));
-    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
-
+    await seedReadyMessage("bad-contract", {mediaContractVersion: 2});
+    await seedReadyMessage("missing-expiry", {mediaExpiresAt: null});
+    await seedReadyMessage("wrong-expiry", {mediaExpiresAt: "2099-01-01T00:00:00.000Z"});
+    await seedReadyMessage("expired", {mediaExpiresAt: new Date(Date.now() - 1_000)});
+    await seedReadyMessage("deleted", {isDeleted: true});
+    await seedReadyMessage("hidden", {moderationVisibilityState: "hiddenPendingReview"});
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "Rooms", "closed-room"), {
+        isClosed: true,
+        lifecycleStatus: "closedByOwner",
+      });
+      await uploadJpeg(context.storage().ref(
+        `rooms/closed-room/messages/closed-room/attachments/attachment-1/display`,
+      ));
       await setDoc(doc(
-        context.firestore(), "Rooms", roomID, "Messages", "ready-message",
+        context.firestore(), "Rooms", "closed-room", "Messages", "closed-room",
       ), {
-        ID: "ready-message",
-        mediaContractVersion: version,
+        mediaContractVersion: 3,
+        mediaExpiresAt: new Date(Date.now() + 60_000),
         readyAttachmentIDs: ["attachment-1"],
-        moderationVisibilityState: "visible",
         isDeleted: false,
       });
     });
-    await assertSucceeds(readyReference(sender, "ready-message").getDownloadURL());
 
-    await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await deleteDoc(doc(context.firestore(), "Rooms", roomID));
-    });
-    await assertSucceeds(readyReference(sender, "ready-message").getDownloadURL());
-
-    await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await updateDoc(doc(
-        context.firestore(), "Rooms", roomID, "Messages", "ready-message",
-      ), {moderationVisibilityState: "hiddenPendingReview"});
-    });
-    await assertFails(readyReference(sender, "ready-message").getDownloadURL());
+    for (const messageID of [
+      "bad-contract", "missing-expiry", "wrong-expiry", "expired", "deleted", "hidden",
+    ]) {
+      await assertFails(readyReference(sender, messageID).getDownloadURL());
+    }
+    const closed = testEnvironment.authenticatedContext(senderUID).storage().ref(
+      `rooms/closed-room/messages/closed-room/attachments/attachment-1/display`,
+    );
+    await assertFails(closed.getDownloadURL());
   });
-  }
 });

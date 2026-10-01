@@ -16,6 +16,7 @@ export function registerMessageHandlers({
   generateMessageID,
   clock,
   allocateSeqAndPersist,
+  loadMessage,
   messageDeliverySingleFlight,
   fanoutChatPush,
   handleLookbookShare,
@@ -79,6 +80,17 @@ export function registerMessageHandlers({
         return;
       }
 
+      let replySourceMessage = null;
+      const replyMessageID = String(data?.replyPreview?.messageID || "");
+      if (replyMessageID && typeof loadMessage === "function") {
+        try {
+          replySourceMessage = await loadMessage(roomID, replyMessageID);
+        } catch {
+          // 원본 조회가 실패하면 클라이언트 만료값/썸네일을 답장에 복사하지 않는다.
+          logger.warn?.("[Chat] reply source lookup failed", {event: "chat message"});
+        }
+      }
+
       const messageDocument = buildTextMessageDocument({
         data,
         roomID,
@@ -86,7 +98,8 @@ export function registerMessageHandlers({
         msg,
         senderUID,
         nickname,
-        nowDate: clock.nowDate()
+        nowDate: clock.nowDate(),
+        replySourceMessage
       });
 
       let delivery;

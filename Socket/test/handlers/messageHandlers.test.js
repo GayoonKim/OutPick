@@ -65,6 +65,28 @@ test("text message 성공은 persist→emit→push→ACK 순서와 ACK key를 �
   assert.equal(fixture.roomEmits[0].payload.sentAt, "2026-07-14T00:00:00.000Z");
 });
 
+test("답장 미디어 만료는 원본 서버 메시지에서 읽고 클라이언트 시각을 무시한다", async () => {
+  const fixture = register({
+    loadMessage: async () => ({
+      attachments: [{type: "image"}],
+      mediaExpiresAt: {toDate: () => new Date("2026-07-21T00:00:00.000Z")}
+    })
+  });
+  await fixture.fakeSocket.handlers.get("chat message")({
+    roomID: "room",
+    msg: "reply",
+    replyPreview: {
+      messageID: "source",
+      imagesCount: 1,
+      mediaExpiresAt: "2099-01-01T00:00:00.000Z",
+      firstThumbPath: "thumb"
+    }
+  }, () => {});
+
+  assert.equal(fixture.roomEmits[0].payload.replyPreview.mediaExpiresAt,
+    "2026-07-21T00:00:00.000Z");
+});
+
 test("text persist 실패는 emit/push/success ACK를 수행하지 않는다", async () => {
   const fixture = register({
     allocateSeqAndPersist: async () => { throw new Error("failed"); }
