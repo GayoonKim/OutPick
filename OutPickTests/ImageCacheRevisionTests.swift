@@ -4,6 +4,27 @@ import UIKit
 @testable import OutPick
 
 struct ImageCacheRevisionTests {
+    @Test func sharedDiskRejectsLateWriteFromAnotherPipelineAfterRemoval() async throws {
+        let disk = makeDisk()
+        let delayed = RevisionDelayedFetcher()
+        let first = ImageCachePipeline(fetcher: { _, _ in try await delayed.fetch() }, disk: disk)
+        let second = ImageCachePipeline(fetcher: { _, _ in throw URLError(.unknown) }, disk: disk)
+        let path = "shared-\(UUID().uuidString)"
+        let task = Task { try await first.loadImage(path: path, maxBytes: 1024 * 1024) }
+        for _ in 0..<200 {
+            if await delayed.isPending() { break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(await delayed.isPending())
+        await second.removeImage(path: path)
+        await delayed.finish(try #require(makeImage(width: 2).pngData()))
+        _ = try await task.value
+        await first.flushPendingWrites()
+        #expect(await disk.read(forKey: "imageCache|\(path)") == nil)
+        await first.removeAllCachedImages()
+        await second.removeAllCachedImages()
+    }
+
     @Test func staleWriteCannotRestoreRemovedEntry() async {
         let disk = makeDisk()
         await disk.write(data: Data([1]), forKey: "key")
@@ -89,6 +110,13 @@ struct ImageCacheRevisionTests {
         format.scale = 1
         return UIGraphicsImageRenderer(size: CGSize(width: width, height: 1), format: format).image { _ in }
     }
+}
+
+private actor RevisionDelayedFetcher {
+    private var pending: CheckedContinuation<Data, Error>?
+    func fetch() async throws -> Data { try await withCheckedThrowingContinuation { pending = $0 } }
+    func isPending() -> Bool { pending != nil }
+    func finish(_ data: Data) { let saved = pending; pending = nil; saved?.resume(returning: data) }
 }
 
 private final class ImageDecodeCounter: @unchecked Sendable {

@@ -4,6 +4,35 @@ import UIKit
 
 @MainActor
 final class ImageViewerOriginalFileTests: XCTestCase {
+    func testExpiredPhotoAndGIFEntrySkipsAllProvidersAndSaving() throws {
+        let loader = try OriginalViewerLoader()
+        defer { loader.clean() }
+        let saver = OriginalViewerSaver()
+        let pages: [ImageViewerPage] = [false, true].map { animated in
+            .init(initialImage: UIImage(systemName: "star"), thumbnailPath: "thumb",
+                  originalPath: "original", isAnimated: animated, mediaExpiresAt: .distantPast)
+        }
+        let viewer = SimpleImageViewerVC(pages: pages, startIndex: 1,
+            cachedImageProvider: { _ in XCTFail("만료 캐시 조회 금지"); return nil },
+            loadImageProvider: { _, _ in XCTFail("만료 이미지 다운로드 금지"); return nil },
+            loadImageDataProvider: { _, _ in XCTFail("만료 GIF 다운로드 금지"); return nil },
+            photoLibrarySaver: saver, originalFiles: loader)
+        viewer.loadViewIfNeeded()
+        viewer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        viewer.view.layoutIfNeeded()
+        viewer.viewDidAppear(false)
+        XCTAssertEqual(descendants(viewer.view, UILabel.self).filter {
+            $0.text == "미디어 저장 기간이 만료되었어요." && !$0.isHidden
+        }.count, 2)
+        let chrome = try XCTUnwrap(descendants(viewer.view, ImageViewerChromeView.self).first)
+        XCTAssertFalse(chrome.saveButton.isEnabled)
+        viewer.perform(NSSelectorFromString("saveTapped"))
+        XCTAssertTrue(loader.viewPaths.isEmpty)
+        XCTAssertTrue(loader.saves.isEmpty)
+        XCTAssertTrue(saver.files.isEmpty)
+        viewer.perform(NSSelectorFromString("closeTapped"))
+    }
+
     private func descendants<T: UIView>(_ view: UIView, _: T.Type) -> [T] {
         view.subviews.flatMap { ($0 as? T).map { [$0] } ?? [] } + view.subviews.flatMap { descendants($0, T.self) }
     }
@@ -58,6 +87,46 @@ final class ImageViewerOriginalFileTests: XCTestCase {
         await waitUntil { loader.cancelledSaves == 1 }
         XCTAssertTrue(saver.files.isEmpty)
         XCTAssertFalse(descendants(viewer.view, UILabel.self).contains { $0.text == "저장 완료" || $0.text == "저장 실패" })
+    }
+
+    func testAlreadyExpiredPageClearsInitialPixelsAndDisablesSave() throws {
+        let loader = try OriginalViewerLoader()
+        defer { loader.clean() }
+        let page = ImageViewerPage(
+            initialImage: UIImage(systemName: "star"),
+            thumbnailPath: "thumb",
+            originalPath: "original",
+            mediaExpiresAt: Date().addingTimeInterval(-1)
+        )
+        let viewer = makeViewer(loader, saver: OriginalViewerSaver(), pages: [page])
+
+        XCTAssertTrue(descendants(viewer.view, UILabel.self).contains { $0.text == "미디어 저장 기간이 만료되었어요." })
+        let chrome = try XCTUnwrap(descendants(viewer.view, ImageViewerChromeView.self).first)
+        XCTAssertFalse(chrome.saveButton.isEnabled)
+        XCTAssertTrue(loader.viewPaths.isEmpty)
+        viewer.perform(NSSelectorFromString("closeTapped"))
+    }
+
+    func testOpenPhotoAndGIFExpireWhileViewerRemainsVisible() async throws {
+        let loader = try OriginalViewerLoader()
+        defer { loader.clean() }
+        let expiresAt = Date().addingTimeInterval(0.3)
+        let pages: [ImageViewerPage] = [
+            .init(initialImage: UIImage(systemName: "star"), thumbnailPath: nil,
+                  originalPath: nil, mediaExpiresAt: expiresAt),
+            .init(initialImage: UIImage(systemName: "heart"), thumbnailPath: nil,
+                  originalPath: nil, isAnimated: true, mediaExpiresAt: expiresAt)
+        ]
+        let viewer = makeViewer(loader, saver: OriginalViewerSaver(), pages: pages)
+        viewer.viewDidAppear(false)
+
+        await waitUntil {
+            self.descendants(viewer.view, UILabel.self)
+                .filter { $0.text == "미디어 저장 기간이 만료되었어요." && !$0.isHidden }.count == 2
+        }
+        let chrome = try XCTUnwrap(descendants(viewer.view, ImageViewerChromeView.self).first)
+        XCTAssertFalse(chrome.saveButton.isEnabled)
+        viewer.perform(NSSelectorFromString("closeTapped"))
     }
 
     func testCloseAfterSubmissionSuppressesLateCompletionUI() async throws {
@@ -164,6 +233,7 @@ private final class OriginalViewerLoader: ChatOriginalFileLoading {
     }
     func cachedOriginal(_ resource: ChatOriginalResource) async throws -> ChatOriginalFileLease? { nil }
     func removeOriginal(path: String) async {}
+    func removeExpiredOriginals(at now: Date) async -> Bool { true }
     nonisolated func invalidateSession() {}
     func finishSaving() { saves.removeFirst().resume() }
     func finishView(_ path: String) { pendingViews.removeValue(forKey: path)?.resume() }

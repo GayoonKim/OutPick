@@ -148,6 +148,117 @@ struct ChatOriginalFileStoreTests {
         await hit.release()
     }
 
+    @Test func expiryDuringAnInFlightDownloadRejectsTheLateFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("OriginalExpiry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clock = OriginalTestClock(Date(timeIntervalSince1970: 2_000_000_000))
+        let resources = ImagePipelineResources()
+        let transport = OriginalTransportBarrier()
+        let store = ChatOriginalFileStore(root: root, resources: resources, now: { clock.now })
+        let expiresAt = clock.now.addingTimeInterval(5)
+        let service = ChatOriginalFileService(accountID: "A", store: store, transport: transport)
+        let resource = ChatOriginalResource(path: "rooms/test/expiring.gif", version: "g1", mediaExpiresAt: expiresAt)
+        let task = Task { try await service.acquireOriginal(resource, purpose: .viewing) }
+        await transport.waitForStart(1)
+
+        clock.set(expiresAt)
+        #expect(await store.removeExpired(at: expiresAt))
+        await expectCancellation(task)
+        #expect(await store.usage().activeTransfers == 1)
+        await transport.complete(1)
+
+        try await eventually { await store.usage().activeTransfers == 0 }
+        #expect(await store.usage().cachedBytes == 0)
+        #expect(await store.usage().temporaryBytes == 0)
+    }
+
+    @Test func expiredPinnedOriginalIsHiddenImmediatelyAndRemovedAfterRelease() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("OriginalPinnedExpiry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clock = OriginalTestClock(Date(timeIntervalSince1970: 2_000_000_000))
+        let resources = ImagePipelineResources()
+        let transport = OriginalTransportBarrier()
+        let store = ChatOriginalFileStore(root: root, resources: resources, now: { clock.now })
+        let expiresAt = clock.now.addingTimeInterval(30)
+        let service = ChatOriginalFileService(accountID: "A", store: store, transport: transport)
+        let resource = ChatOriginalResource(path: "rooms/test/pinned.mp4", version: "g1", mediaExpiresAt: expiresAt)
+        let task = Task { try await service.acquireOriginal(resource, purpose: .saving) }
+        await transport.waitForStart(1)
+        await transport.complete(1)
+        let lease = try await task.value
+
+        clock.set(expiresAt)
+        #expect(!lease.isValid)
+        #expect(!(await store.removeExpired(at: expiresAt)))
+        #expect(FileManager.default.fileExists(atPath: lease.fileURL.path))
+
+        await lease.release()
+        #expect(await store.removeExpired(at: expiresAt))
+        #expect(!FileManager.default.fileExists(atPath: lease.fileURL.path))
+    }
+
+    @Test func photoLibrarySubmissionProtectsLeaseAcrossExpiryUntilCallbackRelease() async throws {
+        let validity = OriginalTestValidity()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("SubmittedPhoto-\(UUID().uuidString)")
+        let lease = ChatOriginalFileLease(fileURL: url, isValid: { validity.isValid }, release: {})
+
+        #expect(lease.beginPhotoLibrarySubmission())
+        validity.invalidate()
+        #expect(lease.isValid)
+
+        await lease.release()
+        #expect(!lease.isValid)
+    }
+
+    @Test func expiredDiskEntryIsPurgedAfterAStoreRestart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("OriginalRestartExpiry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clock = OriginalTestClock(Date(timeIntervalSince1970: 2_000_000_000))
+        let resources = ImagePipelineResources()
+        let transport = OriginalTransportBarrier()
+        let store = ChatOriginalFileStore(root: root, resources: resources, now: { clock.now })
+        let expiresAt = clock.now.addingTimeInterval(30)
+        let service = ChatOriginalFileService(
+            accountID: "A",
+            store: store,
+            transport: transport
+        )
+        let resource = ChatOriginalResource(path: "rooms/test/restart.jpg", version: "g1", mediaExpiresAt: expiresAt)
+        let task = Task { try await service.acquireOriginal(resource, purpose: .viewing) }
+        await transport.waitForStart(1)
+        await transport.complete(1)
+        let lease = try await task.value
+        let cachedURL = lease.fileURL
+        await lease.release()
+
+        clock.set(expiresAt)
+        let restored = ChatOriginalFileStore(root: root, resources: resources, now: { clock.now })
+        #expect(await restored.removeExpired(at: expiresAt))
+        #expect(!FileManager.default.fileExists(atPath: cachedURL.path))
+        #expect(await restored.usage().cachedBytes == 0)
+    }
+
+    @Test func diskCommitReplacesAnExistingKeyAndItsExpiryMetadata() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("OriginalReplace-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let disk = try ChatOriginalFileDisk(root: root)
+        let resource = ChatOriginalResource(path: "rooms/test/replaced.jpg", version: "g1")
+        let key = ChatOriginalFileKey(accountID: "A", resource: resource)
+        let firstExpiry = Date(timeIntervalSince1970: 2_000_000_000)
+        let secondExpiry = firstExpiry.addingTimeInterval(60)
+        let firstTemporary = disk.temporaryURL(ext: key.ext)
+        try Data([1, 2, 3]).write(to: firstTemporary)
+        let firstURL = try disk.commit(firstTemporary, key: key, mediaExpiresAt: firstExpiry)
+        let secondTemporary = disk.temporaryURL(ext: key.ext)
+        try Data([4, 5, 6, 7]).write(to: secondTemporary)
+        let secondURL = try disk.commit(secondTemporary, key: key, mediaExpiresAt: secondExpiry)
+
+        #expect(firstURL == secondURL)
+        #expect(try Data(contentsOf: secondURL) == Data([4, 5, 6, 7]))
+        let restored = try #require(disk.inventory().first)
+        #expect(restored.4 == secondExpiry)
+    }
+
     @Test func transferFailureCleansPartialFileAndAllowsExplicitRetry() async throws {
         let f = try Fixture()
         defer { f.clean() }
@@ -218,6 +329,32 @@ struct ChatOriginalFileStoreTests {
 
         func clean() { try? FileManager.default.removeItem(at: root) }
     }
+}
+
+private final class OriginalTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) { self.value = value }
+
+    var now: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ value: Date) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+}
+
+private final class OriginalTestValidity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = true
+    var isValid: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    func invalidate() { lock.lock(); value = false; lock.unlock() }
 }
 
 private actor OriginalTransportBarrier: ChatOriginalFileTransport {

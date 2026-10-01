@@ -121,6 +121,47 @@ struct OutPickTests {
             "local-storage-primary#0",
             "remote-unique#0"
         ])
+        #expect(remoteRepository.olderFetchCalls == 2)
+    }
+
+    @MainActor
+    @Test func galleryStopsWhenRemoteCursorDoesNotAdvance() async throws {
+        let expired = makeRemoteEntry(roomID: "room-stale", messageID: "expired", hash: "expired",
+                                      originalURL: "expired.jpg", sentAt: Date(),
+                                      mediaExpiresAt: Date().addingTimeInterval(-10))
+        let remote = RemoteMediaRepositoryStub(latestEntries: [expired], olderEntries: [expired])
+        remote.ignoresCursor = true
+        let useCase = LoadChatRoomMediaUseCase(localMediaRepository: LocalMediaRepositoryStub(),
+                                              remoteMediaRepository: remote, pageSize: 1)
+        let result = try await useCase.loadInitial(room: makeRoom(id: "room-stale"))
+        #expect(result.items.isEmpty)
+        #expect(remote.olderFetchCalls == 1)
+    }
+
+    @MainActor
+    @Test func gallerySkipsExpiredRemotePageAndContinuesFromItsCursor() async throws {
+        let now = Date()
+        let localRepository = LocalMediaRepositoryStub()
+        let remoteRepository = RemoteMediaRepositoryStub(
+            latestEntries: [
+                makeRemoteEntry(roomID: "room-expiry", messageID: "expired", hash: "expired", originalURL: "expired.jpg",
+                                sentAt: now.addingTimeInterval(-1), mediaExpiresAt: now.addingTimeInterval(-10))
+            ],
+            olderEntries: [
+                makeRemoteEntry(roomID: "room-expiry", messageID: "valid", hash: "valid", originalURL: "valid.jpg",
+                                sentAt: now.addingTimeInterval(-2), mediaExpiresAt: now.addingTimeInterval(600))
+            ]
+        )
+        let useCase = LoadChatRoomMediaUseCase(
+            localMediaRepository: localRepository,
+            remoteMediaRepository: remoteRepository,
+            pageSize: 1
+        )
+
+        let result = try await useCase.loadInitial(room: makeRoom(id: "room-expiry"))
+
+        #expect(result.items.map(\.id) == ["valid#0"])
+        #expect(remoteRepository.latestFetchCalls == 1)
         #expect(remoteRepository.olderFetchCalls == 1)
     }
 
@@ -190,6 +231,7 @@ private final class LocalMediaRepositoryStub: ChatRoomMediaIndexRepositoryProtoc
 }
 
 private final class RemoteMediaRepositoryStub: RemoteChatRoomMediaIndexRepositoryProtocol {
+    var ignoresCursor = false
     var latestEntries: [ChatRoomMediaIndexEntry]
     var olderEntries: [ChatRoomMediaIndexEntry]
     private(set) var latestFetchCalls: Int = 0
@@ -214,7 +256,12 @@ private final class RemoteMediaRepositoryStub: RemoteChatRoomMediaIndexRepositor
         limit: Int
     ) async throws -> [ChatRoomMediaIndexEntry] {
         olderFetchCalls += 1
-        return Array(olderEntries.prefix(limit))
+        if ignoresCursor { return Array(olderEntries.prefix(limit)) }
+        return Array(olderEntries.filter {
+            $0.sentAt < cursor.sentAt
+                || ($0.sentAt == cursor.sentAt && $0.messageID < cursor.messageID)
+                || ($0.sentAt == cursor.sentAt && $0.messageID == cursor.messageID && $0.idx > cursor.idx)
+        }.prefix(limit))
     }
 }
 
@@ -246,7 +293,8 @@ private func makeImageMeta(
     originalURL: String?,
     thumbURL: String? = nil,
     isFailed: Bool = false,
-    sentAt: Date
+    sentAt: Date,
+    mediaExpiresAt: Date? = nil
 ) -> ImageIndexMeta {
     ImageIndexMeta(
         roomID: "room",
@@ -257,13 +305,16 @@ private func makeImageMeta(
         originalKey: hash.map { "\($0):orig" },
         thumbURL: thumbURL,
         originalURL: originalURL,
+        generationThumb: "thumb-generation",
+        generationOriginal: "original-generation",
         width: 100,
         height: 100,
         bytesOriginal: 1_024,
         hash: hash,
         isFailed: isFailed,
         localThumb: nil,
-        sentAt: sentAt
+        sentAt: sentAt,
+        mediaExpiresAt: mediaExpiresAt ?? sentAt.addingTimeInterval(7 * 24 * 60 * 60)
     )
 }
 
@@ -274,7 +325,8 @@ private func makeRemoteEntry(
     hash: String?,
     originalURL: String?,
     thumbURL: String? = nil,
-    sentAt: Date
+    sentAt: Date,
+    mediaExpiresAt: Date? = nil
 ) -> ChatRoomMediaIndexEntry {
     ChatRoomMediaIndexEntry(
         roomID: roomID,
@@ -283,6 +335,8 @@ private func makeRemoteEntry(
         seq: 0,
         senderUID: "sender@test.com",
         type: .image,
+        generationThumb: "thumb-generation",
+        generationOriginal: "original-generation",
         thumbKey: hash,
         originalKey: hash.map { "\($0):orig" },
         thumbURL: thumbURL,
@@ -293,6 +347,7 @@ private func makeRemoteEntry(
         duration: nil,
         hash: hash,
         isDeleted: false,
-        sentAt: sentAt
+        sentAt: sentAt,
+        mediaExpiresAt: mediaExpiresAt ?? sentAt.addingTimeInterval(7 * 24 * 60 * 60)
     )
 }

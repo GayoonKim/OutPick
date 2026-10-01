@@ -16,6 +16,27 @@ struct ChatMessageRecordMapperTests {
         #expect(restored.attachments.map(\.index) == [1, 2])
     }
 
+    @Test func messageRecordRoundTripPreservesMediaExpiry() throws {
+        var message = GRDBTestFixtures.message(attachments: [Attachment(
+            type: .image,
+            index: 0,
+            pathThumb: "thumb",
+            pathOriginal: "original",
+            width: 10,
+            height: 10,
+            bytesOriginal: 10,
+            hash: "hash"
+        )])
+        let expiry = Date(timeIntervalSince1970: 604_900)
+        message.mediaExpiresAt = expiry
+
+        let record = try #require(ChatMessageRecordMapper.record(from: message))
+        let restored = try ChatMessageRecordMapper.message(from: record)
+
+        #expect(record.mediaExpiresAt == expiry)
+        #expect(restored.mediaExpiresAt == expiry)
+    }
+
     @Test func invalidRequiredIdentifiersAreSkipped() {
         let invalid = GRDBTestFixtures.message(roomID: "")
         #expect(ChatMessageRecordMapper.record(from: invalid) == nil)

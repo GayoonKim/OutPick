@@ -227,6 +227,19 @@ struct ChatMessageActionPolicyTests {
         #expect(policy.canBlock == false)
     }
 
+    @Test func expiredMediaDisablesMessageReportButKeepsReplyBlockAndDeletion() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        var message = makeMessage(senderUID: "sender", messageType: .image, msg: nil, sharedContent: nil)
+        message.attachments = [Attachment(type: .image, index: 0, pathThumb: "thumb", pathOriginal: "original",
+                                          width: 100, height: 100, bytesOriginal: 10, hash: "hash")]
+        message.mediaExpiresAt = now
+        let policy = ChatMessageActionPolicy.make(for: message, currentUserID: "viewer", roomCreatorID: "viewer", now: now)
+        #expect(!policy.canReport)
+        #expect(policy.canReply && policy.canBlock && policy.canDelete)
+        let before = ChatMessageActionPolicy.make(for: message, currentUserID: "viewer", roomCreatorID: "viewer", now: now.addingTimeInterval(-1))
+        #expect(before.canReport)
+    }
+
     @Test func roomRoleEventExposesNoMessageActions() {
         let message = ChatMessage(
             ID: "role-event-1",

@@ -6,11 +6,58 @@
 //
 
 import Foundation
+import Combine
 import Testing
 @testable import OutPick
 
 @MainActor
 struct ChatRoomViewModelMessageActionTests {
+    @Test func offlineHidesPartialRetryAndReconnectRestoresPendingRange() async throws {
+        let network = PageNetworkStatusStub()
+        let spy = ChatRoomMessageUseCaseSpy()
+        spy.pageHandler = { request in
+            ChatMessagePageResult(messages: [], contiguousMessages: [], nextBoundarySeq: request.boundarySeq,
+                unresolvedRanges: [ChatMessageSequenceRange(lower: 101, upper: 200)!])
+        }
+        let viewModel = makeViewModel(messageUseCase: spy, networkStatusProvider: network)
+        _ = try await viewModel.loadMessagePage(direction: .older, boundarySeq: 201)
+        #expect(viewModel.pageRetryDirections.isEmpty)
+        var changes = 0
+        let subscription = viewModel.pageRetryVisibilityPublisher.sink { changes += 1 }
+        network.setOnline(true)
+        #expect(changes >= 2)
+        #expect(viewModel.pageRetryDirections == [.older])
+        spy.pageHandler = { _ in
+            ChatMessagePageResult(messages: [], contiguousMessages: [], nextBoundarySeq: 101, unresolvedRanges: [])
+        }
+        _ = try await viewModel.loadMessagePage(direction: .older, boundarySeq: 201)
+        #expect(spy.pageRequests[0] == spy.pageRequests[1])
+        #expect(viewModel.pageRetryDirections.isEmpty)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test func latePageFailureAfterGoingOfflineDoesNotExposeRetryButton() async throws {
+        let network = PageNetworkStatusStub()
+        network.setOnline(true)
+        let spy = ChatRoomMessageUseCaseSpy()
+        var response: CheckedContinuation<ChatMessagePageResult, Error>?
+        var started: CheckedContinuation<Void, Never>?
+        spy.pageHandler = { _ in
+            try await withCheckedThrowingContinuation { continuation in
+                response = continuation
+                started?.resume()
+            }
+        }
+        let viewModel = makeViewModel(messageUseCase: spy, networkStatusProvider: network)
+        let task = Task { try await viewModel.loadMessagePage(direction: .newer, boundarySeq: 1) }
+        if response == nil { await withCheckedContinuation { started = $0 } }
+        network.setOnline(false)
+        response?.resume(throwing: ChatMessagePageError.incomplete)
+        await #expect(throws: ChatMessagePageError.incomplete) { try await task.value }
+        #expect(viewModel.pageRetryDirections.isEmpty)
+        network.setOnline(true)
+        #expect(viewModel.pageRetryDirections == [.newer])
+    }
     @Test func localMediaPreparationIsForwardedWithoutRenderingMessages() async {
         let window = ChatInitialWindow(messages: [], readBoundarySeq: nil, latestSeq: 10, hasMoreOlder: false, hasMoreNewer: false)
         let viewModel = makeViewModel(initialLoadUseCase: ChatInitialLoadUseCaseStub(events: [.prepareLocalMedia(window), .completed]))
@@ -451,7 +498,8 @@ struct ChatRoomViewModelMessageActionTests {
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol = ChatRoomLifecycleUseCaseSpy(),
         currentUserProvider: CurrentUserProviding = CurrentUserProviderStub(),
         roomReadStateStore: ChatRoomReadStateStore? = nil,
-        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore()
+        userBlockVisibilityStore: any UserBlockVisibilityChecking = UserBlockVisibilityStore(),
+        networkStatusProvider: NetworkStatusProviding? = nil
     ) -> ChatRoomViewModel {
         ChatRoomViewModel(
             room: room ?? makeRoom(id: "room-1", creatorUID: "owner@example.com"),
@@ -463,7 +511,8 @@ struct ChatRoomViewModelMessageActionTests {
             runtimeUseCase: ChatRoomRuntimeUseCaseStub(),
             currentUserProvider: currentUserProvider,
             roomReadStateStore: roomReadStateStore,
-            userBlockVisibilityStore: userBlockVisibilityStore
+            userBlockVisibilityStore: userBlockVisibilityStore,
+            networkStatusProvider: networkStatusProvider
         )
     }
 
@@ -512,6 +561,18 @@ struct ChatRoomViewModelMessageActionTests {
             attachments: [],
             replyPreview: nil
         )
+    }
+}
+
+private final class PageNetworkStatusStub: NetworkStatusProviding {
+    private let subject = CurrentValueSubject<NetworkStatus, Never>(.offline)
+    var currentStatus: NetworkStatus { subject.value }
+    var statusPublisher: AnyPublisher<NetworkStatus, Never> { subject.eraseToAnyPublisher() }
+    func startMonitoring() {}
+    func stopMonitoring() {}
+    func setOnline(_ online: Bool) {
+        subject.send(NetworkStatus(isOnline: online, isExpensive: false, isConstrained: false,
+            accessClass: online ? .wifi : .unknown, updatedAt: Date()))
     }
 }
 
