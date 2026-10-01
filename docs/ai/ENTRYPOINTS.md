@@ -1,5 +1,7 @@
 # OutPick Entrypoints
 
+- **채팅 전송 버튼·키보드 수정 완료:** 한 번 탭으로 전송·입력 비움·키보드 유지, 연속 전송·배경 dismiss를 iPhone 14에서 사용자 확인했고 iOS 게이트 17개가 통과했다. `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`의 공통 제스처 → `ChatUIView`의 버튼 callback → `ChatViewController.handleSendButtonTap`이 진입점이다. 공통 dismiss는 입력창과 `UIControl` 하위 터치를 제외한다. [CHAT](entrypoints/CHAT.md), [회귀 테스트·수동 QA](entrypoints/TESTS.md)를 참고한다.
+
 - **채팅 미디어 7일 만료 구현·개발 QA 완료:** [최종 계약·검증·운영 주의사항](architecture/CHAT_MEDIA_RETENTION.md). 서버 확정 시각+168시간, 모든 채팅 미디어의 서명 URL, 시간당 generation 지정 정리, 캐시·화면·Photos 경계를 적용했다. 운영 배포와 실제 1시간 대기·개인정보처리방침 원문 대조는 별도 후속이다.
 - **코드 지도:** [CHAT](entrypoints/CHAT.md) → [DATA](entrypoints/DATA.md) → [FIREBASE](entrypoints/FIREBASE.md) → [TESTS](entrypoints/TESTS.md).
 - **프로그램적 검증:** [운영 기준](architecture/PROGRAMMATIC_VERIFICATION.md), `verification/{gate,functions,firestore,ios,chat-media-retention}.json`. 원본·설치는 [tools/verification-gate](../../tools/verification-gate/README.md), 환경 준비는 [verification](../../verification/README.md)를 따른다. 공용 설치본의 로컬 실행이며 GitHub CI 연결을 의미하지 않는다.

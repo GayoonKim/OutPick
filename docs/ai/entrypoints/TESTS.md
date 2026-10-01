@@ -1,5 +1,14 @@
 # Test Entrypoints
 
+## 채팅 텍스트 전송·키보드
+
+- `OutPickTests/KeyboardDismissSupportTests.swift`: 실제 `UIWindow`에 설치한 공통 제스처의 delegate에 테스트 touch를 전달해 전송 버튼·내부 아이콘 제외, 텍스트 입력 보호, 배경 터치 허용을 검증한다. 실제 손가락 탭·키보드 애니메이션·서버 전송을 검증하는 테스트는 아니다.
+- `verification/ios.json`: Development Simulator 빌드, 기존 환경 경계 13개와 키보드 회귀 4개를 필수 ID로 검사한다. `node tools/verification-gate/gate.mjs --project . --config verification/ios.json` 실행 결과는 `output/verification/<실행 ID>/summary.json`에 남는다.
+- 수동 QA: 룩북 탭 방문 후 채팅방에서 키보드를 열고 일반 텍스트를 한 번 탭으로 전송 → 메시지 한 개 표시·입력 비움·키보드 유지 → 다음 텍스트 연속 전송 → 대화 배경 탭으로 키보드 닫기. 아래 사용자 확인으로 이 흐름의 실기기 QA를 완료했다. 추가 회귀 후보인 키보드가 닫힌 상태의 전송, 빈 입력의 전송 비활성, 첨부 버튼·메시지 셀 액션은 이번 사용자 확인 범위에 포함하지 않는다.
+- 2026-10-01 검증: 수정 전 `1790859690252-bf6b5d95-294c-4575-afac-eecbb1043040`에서 버튼·아이콘 제외 2개 실패, 입력 보호·배경 허용·환경 경계 15개 통과. 수정 후 `1790859774634-bc225cd5-b539-4d19-92aa-b64688f6f611`에서 필수 17개 모두 통과, 실패·차단 없음. 검사 상태는 HEAD `00730d4d` + 작업 트리, 입력 digest `b3ea0bda55c2614aaed60984173456dddc27517cb218b99a389993ab2f1ba910`. 각 실행의 `output/verification/<실행 ID>/summary.json`과 `app-runtime-test/{stdout.log,stderr.log}`가 원본 근거다. 초기 테스트의 시스템 제스처 선택 오류는 보정했고 그때의 2회 결과는 제품 결함 재현 근거로 사용하지 않는다. 최종 게이트 뒤 iPhone 17 Pro/iOS 26.2 Simulator에 서명한 일반 DEV 앱을 빌드·설치·실행하고 로그인 화면을 확인했다. 로그인 및 실제 채팅 전송 QA는 수행하지 않았고 실기기 앱은 변경하지 않았다.
+
+- iPhone 14 QA 완료(2026-10-01): 위 Simulator 검증 이후 현재 수정 코드를 실기기용으로 빌드 성공하고 기존 `GayoonKim.OutPick.dev` 앱 위에 업데이트 설치·일반 실행했다. 앱 제거·데이터 정리·QA 환경변수 사용 없음. 근거는 `/private/tmp/outpick-chat-keyboard-device-build.log`, `outpick-chat-keyboard-device-{install,launch}.json`의 success다. 사용자가 룩북 탭을 거친 채팅방 진입, 한 번 탭으로 메시지 한 개 전송·입력 비움·키보드 유지, 연속 전송, 대화 영역 탭으로 키보드 닫기까지 모두 확인하고 문제없음을 보고했다. 이는 사용자 수동 QA 결과이며 자동 테스트 결과와 구분한다. 코드 추가 변경 없이 이번 수정·검증을 완료했다.
+
 ## 채팅 미디어 7일 만료 검증
 
 [최종 결과·실기기 범위](../architecture/CHAT_MEDIA_RETENTION.md), [게이트 실행 기준](../architecture/PROGRAMMATIC_VERIFICATION.md).
@@ -8,7 +17,7 @@
 - `verification/gate.json`: 실행기 자체 검사, Firebase 빌드 설정, Socket 정적 검사·전송 확정/답장/이벤트 계약.
 - `verification/functions.json`: lint·clean build·단위 테스트. `retentionContracts/Storage.test.ts`, `videoPlaybackContracts/Functions/Service.test.ts`, 구형 확정 거부·export 계약을 포함한다.
 - `verification/firestore.json`: Rules·Storage 거절과 에뮬레이터 transaction. `chat-moderation.emulator.test.mjs`는 만료 정리와 메시지 삭제·방 종료·탈퇴 경합, `moderation-reports.emulator.test.mjs`는 증거 보류·부분 실패 재시도를 검사한다.
-- `verification/ios.json`: Development/Production 환경 경계. `verification/chat-media-retention.json`: 28 suite, 필수 ID 91개, 만료/캐시/화면/영상/Photos/QA 제어 회귀.
+- `verification/ios.json`: Development/Production 환경 경계 13개와 키보드 터치 경계 4개. `verification/chat-media-retention.json`: 28 suite, 필수 ID 91개, 만료/캐시/화면/영상/Photos/QA 제어 회귀.
 - `ChatMediaExpiryCacheIndexTests`, `ChatAttachmentImageServiceTests`, `ChatOriginalFileStoreTests`, `ImageCacheRevisionTests`: 계정·generation·기한, hit/write/lease·늦은 응답 정리.
 - `ChatMediaSignedDownloadTests`, `ChatVideoPlaybackSessionTests`: 권한·HTTP 만료 분류, 갱신 횟수와 위치/상태 복원, AVKit 조작 경계·만료 화면의 다운로드/저장 0회.
 - `ImageViewerOriginalFileTests`, `PhotoLibrarySaverBoundaryTests`, `VideoSaveLifetimeTests`: 만료·닫힘·Photos 권한 대기/제출 경계, 완료 전 파일 수명과 늦은 UI 차단.

@@ -30,7 +30,8 @@ private final class KeyboardDismissTapHandler: NSObject, UIGestureRecognizerDele
         var touchedView: UIView? = touch.view
 
         while let currentView = touchedView {
-            if currentView is UITextField || currentView is UITextView {
+            // 창에 설치된 제스처가 전송 버튼 터치로 키보드를 먼저 닫지 않게 한다.
+            if currentView is UIControl || currentView is UITextView {
                 return false
             }
 
