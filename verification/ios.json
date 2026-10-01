@@ -26,6 +26,7 @@
         "-destination",
         "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
         "-only-testing:OutPickTests/AppRuntimeConfigurationTests",
+        "-only-testing:OutPickTests/KeyboardDismissSupportTests",
         "-parallel-testing-enabled",
         "NO",
         "-derivedDataPath",
@@ -48,7 +49,11 @@
         "AppRuntimeConfigurationTests/googleCallbackMustMatchFirebasePlist()",
         "AppRuntimeConfigurationTests/kakaoCallbackMustMatchNativeAppKey()",
         "AppRuntimeConfigurationTests/developmentRejectsProductionKakaoConfiguration()",
-        "AppRuntimeConfigurationTests/productionRejectsDevelopmentKakaoConfiguration()"
+        "AppRuntimeConfigurationTests/productionRejectsDevelopmentKakaoConfiguration()",
+        "KeyboardDismissSupportTests/excludesChatSendButtonFromWindowDismissal()",
+        "KeyboardDismissSupportTests/excludesChatSendButtonDescendantFromWindowDismissal()",
+        "KeyboardDismissSupportTests/preservesTextInputTouches()",
+        "KeyboardDismissSupportTests/continuesReceivingConversationBackgroundTouches()"
       ]
     }
   ]
