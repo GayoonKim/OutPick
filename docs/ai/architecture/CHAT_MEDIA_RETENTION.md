@@ -32,7 +32,25 @@
 
 프로그램 판정은 [검증 운영 기준](PROGRAMMATIC_VERIFICATION.md)의 다섯 설정을 사용한다. 실행기 원본은 `tools/verification-gate/`에서 관리하며 공용 설치본으로 로컬 실행했다. GitHub CI 연결은 포함하지 않는다. 필수 ID 누락·skip·0개 실행은 통과로 처리하지 않는다.
 
-개발 QA 종료 시 Functions 299개/필수 9개, iOS 만료 회귀 224개/필수 91개가 통과했다. PR 정리 시 다섯 게이트를 다시 실행하고 최종 결과는 PR에 기록한다. iOS 만료 설정은 28개 suite이며 실제 Simulator Photos 검사도 포함한다.
+PR 정리 시 다섯 게이트를 재실행해 모두 passed, 실패·차단·필수 누락 0을 확인했다. iOS 만료 설정은 28개 suite이며 실제 Simulator Photos 검사도 포함한다.
+
+| 설정 | 실행 결과 | 필수 테스트 ID | 검사 커밋 |
+| --- | --- | --- | --- |
+| gate | 자체 검사 13 + Firebase 설정 검사 + Socket 정적 검사·117개 통과 | Socket 4 | `0584335b` |
+| functions | lint·clean build·299개 통과, 기존 lint 경고 14/오류 0 | 9 | `47c874f9` |
+| firestore | Rules·transaction·삭제 경합 129개 통과 | 11 | `47c874f9` |
+| ios | 앱 환경 경계 13개 통과 | 13 | `0584335b` |
+| chat-media-retention | 224개 통과 | 91 | `0584335b` |
+
+두 검사 커밋 사이의 제품 파일 차이는 서버 파일 끝 빈 줄 제거뿐이며 해당 Functions·Firestore 게이트를 재실행했다. 이후 문서 정리 시 다섯 설정의 실제 입력 digest가 각 통과 결과와 같은지 확인했다. 문서 커밋을 이전 실행 HEAD에서 검사했다고 표현하지 않는다. 원본 결과는 로컬 `output/verification/<실행 ID>/summary.json` 및 check별 로그에 보존하며 아래 ID로 대조한다.
+
+- gate: `1790858298764-76bace1f-a017-4f9f-a948-a3e6aba44261`
+- functions: `1790858505382-905ebf18-9c23-4abd-9537-094ead849c25`
+- firestore: `1790858555109-f8885e28-fba5-4c8b-a3b8-4d0b346193d2`
+- ios: `1790858378737-ff3348df-caa7-424f-bd07-7fcfdaf1ebff`
+- chat-media-retention: `1790858296438-27a77b44-4fd7-40b5-9fd8-eedff8d80066`
+
+자체 코드 리뷰는 서버 확정 원자성·서명 권한·generation 삭제/신고 경합·계정 전환·캐시/Photos 수명과 QA 제어 범위를 대상으로 수행했다. 병합을 막는 추가 결함은 확인하지 못했다. 독립된 사람의 승인 리뷰나 GitHub CI 통과를 의미하지 않는다.
 
 | 범위 | 확인 내용 |
 | --- | --- |
