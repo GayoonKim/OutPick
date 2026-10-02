@@ -4,6 +4,37 @@ import Testing
 @testable import OutPick
 
 struct GRDBChatDeletionSyncStoreTests {
+    @MainActor @Test func repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState() async throws {
+        let database = try TemporaryAppDatabase.make()
+        let store = GRDBChatDeletionSyncStore(database: database)
+        let fence = ChatSearchDeletionFence()
+        var invalidations = 0
+        let observer = fence.observe { _ in invalidations += 1 }
+        defer { fence.removeObserver(observer) }
+        let useCase = ChatDeletionSyncUseCase(repository: StubChatDeletionSyncRepository(head: 0, deltas: []),
+            persistence: store, mediaCleaner: NoopChatDeletionMediaCleaner(), searchFence: fence)
+        var tombstone = GRDBTestFixtures.message(id: "deleted", seq: 1)
+        tombstone.isDeleted = true; tombstone.deletionRevision = 1
+        for _ in 0..<3 {
+            let messages = try await useCase.sanitize([tombstone], accountID: "account-1", roomID: "room-1")
+            #expect(messages.first?.isDeleted == true && messages.first?.msg == nil)
+        }
+        #expect(invalidations == 1)
+        // 같은 revision의 기존 익명화 marker도 서버 발신자 정책과 다르면 한 번은 교정한다.
+        _ = try await store.recordResolvedDeletions([ChatDeletionDelta(messageID: "deleted", roomID: "room-1",
+            seq: 1, revision: 1, deletedAt: nil, anonymizesSender: true)], accountID: "account-1", roomID: "room-1")
+        _ = try await useCase.sanitize([tombstone], accountID: "account-1", roomID: "room-1")
+        #expect(invalidations == 2)
+        tombstone.deletionRevision = 2
+        _ = try await useCase.sanitize([tombstone], accountID: "account-1", roomID: "room-1")
+        #expect(invalidations == 3)
+        tombstone.deletedAt = Date(timeIntervalSince1970: 50.123456)
+        _ = try await useCase.sanitize([tombstone], accountID: "account-1", roomID: "room-1")
+        _ = try await useCase.sanitize([tombstone], accountID: "account-1", roomID: "room-1")
+        #expect(invalidations == 4)
+        #expect(try await store.cursor(accountID: "account-1", roomID: "room-1") == 0)
+    }
+
     @Test func socketEventAtEmptyReconciliationExitIsAppliedBeforeReturning() async throws {
         let database = try TemporaryAppDatabase.make()
         let persistence = ExitGatedDeletionStore(base: GRDBChatDeletionSyncStore(database: database))
@@ -455,12 +486,15 @@ private actor ExitGatedDeletionStore: ChatDeletionSyncPersisting {
         return []
     }
     func cursor(accountID: String, roomID: String) async throws -> Int64 { try await base.cursor(accountID: accountID, roomID: roomID) }
-    func hasServerMessages(roomID: String) async throws -> Bool { try await base.hasServerMessages(roomID: roomID) }
-    func messageIDs(roomID: String) async throws -> [String] { try await base.messageIDs(roomID: roomID) }
+    func hasServerMessages(accountID: String, roomID: String) async throws -> Bool { try await base.hasServerMessages(accountID: accountID, roomID: roomID) }
+    func messageIDs(accountID: String, roomID: String, afterID: String?, limit: Int) async throws -> [String] {
+        try await base.messageIDs(accountID: accountID, roomID: roomID, afterID: afterID, limit: limit)
+    }
     func apply(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> [ChatDeletionCleanupItem] { try await base.apply(deltas, accountID: accountID, roomID: roomID) }
     func bootstrapCursor(_ revision: Int64, accountID: String, roomID: String) async throws -> Void { try await base.bootstrapCursor(revision, accountID: accountID, roomID: roomID) }
     func completeCleanup(_ item: ChatDeletionCleanupItem) async throws -> Void { try await base.completeCleanup(item) }
     func sanitize(_ messages: [ChatMessage], accountID: String, roomID: String) async throws -> [ChatMessage] { try await base.sanitize(messages, accountID: accountID, roomID: roomID) }
+    func requiresResolvedDeletionFence(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> Bool { try await base.requiresResolvedDeletionFence(deltas, accountID: accountID, roomID: roomID) }
     func recordResolvedDeletions(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> [ChatDeletionCleanupItem] { try await base.recordResolvedDeletions(deltas, accountID: accountID, roomID: roomID) }
 }
 

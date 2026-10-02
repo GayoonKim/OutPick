@@ -35,18 +35,18 @@ final class UserBlockSessionController: UserBlockSessionSynchronizing {
 
         activeUserID = normalizedUserID
         let cached = snapshotStore.load(userID: normalizedUserID)
-        visibilityStore.replace(with: cached ?? [])
+        let epoch = visibilityStore.beginSession(accountID: normalizedUserID, cachedIDs: cached)
 
         do {
             let remote = try await repository.fetchBlockedUserIDs(
                 blockerUserID: UserID(value: normalizedUserID)
             )
             let remoteIDs = Set(remote.map(\.value))
-            guard activeUserID == normalizedUserID else { return }
-            visibilityStore.replace(with: remoteIDs)
+            guard activeUserID == normalizedUserID, visibilityStore.snapshot().accountEpoch == epoch else { return }
+            visibilityStore.activate(with: remoteIDs)
             snapshotStore.save(remoteIDs, userID: normalizedUserID)
         } catch {
-            guard activeUserID == normalizedUserID else { return }
+            guard activeUserID == normalizedUserID, visibilityStore.snapshot().accountEpoch == epoch else { return }
             guard cached == nil else { return }
             visibilityStore.clear()
             activeUserID = nil

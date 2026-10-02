@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
+final class GRDBChatMessageStore: ChatMessagePersisting {
     private let database: AppDatabase
     private let currentAccountID: @Sendable () -> String
 
@@ -188,16 +188,6 @@ final class GRDBChatMessageStore: ChatMessagePersisting, ChatMessageSearching {
             let records = try ChatMessageRecord.fetchAll(db, sql: "SELECT * FROM chatMessage WHERE roomID = ? AND seq > ? ORDER BY seq ASC, id ASC LIMIT ?", arguments: [roomID, anchorSeq, limit])
             return try records.map(ChatMessageRecordMapper.message)
         }
-    }
-
-    func fetchMessages(in roomID: String, containing keyword: String?) async throws -> [ChatMessage] {
-        if let keyword, !keyword.isEmpty {
-            return try await messages(
-                sql: "SELECT * FROM chatMessage WHERE roomID = ? AND msg LIKE ? ORDER BY seq ASC, id ASC",
-                arguments: [roomID, "%\(keyword)%"]
-            )
-        }
-        return try await messages(sql: "SELECT * FROM chatMessage WHERE roomID = ? ORDER BY seq ASC, id ASC", arguments: [roomID])
     }
 
     private func countMessages(inRoom roomID: String) throws -> Int {

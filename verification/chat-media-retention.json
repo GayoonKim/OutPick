@@ -128,7 +128,7 @@
         "VideoSaveLifetimeTests/testChatCloseAfterSubmissionSuccess()",
         "ChatMessageMediaAttachmentMappingTests/directUploadAttachmentPreservesServerRetentionAndGenerationContract()",
         "GRDBChatMediaIndexStoreTests/mediaEntriesUpsertAndPaginateByNewestFirst()",
-        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentyFiveMigrationsWithoutLegacyColumns()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySixMigrationsWithoutLegacyColumns()",
         "ChatMessageRecordMapperTests/messageRecordRoundTripPreservesMediaExpiry()",
         "ChatMessageActionPolicyTests/expiredMediaDisablesMessageReportButKeepsReplyBlockAndDeletion()",
         "OutPickTests/galleryStopsWhenRemoteCursorDoesNotAdvance()",

@@ -2,6 +2,7 @@ import GRDB
 
 enum ChatRoomCleanupSQL {
     static func deleteTransientRoomData(roomID: String, in db: Database) throws {
+        try db.execute(sql: "DELETE FROM chatSearchSession WHERE roomID = ?", arguments: [roomID])
         try db.execute(sql: "DELETE FROM chatMessage WHERE roomID = ?", arguments: [roomID])
         try db.execute(sql: "DELETE FROM imageIndex WHERE roomID = ?", arguments: [roomID])
         try db.execute(sql: "DELETE FROM videoIndex WHERE roomID = ?", arguments: [roomID])

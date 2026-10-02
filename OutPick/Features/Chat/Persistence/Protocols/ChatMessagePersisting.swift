@@ -23,10 +23,6 @@ extension ChatMessagePersisting {
     }
 }
 
-protocol ChatMessageSearching {
-    func fetchMessages(in roomID: String, containing keyword: String?) async throws -> [ChatMessage]
-}
-
 protocol ChatFailedOutgoingMessagePersisting {
     func saveChatMessages(_ messages: [ChatMessage]) async throws
     func fetchMessage(id messageID: String, inRoom roomID: String) async throws -> ChatMessage?

@@ -14,17 +14,26 @@ final class AppDatabase {
     init(path: String) throws {
         dbPool = try DatabasePool(path: path)
         try GRDBMigrationRegistry.migrate(dbPool)
+        try clearTransientSearchSessions()
     }
 
     init(dbPool: DatabasePool, migrate: Bool = true) throws {
         self.dbPool = dbPool
         if migrate {
             try GRDBMigrationRegistry.migrate(dbPool)
+            try clearTransientSearchSessions()
+        }
+    }
+
+    private func clearTransientSearchSessions() throws {
+        try dbPool.write { db in
+            try db.execute(sql: "DELETE FROM chatSearchSession")
         }
     }
 
     func deleteAllUserSessionData() async throws {
         try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM chatSearchSession")
             try db.execute(sql: "DELETE FROM RoomProfileDisplayCache")
             try db.execute(sql: "DELETE FROM LocalChatUser")
             try db.execute(sql: "DELETE FROM chatOutgoingOutbox")

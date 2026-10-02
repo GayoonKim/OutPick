@@ -26,7 +26,8 @@ enum GRDBMigrationRegistry {
         "addRoomRoleEventToChatMessage",
         "addUnreadMessageSeqToChatMessage",
         "addMediaExpiresAtToChatModels",
-        "addMediaGenerationsToIndexes"
+        "addMediaGenerationsToIndexes",
+        "createChatSearchSessions"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -267,6 +268,9 @@ enum GRDBMigrationRegistry {
             }
         }
 
+        migrator.registerMigration("createChatSearchSessions") { db in
+            try ChatSearchSQL.createSchema(in: db)
+        }
         return migrator
     }
 

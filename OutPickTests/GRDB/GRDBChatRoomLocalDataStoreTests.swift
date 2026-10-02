@@ -10,13 +10,14 @@ struct GRDBChatRoomLocalDataStoreTests {
         let outboxStore = GRDBChatOutgoingOutboxStore(database: database)
         let profileStore = GRDBChatProfileCacheStore(database: database)
         let cleanupStore = GRDBChatRoomLocalDataStore(database: database)
-        try await seedRoom(messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
+        try await seedRoom(database: database, messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
 
         try cleanupStore.cleanTransientRoomData(roomID: "room-1")
 
         #expect(try await messageStore.fetchMessage(id: "message-1", inRoom: "room-1") == nil)
         #expect(try await outboxStore.fetchOutgoingOutboxRecord(messageID: "message-1") != nil)
         #expect(try profileStore.countRoomProfileDisplayCache(roomID: "room-1") == 1)
+        #expect(try await searchSessionCount(database) == 0)
     }
 
     @Test func exitCleanupDeletesOutboxAndPrunesOnlyOrphanUsers() async throws {
@@ -25,7 +26,7 @@ struct GRDBChatRoomLocalDataStoreTests {
         let outboxStore = GRDBChatOutgoingOutboxStore(database: database)
         let profileStore = GRDBChatProfileCacheStore(database: database)
         let cleanupStore = GRDBChatRoomLocalDataStore(database: database)
-        try await seedRoom(messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
+        try await seedRoom(database: database, messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
         try profileStore.upsertLocalChatUser(userID: "current-user", nickname: "Me", profileImagePath: nil)
         try profileStore.upsertLocalChatUser(userID: "other-user", nickname: "Other", profileImagePath: nil)
         try profileStore.upsertRoomProfileDisplayCache(
@@ -39,6 +40,7 @@ struct GRDBChatRoomLocalDataStoreTests {
         #expect(try profileStore.fetchLocalChatUser(userID: "user-1") == nil)
         #expect(try profileStore.fetchLocalChatUser(userID: "other-user") != nil)
         #expect(try profileStore.fetchLocalChatUser(userID: "current-user") != nil)
+        #expect(try await searchSessionCount(database) == 0)
     }
 
     @Test func exitCleanupFailureRollsBackAllRoomDeletes() async throws {
@@ -47,7 +49,7 @@ struct GRDBChatRoomLocalDataStoreTests {
         let outboxStore = GRDBChatOutgoingOutboxStore(database: database)
         let profileStore = GRDBChatProfileCacheStore(database: database)
         let cleanupStore = GRDBChatRoomLocalDataStore(database: database)
-        try await seedRoom(messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
+        try await seedRoom(database: database, messageStore: messageStore, outboxStore: outboxStore, profileStore: profileStore)
         try await database.dbPool.write { db in
             try db.execute(sql: """
                 CREATE TRIGGER fail_room_profile_delete
@@ -65,23 +67,37 @@ struct GRDBChatRoomLocalDataStoreTests {
         #expect(try await messageStore.fetchMessage(id: "message-1", inRoom: "room-1") != nil)
         #expect(try await outboxStore.fetchOutgoingOutboxRecord(messageID: "message-1") != nil)
         #expect(try profileStore.countRoomProfileDisplayCache(roomID: "room-1") == 1)
+        #expect(try await searchSessionCount(database) == 1)
     }
 
     private func seedRoom(
+        database: AppDatabase,
         messageStore: GRDBChatMessageStore,
         outboxStore: GRDBChatOutgoingOutboxStore,
         profileStore: GRDBChatProfileCacheStore
     ) async throws {
-        try await messageStore.saveChatMessages([GRDBTestFixtures.message(id: "message-1")])
+        let search = GRDBChatSearchStore(database: database)
+        let scope = try SearchStoreFixture.scope()
+        try await search.createSession(scope: scope, visibilityRevision: 0, blockedAuthorIDs: ["blocked"])
+        _ = try await SearchStoreFixture.commit(search, scope, hits: [SearchStoreFixture.hit("search-only", 1)])
+        // 확정 seq의 outbox 재생성은 거부되므로 정리 대상은 실제 미전송 상태로 만든다.
+        try await messageStore.saveChatMessages([GRDBTestFixtures.message(id: "message-1", seq: 0, isFailed: true)])
         try await outboxStore.saveOutgoingOutboxRecord(ChatOutgoingOutboxRecord(
             messageID: "message-1", roomID: "room-1", kind: .text, stage: .failed,
             createdAt: Date(), updatedAt: Date(), localPayloadJSON: nil,
             uploadedPayloadJSON: nil, lastError: nil
         ))
+        #expect(try await outboxStore.fetchOutgoingOutboxRecord(messageID: "message-1") != nil)
         try profileStore.upsertLocalChatUser(userID: "user-1", nickname: "User", profileImagePath: nil)
         try profileStore.upsertRoomProfileDisplayCache(
             roomID: "room-1", userID: "user-1", lastSeenAt: Date(),
             lastMessageSeq: 1, lastMessageID: "message-1", updatedAt: Date(), maxEntriesPerRoom: 20
         )
+    }
+
+    private func searchSessionCount(_ database: AppDatabase) async throws -> Int {
+        try await database.dbPool.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chatSearchSession WHERE roomID = 'room-1'") ?? 0
+        }
     }
 }

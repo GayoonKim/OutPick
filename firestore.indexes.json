@@ -1,6 +1,24 @@
 {
   "indexes": [
     {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "searchChars", "arrayConfig": "CONTAINS"},
+        {"fieldPath": "seq", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "searchNgrams2", "arrayConfig": "CONTAINS"},
+        {"fieldPath": "seq", "order": "DESCENDING"},
+        {"fieldPath": "__name__", "order": "DESCENDING"}
+      ]
+    },
+    {
       "collectionGroup": "MediaUploads",
       "queryScope": "COLLECTION_GROUP",
       "fields": [

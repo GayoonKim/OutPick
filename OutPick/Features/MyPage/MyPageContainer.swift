@@ -62,4 +62,14 @@ final class MyPageContainer {
     func configureAppContentRouter(_ appContentRouter: (any AppContentRouting)?) {
         self.appContentRouter = appContentRouter
     }
+
+    func makeBlockedUsersViewController() -> BlockedUsersViewController {
+        let viewModel = BlockedUsersViewModel(
+            currentUserID: userID,
+            repository: userBlockRepository,
+            unblockUserUseCase: unblockUserUseCase,
+            profileRepository: publicProfileRepository
+        )
+        return BlockedUsersViewController(viewModel: viewModel, avatarImageManager: avatarImageManager)
+    }
 }

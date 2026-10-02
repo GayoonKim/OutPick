@@ -491,8 +491,13 @@ struct ChatRoomViewModelMessageActionTests {
         #expect(retry.generation != first.generation)
     }
 
+    static func makeSearchTestViewModel(search: ChatSearchPresentationController) -> ChatRoomViewModel {
+        Self().makeViewModel(search: search)
+    }
+
     private func makeViewModel(
         room: ChatRoom? = nil,
+        search: ChatSearchPresentationController? = nil,
         initialLoadUseCase: ChatInitialLoadUseCaseProtocol = ChatInitialLoadUseCaseStub(),
         messageUseCase: ChatRoomMessageUseCaseProtocol = ChatRoomMessageUseCaseSpy(),
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol = ChatRoomLifecycleUseCaseSpy(),
@@ -505,7 +510,7 @@ struct ChatRoomViewModelMessageActionTests {
             room: room ?? makeRoom(id: "room-1", creatorUID: "owner@example.com"),
             initialLoadUseCase: initialLoadUseCase,
             messageUseCase: messageUseCase,
-            searchUseCase: ChatRoomSearchUseCaseStub(),
+            search: search ?? ChatSearchPresentationController(roomID: "room-1", session: ChatSearchSessionStub()) { _, _ in [] },
             lifecycleUseCase: lifecycleUseCase,
             realtimeUseCase: ChatRoomRealtimeUseCaseStub(),
             runtimeUseCase: ChatRoomRuntimeUseCaseStub(),
@@ -709,24 +714,19 @@ private struct ChatInitialLoadUseCaseStub: ChatInitialLoadUseCaseProtocol {
     }
 }
 
-private struct ChatRoomSearchUseCaseStub: ChatRoomSearchUseCaseProtocol {
-    func searchMessages(roomID: String, keyword: String) async throws -> ChatMessageSearchResult {
-        ChatMessageSearchResult(
-            keyword: keyword,
-            totalCount: 0,
-            hits: [],
-            source: .localOffline,
-            isAuthoritative: false
-        )
-    }
-
-    func applyHighlight(messageIDs: Set<String>) -> Set<String> {
-        messageIDs
-    }
-
-    func clearHighlight() -> Set<String> {
-        []
-    }
+@MainActor private final class ChatSearchSessionStub: ChatRoomSearchSessionUseCaseProtocol {
+    var snapshot: ChatSearchSessionSnapshot? { nil }
+    func observe(_ callback: @escaping @MainActor (ChatSearchSessionSnapshot?) -> Void) -> UUID { callback(nil); return UUID() }
+    func removeObserver(_ id: UUID) {}
+    func search(roomID: String, keyword: String) {}
+    func continueSearch(session: ChatSearchSessionIdentity) {}
+    func prefetchIfNeeded(session: ChatSearchSessionIdentity) {}
+    func prepareNavigation(session: ChatSearchSessionIdentity, direction: ChatSearchDirection) async throws -> ChatSearchPendingNavigation? { nil }
+    func commitNavigation(_ navigation: ChatSearchPendingNavigation) async throws {}
+    func cancel(session: ChatSearchSessionIdentity) async {}
+    func retry() {}
+    func setForeground(_ foreground: Bool) {}
+    func stop() {}
 }
 
 @MainActor

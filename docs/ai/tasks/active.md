@@ -1,5 +1,7 @@
 # Active Task Index
 
+> **채팅 검색·차단 목록 완료(2026-10-02):** 구현·자동 검사·DEV 실기기 QA와 QA 자료 정리까지 완료했다. 공개 기준은 [최종 계약·검증·배포 경계](../architecture/CHAT_MESSAGE_SEARCH.md)다. 로컬 단계별 기록은 chat-message-search/에 보존하며 아래 다른 작업 이력과 구분한다. 운영 배포는 별도다.
+
 > **채팅 미디어 7일 만료: 구현·개발 QA·다섯 게이트·최종 리뷰 완료.** [공개 최종 계약·검증·운영 주의사항](../architecture/CHAT_MEDIA_RETENTION.md)을 기준으로 한다. 작업 단위 커밋을 정리했고 PR/병합 상태는 저장소 기록을 따른다. 로컬 상세 실행 기록은 `chat-media-retention/progress.md`에 보존한다. 운영 배포는 포함하지 않는다. 아래의 “다음 작업/미구현” 표기는 과거 작업의 이력이다.
 
 

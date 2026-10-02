@@ -7,47 +7,23 @@
 
 import Foundation
 
-enum ChatMessageSearchSource: Equatable {
+enum ChatMessageSearchSource: Equatable, Sendable {
     case serverIndex
     case localOffline
     case localFallbackAfterServerFailure
 }
 
-struct ChatMessageSearchHit: Equatable {
-    let message: ChatMessage
-    let snippet: String?
-
-    init(message: ChatMessage, snippet: String? = nil) {
-        self.message = message
-        self.snippet = snippet
-    }
-}
-
-struct ChatMessageSearchResult: Equatable {
-    let keyword: String
-    let totalCount: Int
-    let hits: [ChatMessageSearchHit]   // seq ASC
-    let source: ChatMessageSearchSource
-    let isAuthoritative: Bool          // true when sourced from server index
-}
-
-struct ChatMessageServerSearchResponse: Equatable {
-    let totalCount: Int
-    let hits: [ChatMessageSearchHit]   // seq ASC
-}
-
-enum ChatMessageSearchRemoteError: Error {
-    case serverSearchAPIUnavailable
-}
-
-/// 채팅 메시지 검색 관련 프로토콜
-protocol ChatSearchManaging {
-    /// 메시지 검색
-    func searchMessages(roomID: String, keyword: String) async throws -> ChatMessageSearchResult
-    
-    /// 검색 결과 하이라이트 적용
-    func applyHighlight(messageIDs: Set<String>) -> Set<String>
-    
-    /// 하이라이트 제거
-    func clearHighlight() -> Set<String>
+@MainActor protocol ChatSearchSessionManaging: AnyObject, Sendable {
+    var snapshot: ChatSearchSessionSnapshot? { get }
+    @discardableResult func observe(_ callback: @escaping @MainActor (ChatSearchSessionSnapshot?) -> Void) -> UUID
+    func removeObserver(_ id: UUID)
+    func search(roomID: String, keyword: String)
+    func continueSearch(session: ChatSearchSessionIdentity)
+    func prefetchIfNeeded(session: ChatSearchSessionIdentity)
+    func prepareNavigation(session: ChatSearchSessionIdentity, direction: ChatSearchDirection) async throws -> ChatSearchPendingNavigation?
+    func commitNavigation(_ navigation: ChatSearchPendingNavigation) async throws
+    func cancel(session: ChatSearchSessionIdentity) async
+    func retry()
+    func setForeground(_ foreground: Bool)
+    func stop()
 }
