@@ -30,6 +30,10 @@ final class MyPageViewController: UIViewController {
         title: "브랜드 요청 내역",
         subtitle: "요청한 브랜드의 진행 상황을 확인해요"
     )
+    private let blockedUsersButton = MyPageActionRowButton(
+        title: "차단한 사용자",
+        subtitle: "차단한 계정을 확인하고 관리해요"
+    )
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let errorLabel = UILabel()
     private var didRouteToLogin = false
@@ -96,6 +100,7 @@ final class MyPageViewController: UIViewController {
             action: #selector(brandRequestsTapped),
             for: .touchUpInside
         )
+        blockedUsersButton.addTarget(self, action: #selector(blockedUsersTapped), for: .touchUpInside)
 
         activityIndicator.color = OutPickTheme.ColorToken.accent
         errorLabel.font = .systemFont(ofSize: 13)
@@ -115,7 +120,7 @@ final class MyPageViewController: UIViewController {
         [
             editorialHeader, identityRow, moodSectionLabel, moodChipsView,
             actionSectionLabel, editProfileButton, editStylesButton,
-            activitySectionLabel, brandRequestsButton,
+            activitySectionLabel, brandRequestsButton, blockedUsersButton,
             activityIndicator, errorLabel
         ].forEach(stackView.addArrangedSubview)
         profileImageView.widthAnchor.constraint(equalToConstant: 100).isActive = true
@@ -127,7 +132,7 @@ final class MyPageViewController: UIViewController {
         stackView.setCustomSpacing(5, after: actionSectionLabel)
         stackView.setCustomSpacing(34, after: editStylesButton)
         stackView.setCustomSpacing(5, after: activitySectionLabel)
-        stackView.setCustomSpacing(20, after: brandRequestsButton)
+        stackView.setCustomSpacing(20, after: blockedUsersButton)
 
         [customNavigationBar, scrollView, stackView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -219,14 +224,12 @@ final class MyPageViewController: UIViewController {
         viewModel.brandRequestsTapped()
     }
 
+    @objc private func blockedUsersTapped() {
+        viewModel.blockedUsersTapped()
+    }
+
     private func makeSettingsMenu() -> UIMenu {
         UIMenu(children: [
-            UIAction(
-                title: "차단한 사용자",
-                image: UIImage(systemName: "person.crop.circle.badge.xmark")
-            ) { [weak self] _ in
-                self?.viewModel.blockedUsersTapped()
-            },
             UIAction(
                 title: "로그아웃",
                 image: UIImage(systemName: "rectangle.portrait.and.arrow.right")

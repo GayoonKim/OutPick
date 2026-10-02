@@ -106,12 +106,7 @@ final class MyPageCoordinator {
     }
 
     private func showBlockedUsers() {
-        let viewModel = BlockedUsersViewModel(
-            currentUserID: container.userID,
-            repository: container.userBlockRepository,
-            unblockUserUseCase: container.unblockUserUseCase
-        )
-        let viewController = BlockedUsersViewController(viewModel: viewModel)
+        let viewController = container.makeBlockedUsersViewController()
         viewController.hidesBottomBarWhenPushed = true
         navigationController.pushViewController(viewController, animated: true)
     }
