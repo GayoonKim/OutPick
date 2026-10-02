@@ -7,7 +7,12 @@ struct AccountDeletionLocalDataCleanupTests {
     @Test
     func deletesEveryUserScopedGRDBTable() async throws {
         let database = try TemporaryAppDatabase.make()
+        let search = GRDBChatSearchStore(database: database)
+        let scope = try SearchStoreFixture.scope()
+        try await search.createSession(scope: scope, visibilityRevision: 0, blockedAuthorIDs: ["blocked"])
+        _ = try await SearchStoreFixture.commit(search, scope, hits: [SearchStoreFixture.hit("search-only", 1)])
         let tables = [
+            "chatSearchSession", "chatSearchHit", "chatSearchBlockedAuthor",
             "RoomProfileDisplayCache",
             "LocalChatUser",
             "chatOutgoingOutbox",

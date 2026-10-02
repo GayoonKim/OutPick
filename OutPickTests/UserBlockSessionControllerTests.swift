@@ -91,6 +91,37 @@ struct UserBlockSessionControllerTests {
         #expect(controller.activeUserID == "new-user")
         #expect(visibility.blockedUserIDs() == ["new-blocked"])
     }
+
+    @Test func sameAccountReloginRejectsOldEpochBootstrap() async throws {
+        let visibility = UserBlockVisibilityStore()
+        let repository = DeferredSameAccountRepository()
+        let controller = UserBlockSessionController(repository: repository,
+            snapshotStore: FakeUserBlockSnapshotStore(), visibilityStore: visibility)
+        let stale = Task { try await controller.bootstrap(userID: "me") }
+        while await repository.pending == nil { await Task.yield() }
+        let oldEpoch = visibility.snapshot().accountEpoch
+        try await controller.bootstrap(userID: "me")
+        await repository.completeOld()
+        try await stale.value
+        #expect(visibility.snapshot().accountEpoch != oldEpoch)
+        #expect(visibility.blockedUserIDs() == ["current"])
+        var snapshots: [UserBlockVisibilitySnapshot] = []
+        let observation = visibility.observe { snapshots.append($0) }
+        controller.applyServerMutation(userID: "me", targetUserID: "synchronous", isBlocked: true)
+        #expect(snapshots.count == 2 && snapshots.last?.blockedIDs.contains("synchronous") == true)
+        visibility.removeObserver(observation)
+    }
+}
+
+private actor DeferredSameAccountRepository: UserBlockRelationReading {
+    var pending: CheckedContinuation<Set<UserID>, Never>?
+    var calls = 0
+    func fetchBlockedUserIDs(blockerUserID: UserID) async throws -> Set<UserID> {
+        calls += 1
+        if calls == 1 { return await withCheckedContinuation { pending = $0 } }
+        return [UserID(value: "current")]
+    }
+    func completeOld() { pending?.resume(returning: [UserID(value: "stale")]); pending = nil }
 }
 
 private enum TestError: Error {

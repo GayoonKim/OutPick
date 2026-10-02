@@ -76,6 +76,10 @@ test("text server document 기본 field를 유지한다", () => {
     isFailed: false,
     isDeleted: false,
     sentAt: "2026-07-14T00:00:00.000Z",
-    attachments: []
+    attachments: [],
+    searchNormalized: "hello",
+    searchChars: ["h", "e", "l", "o"],
+    searchNgrams2: ["he", "el", "ll", "lo"],
+    searchIndexVersion: 2
   });
 });

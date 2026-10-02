@@ -225,9 +225,6 @@ private final class VisibleUnreadMessageRepositoryFake: FirebaseMessageRepositor
         throw VisibleUnreadTestError.unexpectedCall
     }
 
-    func searchMessagesInRoom(roomID: String, keyword: String) async throws -> ChatMessageServerSearchResponse {
-        throw VisibleUnreadTestError.unexpectedCall
-    }
 }
 
 @MainActor
