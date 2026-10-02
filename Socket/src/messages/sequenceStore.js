@@ -1,10 +1,12 @@
 import { deriveLastMessage } from "./preview.js";
+import { withMessageSearchProjection } from "./messageSearchIndex.js";
 
 export function createSequenceStore({ db, admin }) {
   async function allocateSeqAndPersist(roomID, messageID, messageData, options = {}) {
     const roomRef = db.collection("Rooms").doc(roomID);
     const msgRef = roomRef.collection("Messages").doc(messageID);
     const lastMessageText = deriveLastMessage(messageData);
+    const indexedMessage = withMessageSearchProjection(messageData);
 
     return db.runTransaction(async (tx) => {
       const existing = await tx.get(msgRef);
@@ -28,8 +30,15 @@ export function createSequenceStore({ db, admin }) {
         : cur;
       const nextUnreadMessageSeq = currentUnreadMessageSeq + 1;
 
+      const storedMessage = {...indexedMessage};
+      // seq 없는 기존 문서를 merge할 때에도 제외 대상의 오래된 검색 필드를 남기지 않는다.
+      for (const key of ["searchNormalized", "searchChars", "searchNgrams2", "searchIndexVersion"]) {
+        if (!(key in storedMessage) && existing.exists && key in (existing.data() || {})) {
+          storedMessage[key] = admin.firestore.FieldValue.delete();
+        }
+      }
       tx.set(msgRef, {
-        ...messageData,
+        ...storedMessage,
         seq: next,
         unreadMessageSeq: nextUnreadMessageSeq
       }, { merge: true });

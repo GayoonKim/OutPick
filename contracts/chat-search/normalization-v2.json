@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "fixtures": [
+    {"id":"laugh","raw":"ㅋㅋ","normalized":"ㅋㅋ","searchChars":["ㅋ"],"searchNgrams2":["ㅋㅋ"],"queryToken":{"field":"searchNgrams2","token":"ㅋㅋ"},"containsCases":[{"keyword":"ㅋㅋ","matches":true},{"keyword":"ㅋㅋㅋ","matches":false}]},
+    {"id":"repeated-laugh","raw":"ㅋㅋㅋㅋㅋ","normalized":"ㅋㅋㅋㅋㅋ","searchChars":["ㅋ"],"searchNgrams2":["ㅋㅋ"],"queryToken":{"field":"searchNgrams2","token":"ㅋㅋ"},"containsCases":[{"keyword":"ㅋㅋ","matches":true}]},
+    {"id":"embedded-laugh","raw":"뭐야 ㅋㅋ","normalized":"뭐야 ㅋㅋ","searchChars":["뭐","야","ㅋ"],"searchNgrams2":["뭐야","야 "," ㅋ","ㅋㅋ"],"queryToken":{"field":"searchNgrams2","token":"뭐야"},"containsCases":[{"keyword":"ㅋㅋ","matches":true},{"keyword":"뭐야ㅋㅋ","matches":false}]},
+    {"id":"one-laugh","raw":"ㅋ","normalized":"ㅋ","searchChars":["ㅋ"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"ㅋ"},"containsCases":[{"keyword":"ㅋㅋ","matches":false}]},
+    {"id":"hangul-composed","raw":"가","normalized":"가","searchChars":["가"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"가"},"containsCases":[{"keyword":"\u1100\u1161","matches":true},{"keyword":"ㄱ","matches":false}]},
+    {"id":"hangul-decomposed","raw":"\u1100\u1161","normalized":"가","searchChars":["가"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"가"},"containsCases":[{"keyword":"가","matches":true}]},
+    {"id":"accent","raw":"CAFÉ","normalized":"cafe","searchChars":["c","a","f","e"],"searchNgrams2":["ca","af","fe"],"queryToken":{"field":"searchNgrams2","token":"ca"},"containsCases":[{"keyword":"cafe\u0301","matches":true},{"keyword":"cafes","matches":false}]},
+    {"id":"decomposed-accent","raw":"cafe\u0301","normalized":"cafe","searchChars":["c","a","f","e"],"searchNgrams2":["ca","af","fe"],"queryToken":{"field":"searchNgrams2","token":"ca"},"containsCases":[{"keyword":"CAFÉ","matches":true}]},
+    {"id":"latin-i","raw":"I","normalized":"i","searchChars":["i"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"i"},"containsCases":[{"keyword":"İ","matches":true},{"keyword":"ı","matches":false}]},
+    {"id":"dotted-i","raw":"İ","normalized":"i","searchChars":["i"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"i"},"containsCases":[{"keyword":"I","matches":true}]},
+    {"id":"dotless-i","raw":"ı","normalized":"ı","searchChars":["ı"],"searchNgrams2":[],"queryToken":{"field":"searchChars","token":"ı"},"containsCases":[{"keyword":"i","matches":false}]},
+    {"id":"full-fold","raw":"Straße","normalized":"strasse","searchChars":["s","t","r","a","e"],"searchNgrams2":["st","tr","ra","as","ss","se"],"queryToken":{"field":"searchNgrams2","token":"st"},"containsCases":[{"keyword":"STRASSE","matches":true}]},
+    {"id":"sigma","raw":"Σσς","normalized":"σσσ","searchChars":["σ"],"searchNgrams2":["σσ"],"queryToken":{"field":"searchNgrams2","token":"σσ"},"containsCases":[{"keyword":"Σς","matches":true}]},
+    {"id":"spaces","raw":" \tA\t\u00a0B\n ","normalized":"a b","searchChars":["a","b"],"searchNgrams2":["a "," b"],"queryToken":{"field":"searchNgrams2","token":"a "},"containsCases":[{"keyword":"A B","matches":true},{"keyword":"ab","matches":false}]},
+    {"id":"zero-width","raw":"A\u200bB","normalized":"a\u200bb","searchChars":["a","\u200b","b"],"searchNgrams2":["a\u200b","\u200bb"],"queryToken":{"field":"searchNgrams2","token":"a\u200b"},"containsCases":[{"keyword":"ab","matches":false}]},
+    {"id":"skin-tone","raw":"👍🏽","normalized":"👍🏽","searchChars":["👍","🏽"],"searchNgrams2":["👍🏽"],"queryToken":{"field":"searchNgrams2","token":"👍🏽"},"containsCases":[{"keyword":"👍🏽","matches":true},{"keyword":"👍","matches":false}]},
+    {"id":"family","raw":"👨‍👩‍👦","normalized":"👨‍👩‍👦","searchChars":["👨","‍","👩","👦"],"searchNgrams2":["👨‍","‍👩","👩‍","‍👦"],"queryToken":{"field":"searchNgrams2","token":"👨‍"},"containsCases":[{"keyword":"👨‍👩‍👦","matches":true},{"keyword":"👨","matches":false}]},
+    {"id":"variation","raw":"✈️","normalized":"✈️","searchChars":["✈","️"],"searchNgrams2":["✈️"],"queryToken":{"field":"searchNgrams2","token":"✈️"},"containsCases":[{"keyword":"✈️","matches":true},{"keyword":"✈","matches":false}]},
+    {"id":"literal","raw":"%_*?'\"","normalized":"%_*?'\"","searchChars":["%","_","*","?","'","\""],"searchNgrams2":["%_","_*","*?","?'","'\""],"queryToken":{"field":"searchNgrams2","token":"%_"},"containsCases":[{"keyword":"%","matches":true},{"keyword":"_","matches":true},{"keyword":"*","matches":true},{"keyword":"?","matches":true},{"keyword":"'","matches":true},{"keyword":"\"","matches":true},{"keyword":"abc","matches":false}]},
+    {"id":"no-wildcards","raw":"abc","normalized":"abc","searchChars":["a","b","c"],"searchNgrams2":["ab","bc"],"queryToken":{"field":"searchNgrams2","token":"ab"},"containsCases":[{"keyword":"%","matches":false},{"keyword":"_","matches":false},{"keyword":"*","matches":false},{"keyword":"?","matches":false},{"keyword":"abd","matches":false}]},
+    {"id":"null","raw":null,"normalized":"","searchChars":[],"searchNgrams2":[],"queryToken":null,"containsCases":[{"keyword":"a","matches":false}]},
+    {"id":"empty","raw":"","normalized":"","searchChars":[],"searchNgrams2":[],"queryToken":null,"containsCases":[{"keyword":"","matches":false}]},
+    {"id":"whitespace-only","raw":" \n\t\u3000","normalized":"","searchChars":[],"searchNgrams2":[],"queryToken":null,"containsCases":[{"keyword":" ","matches":false}]},
+    {"id":"hangul-recomposition","raw":"\u1100\uac00\u11a8","normalized":"\u1100\uac01","searchChars":["\u1100","\uac01"],"searchNgrams2":["\u1100\uac01"],"queryToken":{"field":"searchNgrams2","token":"\u1100\uac01"},"containsCases":[{"keyword":"\u1100\u1100\u1161\u11a8","matches":true}]},
+    {"id":"hangul-recomposition-tail","raw":"\u1100\uac00\u11a8\u11a8","normalized":"\u1100\uac01\u11a8","searchChars":["\u1100","\uac01","\u11a8"],"searchNgrams2":["\u1100\uac01","\uac01\u11a8"],"queryToken":{"field":"searchNgrams2","token":"\u1100\uac01"},"containsCases":[{"keyword":"\u1100\u1100\u1161\u11a8\u11a8","matches":true}]}
+  ]
+}

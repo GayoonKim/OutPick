@@ -1,4 +1,5 @@
 import { normalizeSentAt } from "../utils/strings.js";
+import { withMessageSearchProjection } from "./messageSearchIndex.js";
 
 export function normalizeReplyPreview(replyPreview, {replySourceMessage = null} = {}) {
   if (!replyPreview || typeof replyPreview !== "object") return undefined;
@@ -48,7 +49,7 @@ export function buildTextMessageDocument({
   const sentAt = normalizeSentAt(data?.sentAt);
   const replyPreview = normalizeReplyPreview(data?.replyPreview, {replySourceMessage});
 
-  return {
+  return withMessageSearchProjection({
     ID: messageID,
     roomID,
     roomName: roomID,
@@ -63,5 +64,5 @@ export function buildTextMessageDocument({
     isDeleted: false,
     sentAt: sentAt || nowDate.toISOString(),
     attachments: []
-  };
+  });
 }
