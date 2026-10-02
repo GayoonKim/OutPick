@@ -13,6 +13,7 @@ final class ChatContainer {
     private let messageCacheSession = ChatMessageCacheSession()
 
     func invalidateMessageCacheSession() {
+        chatRoomSearchSessionUseCase.stop()
         messageCacheSession.invalidate()
         originalFiles.invalidateSession()
         chatVideoPlaybackResolver.invalidateSession()
@@ -22,6 +23,8 @@ final class ChatContainer {
     private let signedDownloads: ChatMediaSignedDownloadService
     let originalFileAccountID: String
     let persistence: ChatPersistenceProvider
+    let chatRoomSearchSessionUseCase: any ChatRoomSearchSessionUseCaseProtocol
+    private let searchAppLifecycle: ChatSearchAppLifecycleBinding
     let firebaseRepositories: FirebaseRepositoryProviding
     let roomRepository: FirebaseChatRoomRepositoryProtocol
     let userProfileRepository: UserProfileRepositoryProtocol
@@ -47,7 +50,6 @@ final class ChatContainer {
     private let chatRoomRuntimeUseCase: ChatRoomRuntimeUseCaseProtocol
     private let chatInitialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let chatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol
-    private let chatRoomSearchUseCase: ChatRoomSearchUseCaseProtocol
     private let chatRoomLifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let chatRoomExitUseCase: ChatRoomExitUseCaseProtocol
     let roomClosureAcknowledgementUseCase: ChatRoomClosureAcknowledging
@@ -117,6 +119,7 @@ final class ChatContainer {
             repository: SignedChatVideoPlaybackURLRepository(service: signedDownloads), originalFiles: originalFiles)
         self.chatVideoPlaybackResolver = playbackResolver
         self.storageDownloadURLCache = playbackResolver
+        let searchDeletionFence = ChatSearchDeletionFence()
         let deletionSyncUseCase = ChatDeletionSyncUseCase(
             repository: FirebaseChatDeletionSyncRepository(
                 messageRepository: repositories.messageRepository
@@ -127,7 +130,8 @@ final class ChatContainer {
                 videoDiskCache: OPVideoDiskCache.shared,
                 storageURLResolver: playbackResolver,
                 originalFiles: originalFiles
-            )
+            ),
+            searchFence: searchDeletionFence
         )
         self.chatDeletionSyncUseCase = deletionSyncUseCase
         let moderationLifecycleRepository = CloudFunctionsChatModerationLifecycleRepository(
@@ -144,6 +148,8 @@ final class ChatContainer {
             persistence: persistence,
             moderationLifecycleRepository: moderationLifecycleRepository,
             deletionSanitizer: deletionSyncUseCase,
+            searchVisibility: userBlockVisibilityStore as? any UserBlockVisibilityObserving,
+            searchDeletionFence: searchDeletionFence,
             cacheSession: messageCacheSession,
             currentAccountID: { currentUserProvider.canonicalUserID }
         )
@@ -260,7 +266,8 @@ final class ChatContainer {
             currentUserUIDProvider: { currentUserProvider.canonicalUserID },
             roomReadStateStore: resolvedRoomReadStateStore
         )
-        self.chatRoomSearchUseCase = ChatRoomSearchUseCase(searchManager: managers.searchManager)
+        self.chatRoomSearchSessionUseCase = ChatRoomSearchSessionUseCase(manager: managers.searchSessionManager)
+        self.searchAppLifecycle = ChatSearchAppLifecycleBinding(manager: managers.searchSessionManager)
         self.chatRoomLifecycleUseCase = ChatRoomLifecycleUseCase(
             chatRoomRepository: self.roomRepository,
             userProfileRepository: self.userProfileRepository,
@@ -338,11 +345,16 @@ final class ChatContainer {
             cachedRole: cachedRole,
             observeUseCase: observeRoomRoleUseCase
         )
+        let context = ChatSearchContextUseCase(repository: firebaseRepositories.messageRepository,
+            persistence: persistence.messageStore, messages: chatRoomMessageUseCase)
+        let search = ChatSearchPresentationController(roomID: room.id, session: chatRoomSearchSessionUseCase) { target, source in
+            try await context.load(room: room, target: target, source: source)
+        }
         return ChatRoomViewModel(
             room: room,
             initialLoadUseCase: chatInitialLoadUseCase,
             messageUseCase: chatRoomMessageUseCase,
-            searchUseCase: chatRoomSearchUseCase,
+            search: search,
             lifecycleUseCase: chatRoomLifecycleUseCase,
             realtimeUseCase: chatRoomRealtimeUseCase,
             runtimeUseCase: chatRoomRuntimeUseCase,

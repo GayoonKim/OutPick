@@ -24,29 +24,13 @@ final class ChatRoomViewModel {
         case append
     }
 
-    struct SearchSessionState {
-        let keyword: String
-        let totalCount: Int
-        let source: ChatMessageSearchSource
-        let isAuthoritative: Bool
-        var hits: [ChatMessageSearchHit]   // seq ASC
-        var currentIndex: Int?             // 1-based index in hits
-    }
-
-    struct SearchDisplayState {
-        let totalCount: Int
-        let displayIndex: Int
-        let canMoveToPrevious: Bool
-        let canMoveToNext: Bool
-    }
-
     private(set) var room: ChatRoom
 
     private let initialLoadUseCase: ChatInitialLoadUseCaseProtocol
     private let messageUseCase: ChatRoomMessageUseCaseProtocol
     private let realtimeUseCase: ChatRoomRealtimeUseCaseProtocol
     private let runtimeUseCase: ChatRoomRuntimeUseCaseProtocol
-    private let searchUseCase: ChatRoomSearchUseCaseProtocol
+    let search: ChatSearchPresentationController
     private let lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol
     private let currentUserProvider: CurrentUserProviding
     private let networkStatusProvider: NetworkStatusProviding?
@@ -65,32 +49,8 @@ final class ChatRoomViewModel {
     private(set) var hasMoreOlder: Bool = true
     private(set) var hasMoreNewer: Bool = true
 
-    private(set) var searchSession: SearchSessionState?
-    var filteredMessages: [ChatMessage] { searchSession?.hits.map(\.message) ?? [] }
-    var currentFilteredMessageIndex: Int? { searchSession?.currentIndex }
-    var currentSearchResultCount: Int { searchSession?.totalCount ?? 0 }
-    var currentSearchSource: ChatMessageSearchSource? { searchSession?.source }
-    var isCurrentSearchAuthoritative: Bool { searchSession?.isAuthoritative ?? false }
-    var currentSearchDisplayState: SearchDisplayState {
-        guard let session = searchSession,
-              let currentIndex = session.currentIndex,
-              session.totalCount > 0 else {
-            return SearchDisplayState(
-                totalCount: 0,
-                displayIndex: 0,
-                canMoveToPrevious: false,
-                canMoveToNext: false
-            )
-        }
-        return SearchDisplayState(
-            totalCount: session.totalCount,
-            displayIndex: session.totalCount - currentIndex + 1,
-            canMoveToPrevious: currentIndex > 1,
-            canMoveToNext: currentIndex < session.hits.count
-        )
-    }
-    private(set) var highlightedMessageIDs: Set<String> = []
-    private(set) var currentSearchKeyword: String?
+    var highlightedMessageIDs: Set<String> { search.highlightedID.map { [$0] } ?? [] }
+    var currentSearchKeyword: String? { search.keyword }
 
     private(set) var liveMode: LiveMode = .live
     private(set) var entryTailSeq: Int64 = 0
@@ -100,8 +60,6 @@ final class ChatRoomViewModel {
     private var readStateStore = ChatReadStateStore()
     private(set) var unreadCatchUpState = ChatUnreadCatchUpState()
     private var lastReadFlushTask: Task<Void, Never>?
-    private var searchMessagesTask: Task<Void, Never>?
-    private var searchGeneration: Int = 0
     private var olderRawCursor: String?
     private var newerRawCursor: String?
     private var pageGeneration: UInt64 = 0
@@ -208,7 +166,7 @@ final class ChatRoomViewModel {
         room: ChatRoom,
         initialLoadUseCase: ChatInitialLoadUseCaseProtocol,
         messageUseCase: ChatRoomMessageUseCaseProtocol,
-        searchUseCase: ChatRoomSearchUseCaseProtocol,
+        search: ChatSearchPresentationController,
         lifecycleUseCase: ChatRoomLifecycleUseCaseProtocol,
         realtimeUseCase: ChatRoomRealtimeUseCaseProtocol = ChatRoomRealtimeUseCase(),
         runtimeUseCase: ChatRoomRuntimeUseCaseProtocol,
@@ -228,7 +186,7 @@ final class ChatRoomViewModel {
         self.messageUseCase = messageUseCase
         self.realtimeUseCase = realtimeUseCase
         self.runtimeUseCase = runtimeUseCase
-        self.searchUseCase = searchUseCase
+        self.search = search
         self.lifecycleUseCase = lifecycleUseCase
         self.currentUserProvider = currentUserProvider
         self.networkStatusProvider = networkStatusProvider
@@ -246,7 +204,6 @@ final class ChatRoomViewModel {
 
     deinit {
         lastReadFlushTask?.cancel()
-        searchMessagesTask?.cancel()
     }
 
     var roomID: String { room.id }
@@ -366,6 +323,7 @@ final class ChatRoomViewModel {
     }
 
     func handleCurrentUserMembershipRemoved() {
+        search.stop()
         messageUseCase.invalidateMessageCache(roomID: roomID)
         invalidateMessagePages()
         joinedRoomsStore?.remove(roomID)
@@ -557,6 +515,7 @@ final class ChatRoomViewModel {
         highestVisibleSeq: Int64,
         contiguousLoadedThroughSeq: Int64
     ) -> Int64? {
+        guard !search.isActive else { return nil }
         let candidateLimit = min(highestVisibleSeq, contiguousLoadedThroughSeq)
         let unreadFrontier = unreadMessageFrontier(through: candidateLimit)
         guard let candidate = readStateStore.queueVisibleCandidate(
@@ -631,7 +590,7 @@ final class ChatRoomViewModel {
         guard message.seq > 0 else { return }
         trackUnreadMessageSequence(message)
         admittedHiddenSeqs.insert(message.seq)
-        guard liveMode == .live, message.seq == readStateStore.frontierSeq + 1 else { return }
+        guard !search.isActive, liveMode == .live, message.seq == readStateStore.frontierSeq + 1 else { return }
         seedRoomReadLatest(from: message)
         windowMaxSeq = max(windowMaxSeq, message.seq)
         let unreadFrontier = unreadMessageFrontier(through: message.seq)
@@ -771,105 +730,7 @@ final class ChatRoomViewModel {
         try await messageUseCase.deleteMessage(message: message, room: room)
     }
 
-    func searchMessages(containing keyword: String) async throws {
-        let result = try await fetchSearchMessages(containing: keyword)
-        applySearchResult(result)
-    }
-
-    func startSearch(
-        containing keyword: String,
-        onResultApplied: @escaping @MainActor () -> Void
-    ) {
-        searchMessagesTask?.cancel()
-        searchGeneration &+= 1
-        let generation = searchGeneration
-
-        searchMessagesTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                try Task.checkCancellation()
-                let result = try await self.fetchSearchMessages(containing: keyword)
-                try Task.checkCancellation()
-                guard self.searchGeneration == generation else { return }
-                self.applySearchResult(result)
-                onResultApplied()
-            } catch is CancellationError {
-                return
-            } catch {
-                print("메시지 없음")
-            }
-        }
-    }
-
-    func cancelSearchWork() {
-        searchMessagesTask?.cancel()
-        searchMessagesTask = nil
-        searchGeneration &+= 1
-    }
-
-    func fetchSearchMessages(containing keyword: String) async throws -> ChatMessageSearchResult {
-        try await searchUseCase.searchMessages(roomID: roomID, keyword: keyword)
-    }
-
-    func applySearchResult(_ result: ChatMessageSearchResult) {
-        let hits = result.hits.filter { shouldAdmitMessage($0.message) }
-        searchSession = SearchSessionState(
-            keyword: result.keyword,
-            totalCount: hits.count,
-            source: result.source,
-            isAuthoritative: result.isAuthoritative,
-            hits: hits,
-            currentIndex: hits.isEmpty ? nil : hits.count
-        )
-        currentSearchKeyword = result.keyword
-        highlightedMessageIDs = searchUseCase.applyHighlight(
-            messageIDs: Set(hits.map { $0.message.ID })
-        )
-    }
-
-    func moveToPreviousSearchResult() -> Int? {
-        guard var session = searchSession else { return nil }
-        guard let current = session.currentIndex, current > 1 else {
-            return session.currentIndex
-        }
-        session.currentIndex = current - 1
-        searchSession = session
-        return session.currentIndex
-    }
-
-    func moveToNextSearchResult() -> Int? {
-        guard var session = searchSession else { return nil }
-        guard let current = session.currentIndex, current < session.hits.count else {
-            return session.currentIndex
-        }
-        session.currentIndex = current + 1
-        searchSession = session
-        return session.currentIndex
-    }
-
-    func searchMessage(at index: Int) -> ChatMessage? {
-        guard index > 0 else { return nil }
-        let target = index - 1
-        guard let session = searchSession, session.hits.indices.contains(target) else { return nil }
-        return session.hits[target].message
-    }
-
-    func loadMessagesAroundSearchAnchor(
-        _ anchor: ChatMessage,
-        beforeLimit: Int = 60,
-        afterLimit: Int = 60
-    ) async throws -> [ChatMessage] {
-        invalidateMessagePages()
-        let generation = pageGeneration
-        let messages = try await messageUseCase.loadMessagesAroundAnchor(
-            room: room,
-            anchor: anchor,
-            beforeLimit: beforeLimit,
-            afterLimit: afterLimit
-        )
-        guard generation == pageGeneration, !Task.isCancelled else { throw CancellationError() }
-        return visibleMessages(from: messages)
-    }
+    func cancelSearchWork() { search.suspend() }
 
     func applyVisibleWindowAfterSearchJump(_ messages: [ChatMessage]) {
         invalidateMessagePages()
@@ -882,11 +743,8 @@ final class ChatRoomViewModel {
     }
 
     func clearSearch() -> Set<String> {
-        cancelSearchWork()
         let previous = highlightedMessageIDs
-        highlightedMessageIDs = searchUseCase.clearHighlight()
-        currentSearchKeyword = nil
-        searchSession = nil
+        search.stop()
         return previous
     }
 

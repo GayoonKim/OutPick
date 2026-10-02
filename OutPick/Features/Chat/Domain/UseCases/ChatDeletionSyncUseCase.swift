@@ -72,6 +72,7 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
     private let persistence: ChatDeletionSyncPersisting
     private let mediaCleaner: ChatDeletionMediaCleaning
     private let pageSize: Int
+    private let searchFence: ChatSearchDeletionFence?
     private struct RoomKey: Hashable { let accountID: String; let roomID: String }
     private struct ReplyKey: Hashable { let accountID: String; let roomID: String; let ids: [String] }
     private var reconciliations: [RoomKey: (UUID, Task<Set<String>, Error>)] = [:]
@@ -91,12 +92,14 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         repository: ChatDeletionSyncRepositoryProtocol,
         persistence: ChatDeletionSyncPersisting,
         mediaCleaner: ChatDeletionMediaCleaning,
-        pageSize: Int = 100
+        pageSize: Int = 100,
+        searchFence: ChatSearchDeletionFence? = nil
     ) {
         self.repository = repository
         self.persistence = persistence
         self.mediaCleaner = mediaCleaner
         self.pageSize = max(1, min(pageSize, 100))
+        self.searchFence = searchFence
     }
 
     func reconcile(
@@ -133,7 +136,7 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
 
         if cursor == 0,
            allowEmptyLocalBootstrap,
-           !(try await persistence.hasServerMessages(roomID: roomID)) {
+           !(try await persistence.hasServerMessages(accountID: accountID, roomID: roomID)) {
             try await persistence.bootstrapCursor(head, accountID: accountID, roomID: roomID)
             await resumePendingCleanup()
             return []
@@ -152,17 +155,13 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
             if page.first?.revision == cursor + 1 {
                 usable = contiguousPrefix(page, after: cursor)
             } else {
-                usable = try await recoverFromLocalMessages(roomID: roomID, after: cursor, head: head)
+                usable = try await recoverFromLocalMessages(accountID: accountID, roomID: roomID, after: cursor, head: head)
             }
             guard !usable.isEmpty else {
                 throw ChatDeletionSyncError.revisionGap(expected: cursor + 1, actual: page.first?.revision)
             }
 
-            let cleanup = try await persistence.apply(
-                usable,
-                accountID: accountID,
-                roomID: roomID
-            )
+            let cleanup = try await applyWithSearchFence(usable, accountID: accountID, roomID: roomID)
             applied.formUnion(usable.map(\.messageID))
             cursor = usable.last?.revision ?? cursor
             await clean(cleanup)
@@ -196,11 +195,7 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         let cursor = try await persistence.cursor(accountID: accountID, roomID: event.roomID)
         switch event.kind {
         case .message(let delta) where delta.revision == cursor + 1:
-            let cleanup = try await persistence.apply(
-                [delta],
-                accountID: accountID,
-                roomID: event.roomID
-            )
+            let cleanup = try await applyWithSearchFence([delta], accountID: accountID, roomID: event.roomID)
             await clean(cleanup)
             return [delta.messageID]
         case .message(let delta) where delta.revision <= cursor:
@@ -280,11 +275,7 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
                 resolvedDeleted.map { ($0.messageID, $0) },
                 uniquingKeysWith: { lhs, rhs in lhs.revision >= rhs.revision ? lhs : rhs }
             ).values.map { $0 }
-            let cleanup = try await persistence.recordResolvedDeletions(
-                unique,
-                accountID: accountID,
-                roomID: roomID
-            )
+            let cleanup = try await applyWithSearchFence(unique, accountID: accountID, roomID: roomID, resolved: true)
             await clean(cleanup)
         }
         return try await persistence.sanitize(
@@ -294,16 +285,54 @@ actor ChatDeletionSyncUseCase: ChatDeletionSyncUseCaseProtocol {
         )
     }
 
+    private func applyWithSearchFence(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String,
+                                      resolved: Bool = false) async throws -> [ChatDeletionCleanupItem] {
+        // 이미 영속 반영한 주변 tombstone은 정리를 반복해도 검색 선택을 다시 시작하지 않는다.
+        // 신규 삭제와 marker 정책 교정은 기존처럼 쓰기 전에 동기 무효화한다.
+        let needsFence = resolved
+            ? try await persistence.requiresResolvedDeletionFence(deltas, accountID: accountID, roomID: roomID)
+            : true
+        let token = needsFence ? await searchFence?.begin(roomID: roomID) : nil
+        do {
+            let items: [ChatDeletionCleanupItem]
+            if resolved { items = try await persistence.recordResolvedDeletions(deltas, accountID: accountID, roomID: roomID) }
+            else { items = try await persistence.apply(deltas, accountID: accountID, roomID: roomID) }
+            if let token { await searchFence?.finish(token, succeeded: true) }
+            return items
+        } catch {
+            if let token { await searchFence?.finish(token, succeeded: false) }
+            throw error
+        }
+    }
+
     private func recoverFromLocalMessages(
+        accountID: String,
         roomID: String,
         after cursor: Int64,
         head: Int64
     ) async throws -> [ChatDeletionDelta] {
-        let ids = try await persistence.messageIDs(roomID: roomID)
-        let deltas = try await repository.deltas(roomID: roomID, messageIDs: ids)
-            .filter { $0.revision > cursor && $0.revision <= head }
-            .sorted { $0.revision < $1.revision }
-        return contiguousPrefix(deltas, after: cursor)
+        // 검색 전용 ID도 확인하되 ID/복구 delta를 각각 한 페이지 이상 배열에 쌓지 않는다.
+        var afterID: String?
+        var recovered: [Int64: ChatDeletionDelta] = [:]
+        let end = cursor + min(Int64(pageSize), head - cursor)
+        while true {
+            try Task.checkCancellation()
+            let ids = try await persistence.messageIDs(accountID: accountID, roomID: roomID, afterID: afterID, limit: pageSize)
+            if ids.isEmpty { break }
+            let deltas = try await repository.deltas(roomID: roomID, messageIDs: ids)
+            for delta in deltas where delta.revision > cursor && delta.revision <= end {
+                guard delta.roomID == roomID, ids.contains(delta.messageID) else {
+                    throw ChatDeletionSyncError.revisionGap(expected: cursor + 1, actual: delta.revision)
+                }
+                if let previous = recovered[delta.revision], previous.messageID != delta.messageID {
+                    throw ChatDeletionSyncError.revisionGap(expected: cursor + 1, actual: delta.revision)
+                }
+                recovered[delta.revision] = delta
+            }
+            afterID = ids.last
+            if ids.count < pageSize { break }
+        }
+        return contiguousPrefix(Array(recovered.values), after: cursor)
     }
 
     private func contiguousPrefix(_ deltas: [ChatDeletionDelta], after cursor: Int64) -> [ChatDeletionDelta] {

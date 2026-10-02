@@ -3,8 +3,8 @@ import GRDB
 
 protocol ChatDeletionSyncPersisting {
     func cursor(accountID: String, roomID: String) async throws -> Int64
-    func hasServerMessages(roomID: String) async throws -> Bool
-    func messageIDs(roomID: String) async throws -> [String]
+    func hasServerMessages(accountID: String, roomID: String) async throws -> Bool
+    func messageIDs(accountID: String, roomID: String, afterID: String?, limit: Int) async throws -> [String]
     func apply(
         _ deltas: [ChatDeletionDelta],
         accountID: String,
@@ -14,6 +14,7 @@ protocol ChatDeletionSyncPersisting {
     func pendingCleanupItems() async throws -> [ChatDeletionCleanupItem]
     func completeCleanup(_ item: ChatDeletionCleanupItem) async throws
     func sanitize(_ messages: [ChatMessage], accountID: String, roomID: String) async throws -> [ChatMessage]
+    func requiresResolvedDeletionFence(_ deltas: [ChatDeletionDelta], accountID: String, roomID: String) async throws -> Bool
     func recordResolvedDeletions(
         _ deltas: [ChatDeletionDelta],
         accountID: String,
@@ -38,22 +39,34 @@ final class GRDBChatDeletionSyncStore: ChatDeletionSyncPersisting {
         }
     }
 
-    func hasServerMessages(roomID: String) async throws -> Bool {
+    func hasServerMessages(accountID: String, roomID: String) async throws -> Bool {
         try await database.dbPool.read { db in
             try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM chatMessage WHERE roomID = ? AND seq > 0 LIMIT 1)",
-                arguments: [roomID]
+                sql: """
+                    SELECT EXISTS(SELECT 1 FROM chatMessage WHERE roomID = ? AND seq > 0)
+                        OR EXISTS(SELECT 1 FROM chatSearchSession WHERE accountID = ? AND roomID = ?)
+                    """,
+                arguments: [roomID, accountID, roomID]
             ) ?? false
         }
     }
 
-    func messageIDs(roomID: String) async throws -> [String] {
-        try await database.dbPool.read { db in
+    func messageIDs(accountID: String, roomID: String, afterID: String?, limit: Int) async throws -> [String] {
+        guard (1...100).contains(limit) else { throw ChatSearchPersistenceError.invalidPage }
+        return try await database.dbPool.read { db in
             try String.fetchAll(
                 db,
-                sql: "SELECT id FROM chatMessage WHERE roomID = ? AND seq > 0 ORDER BY seq ASC",
-                arguments: [roomID]
+                sql: """
+                    SELECT id FROM (
+                        SELECT id FROM chatMessage WHERE roomID = ? AND seq > 0 AND id > ?
+                        UNION
+                        SELECT h.messageID AS id FROM chatSearchHit h
+                        JOIN chatSearchSession s ON s.sessionID = h.sessionID
+                        WHERE s.accountID = ? AND s.roomID = ? AND h.messageID > ?
+                    ) ORDER BY id ASC LIMIT ?
+                    """,
+                arguments: [roomID, afterID ?? "", accountID, roomID, afterID ?? "", limit]
             )
         }
     }
@@ -129,6 +142,34 @@ final class GRDBChatDeletionSyncStore: ChatDeletionSyncPersisting {
                 sql: "DELETE FROM chatDeletionCleanup WHERE kind = ? AND path = ?",
                 arguments: [item.kind.rawValue, item.path]
             )
+        }
+    }
+
+    func requiresResolvedDeletionFence(
+        _ deltas: [ChatDeletionDelta], accountID: String, roomID: String
+    ) async throws -> Bool {
+        try await database.dbPool.read { db in
+            for delta in deltas where delta.roomID == roomID {
+                guard let row = try Row.fetchOne(db, sql: """
+                    SELECT seq, revision, deletedAt IS ? AS sameDeletedAt, anonymizesSender FROM chatDeletedMessageMarker
+                    WHERE accountID = ? AND roomID = ? AND messageID = ?
+                    """, arguments: [delta.deletedAt, accountID, roomID, delta.messageID]) else { return true }
+                let seq: Int64 = row["seq"]
+                let revision: Int64 = row["revision"]
+                // GRDB의 밀리초 저장 표현으로 비교하여 서버 시각의 더 높은 정밀도를 변경으로 오인하지 않는다.
+                let sameDeletedAt: Bool = row["sameDeletedAt"]
+                let anonymizesSender: Bool = row["anonymizesSender"]
+                // marker upsert의 실제 상태 변화만 알린다. 같은 tombstone을 다시 읽어도 이동은 유지한다.
+                if delta.seq != seq || delta.revision > revision
+                    || (delta.revision >= revision && delta.anonymizesSender != anonymizesSender)
+                    || (delta.deletedAt != nil && !sameDeletedAt) { return true }
+                if try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM chatSearchHit h
+                    JOIN chatSearchSession s ON s.sessionID = h.sessionID
+                    WHERE s.accountID = ? AND s.roomID = ? AND h.messageID = ?)
+                    """, arguments: [accountID, roomID, delta.messageID]) == true { return true }
+            }
+            return false
         }
     }
 
@@ -284,6 +325,10 @@ final class GRDBChatDeletionSyncStore: ChatDeletionSyncPersisting {
         roomID: String,
         db: Database
     ) throws {
+        try db.execute(sql: """
+            DELETE FROM chatSearchHit WHERE messageID = ? AND sessionID IN
+                (SELECT sessionID FROM chatSearchSession WHERE accountID = ? AND roomID = ?)
+            """, arguments: [delta.messageID, accountID, roomID])
         try db.execute(sql: """
             INSERT INTO chatDeletedMessageMarker(
                 accountID, roomID, messageID, seq, revision, deletedAt, anonymizesSender

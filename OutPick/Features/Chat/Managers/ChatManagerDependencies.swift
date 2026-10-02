@@ -7,10 +7,10 @@
 
 import Foundation
 
-struct ChatManagerProvider {
+@MainActor struct ChatManagerProvider {
     let messageManager: ChatMessageManaging
     let roomImageManager: RoomImageManaging
-    let searchManager: ChatSearchManaging
+    let searchSessionManager: ChatSearchSessionManaging
     let profileSyncManager: ChatProfileSyncManaging
     let networkStatusProvider: NetworkStatusProviding
 
@@ -20,24 +20,17 @@ struct ChatManagerProvider {
         persistence: ChatPersistenceProvider,
         messageManager: ChatMessageManaging? = nil,
         roomImageManager: RoomImageManaging? = nil,
-        searchManager: ChatSearchManaging? = nil,
         profileSyncManager: ChatProfileSyncManaging? = nil,
         moderationLifecycleRepository: ChatModerationLifecycleRepositoryProtocol =
             CloudFunctionsChatModerationLifecycleRepository(),
         deletionSanitizer: ChatDeletionSyncUseCaseProtocol? = nil,
+        searchVisibility: (any UserBlockVisibilityObserving)? = nil,
+        searchDeletionFence: ChatSearchDeletionFence,
         cacheSession: ChatMessageCacheSession = ChatMessageCacheSession(),
         currentAccountID: @escaping @Sendable () -> String = { LoginManager.shared.canonicalUserID },
         networkStatusProvider: NetworkStatusProviding = NWPathNetworkStatusProvider()
     ) {
         let resolvedNetworkStatusProvider = networkStatusProvider
-        let resolvedSearchManager = searchManager ?? ChatSearchManager(
-            messageSearch: persistence.messageStore,
-            messageRepository: repositories.messageRepository,
-            networkStatusProvider: resolvedNetworkStatusProvider,
-            deletionSanitizer: deletionSanitizer,
-            currentAccountID: currentAccountID
-        )
-
         self.messageManager = messageManager ?? ChatMessageManager(
             messageRepository: repositories.messageRepository,
             moderationLifecycleRepository: moderationLifecycleRepository,
@@ -51,7 +44,10 @@ struct ChatManagerProvider {
         self.roomImageManager = roomImageManager ?? RoomImageService(
             imageStorageRepository: repositories.imageStorageRepository
         )
-        self.searchManager = resolvedSearchManager
+        self.searchSessionManager = ChatSearchSessionController(remote: repositories.messageRepository,
+            local: persistence.searchLocalReader, store: persistence.searchStore, visibility: searchVisibility,
+            validation: ChatSearchValidationRepository(access: moderationLifecycleRepository, deletion: deletionSanitizer,
+                currentAccountID: currentAccountID), network: resolvedNetworkStatusProvider, deletionFence: searchDeletionFence)
         self.profileSyncManager = profileSyncManager ?? ChatProfileSyncManager(
             publicProfileRepository: publicProfileRepository,
             profileCache: persistence.profileStore

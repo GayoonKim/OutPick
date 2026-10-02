@@ -66,7 +66,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     var convertImagesTask: Task<Void, Error>? = nil
     var convertVideosTask: Task<Void, Error>? = nil
-    private var searchJumpTask: Task<Void, Never>?
+    private var searchBindings = Set<AnyCancellable>()
+    private var renderedSearchHighlight: String?
     private var latestJumpTask: Task<Void, Never>?
     private var latestJumpErrorTask: Task<Void, Never>?
     private var latestJumpPreviewImageTask: Task<Void, Never>?
@@ -257,17 +258,12 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         view.isHidden = true
         view.translatesAutoresizingMaskIntoConstraints = false
         view.onPreviousTapped = { [weak self] in
-            guard let self else { return }
-            guard let index = self.chatRoomViewModel.moveToPreviousSearchResult() else { return }
-            self.searchUI.updateSearchResult(self.makeSearchResultState())
-            self.moveToMessageAndShake(index)
+            self?.chatRoomViewModel.search.move(.older)
         }
         view.onNextTapped = { [weak self] in
-            guard let self else { return }
-            guard let index = self.chatRoomViewModel.moveToNextSearchResult() else { return }
-            self.searchUI.updateSearchResult(self.makeSearchResultState())
-            self.moveToMessageAndShake(index)
+            self?.chatRoomViewModel.search.move(.newer)
         }
+        view.onActionTapped = { [weak self] in self?.chatRoomViewModel.search.retry() }
         
         return view
     }()
@@ -348,6 +344,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }()
     
     private var searchUIBottomConstraint: NSLayoutConstraint?
+    private var searchMessageBottomConstraint: NSLayoutConstraint?
     
     private var scrollTargetIndex: IndexPath?
     
@@ -485,8 +482,8 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         initialLoadTask?.cancel()
         initialLoadTask = nil
         chatRoomViewModel.cancelSearchWork()
-        searchJumpTask?.cancel()
-        searchJumpTask = nil
+        if isMovingFromParent || isBeingDismissed { _ = chatRoomViewModel.clearSearch() }
+        searchBindings.removeAll()
         latestJumpTask?.cancel()
         latestJumpTask = nil
         latestJumpErrorTask?.cancel()
@@ -1326,6 +1323,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
 
     @MainActor
     private func setupChatUI() {
+        searchMessageBottomConstraint?.isActive = false
         // 이전 상태(참여 전)에 설정된 제약을 정리하기 위해, 중복 추가를 방지하고 기존 제약과 충돌하지 않도록 제거
         if chatMessageCollectionView.superview != nil {
             chatMessageCollectionView.removeFromSuperview()
@@ -1349,6 +1347,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         chatUIViewBottomConstraint = chatUIView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         NSLayoutConstraint.deactivate(chatConstraints)
+        chatMessageCollectionViewBottomConstraint = chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor)
         chatConstraints = [
             chatUIView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatUIView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -1358,7 +1357,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             chatMessageCollectionView.topAnchor.constraint(equalTo: customNavigationBar.bottomAnchor),
             chatMessageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chatMessageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            chatMessageCollectionView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor),
+            chatMessageCollectionViewBottomConstraint!,
 
             latestMessageJumpView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             latestMessageJumpView.bottomAnchor.constraint(equalTo: chatUIView.topAnchor, constant: -12),
@@ -1373,6 +1372,10 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             latestJumpErrorLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
         ]
         NSLayoutConstraint.activate(chatConstraints)
+        if searchUI.superview != nil {
+            searchMessageBottomConstraint = chatMessageCollectionView.bottomAnchor.constraint(equalTo: searchUI.topAnchor, constant: -8)
+            updateSearchMessageBoundary()
+        }
         
         view.bringSubviewToFront(chatUIView)
         view.bringSubviewToFront(latestMessageJumpView)
@@ -1732,6 +1735,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     }
     
     private func setJoinRoombtn() {
+        searchMessageBottomConstraint?.isActive = false
         self.joinRoomBtn.clipsToBounds = true
         self.joinRoomBtn.layer.cornerRadius = 20
         self.joinRoomBtn.backgroundColor = OutPickTheme.ColorToken.accent
@@ -2021,151 +2025,72 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
     
     //MARK: 대화 내용 검색
     private func bindSearchEvents() {
+        searchBindings.removeAll()
+        let search = chatRoomViewModel.search
+        search.onChange = { [weak self] in self?.renderSearch() }
+        search.display = { [weak self] messages, target, isCurrent in
+            guard let self, self.isUserInCurrentRoom else { return false }
+            return await self.displaySearchWindow(messages, target: target, isCurrent: isCurrent)
+        }
         customNavigationBar.searchKeywordPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] keyword in
-                guard let self = self else { return }
-                guard self.isParticipantPreviewMode == false else { return }
-                
-                self.clearPreviousHighlightIfNeeded()
-                
-                guard let keyword = keyword, !keyword.isEmpty else {
-                    print(#function, "✅✅✅✅✅ keyword is empty ✅✅✅✅✅")
-                    return
-                }
-                self.chatRoomViewModel.startSearch(containing: keyword) { [weak self] in
-                    self?.applyHighlight()
-                }
-            }
-            .store(in: &cancellables)
-        
+                guard let self, !self.isParticipantPreviewMode else { return }
+                self.chatRoomViewModel.search.start(keyword ?? "")
+            }.store(in: &searchBindings)
         customNavigationBar.cancelSearchPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard let self = self else { return }
-                self.exitSearchMode()
-            }
-            .store(in: &cancellables)
-        
+            .sink { [weak self] in self?.exitSearchMode() }
+            .store(in: &searchBindings)
+        search.resume()
+        renderSearch()
     }
 
-    private func makeSearchResultState() -> ChatSearchUIView.SearchResultState {
-        let state = chatRoomViewModel.currentSearchDisplayState
-        return ChatSearchUIView.SearchResultState(
-            totalCount: state.totalCount,
-            displayIndex: state.displayIndex,
-            canMoveToPrevious: state.canMoveToPrevious,
-            canMoveToNext: state.canMoveToNext
-        )
-    }
-    
-    @MainActor
-    private func moveToMessageAndShake(_ idx: Int) {
-        guard let message = chatRoomViewModel.searchMessage(at: idx) else { return }
-
-        if let indexPath = indexPath(ofMessageID: message.ID) {
-            if let cell = chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell {
-                cell.shakeHorizontally()
-            } else {
-                chatMessageCollectionView.scrollToMessage(at: indexPath)
-                scrollTargetIndex = indexPath
+    private func renderSearch() {
+        let search = chatRoomViewModel.search
+        searchUI.updateSearchResult(search.state)
+        let previous = renderedSearchHighlight
+        renderedSearchHighlight = search.highlightedID
+        if previous != renderedSearchHighlight {
+            reconfigureMessageItems(messageIDs: Set([previous, renderedSearchHighlight].compactMap { $0 }))
+            if renderedSearchHighlight == nil {
+                chatMessageCollectionView.visibleCells.compactMap { $0 as? ChatMessageCell }.forEach { $0.highlightKeyword(nil) }
             }
-            return
         }
-
-        searchJumpTask?.cancel()
-        searchJumpTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let contextMessages = try await self.chatRoomViewModel.loadMessagesAroundSearchAnchor(
-                    message,
-                    beforeLimit: 60,
-                    afterLimit: 60
-                )
-                if Task.isCancelled { return }
-
-                await MainActor.run {
-                    self.replaceVisibleMessageWindowForSearchJump(with: contextMessages)
-                    self.chatRoomViewModel.applyVisibleWindowAfterSearchJump(contextMessages)
-
-                    guard let targetIndexPath = self.indexPath(ofMessageID: message.ID) else { return }
-                    if let cell = self.chatMessageCollectionView.cellForItem(at: targetIndexPath) as? ChatMessageCell {
-                        cell.shakeHorizontally()
-                    } else {
-                        self.chatMessageCollectionView.scrollToMessage(at: targetIndexPath)
-                        self.scrollTargetIndex = targetIndexPath
-                    }
-                }
-            } catch {
-                print("❌ 검색 점프 컨텍스트 로드 실패: \(error)")
-            }
+        if case .failed(let failure) = search.snapshot?.count {
+            if failure == .accessLost || failure == .roomClosed { refreshRoomAccessIfNeeded(force: true) }
         }
     }
 
-    @MainActor
-    private func replaceVisibleMessageWindowForSearchJump(with messages: [ChatMessage]) {
-        guard !messages.isEmpty else { return }
-
-        // Reset snapshot/window state and rebuild around the anchor context.
-        var emptySnapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-        emptySnapshot.appendSections([.main])
-        dataSource.apply(emptySnapshot, animatingDifferences: false)
-
-        _ = messageWindowStore.reset(messages: [], readBoundarySeq: nil)
-        scrollTargetIndex = nil
-
-        addMessages(messages, updateType: .initial)
-    }
-    
-    @MainActor
-    private func applyHighlight() {
-        let highlightedIDs = chatRoomViewModel.highlightedMessageIDs
-        var snapshot = dataSource.snapshot()
-        
-        let itemsToRealod = snapshot.itemIdentifiers.compactMap { item -> Item? in
-            if case let .message(message) = item, highlightedIDs.contains(message.ID){
-                return .message(message)
-            }
-            return nil
+    private func displaySearchWindow(_ messages: [ChatMessage], target: String,
+                                     isCurrent: @escaping @MainActor () -> Bool) async -> Bool {
+        guard isCurrent(), !searchUI.isHidden else { return false }
+        let admitted = chatRoomViewModel.admitVisibleMessages(from: messages)
+        guard admitted.contains(where: { $0.ID == target && !$0.isDeleted }) else { return false }
+        let previous = messageWindowStore
+        let offset = chatMessageCollectionView.contentOffset
+        let items = messageWindowStore.reset(messages: admitted, readBoundarySeq: nil)
+        await applyWindowSnapshotAndWait(items)
+        guard isCurrent(), !searchUI.isHidden else { return false }
+        guard let indexPath = indexPath(ofMessageID: target),
+              chatMessageCollectionView.displayMessage(at: indexPath) else {
+            messageWindowStore = previous
+            await applyWindowSnapshotAndWait(previous.items)
+            if isCurrent() { chatMessageCollectionView.setContentOffset(offset, animated: false) }
+            return false
         }
-        
-        if !itemsToRealod.isEmpty {
-            snapshot.reconfigureItems(itemsToRealod)
-            dataSource.apply(snapshot, animatingDifferences: false)
-        }
-        
-        searchUI.updateSearchResult(makeSearchResultState())
-        if let idx = chatRoomViewModel.currentFilteredMessageIndex { moveToMessageAndShake(idx) }
+        guard isCurrent() else { return false }
+        chatRoomViewModel.applyVisibleWindowAfterSearchJump(admitted)
+        scheduleProfileCacheRefresh(for: admitted)
+        (chatMessageCollectionView.cellForItem(at: indexPath) as? ChatMessageCell)?.shakeHorizontally()
+        return true
     }
-    
+
     @MainActor
     private func clearPreviousHighlightIfNeeded() {
-        searchJumpTask?.cancel()
-        searchJumpTask = nil
-
-        var snapshot = dataSource.snapshot()
-        let previousHighlightedIDs = chatRoomViewModel.highlightedMessageIDs
-        
-        let itemsToReload = snapshot.itemIdentifiers.compactMap { item -> Item? in
-            if case let .message(message) = item, previousHighlightedIDs.contains(message.ID) {
-                return .message(message)
-            }
-            return nil
-        }
-
         _ = chatRoomViewModel.clearSearch()
         scrollTargetIndex = nil
-        
-        if !itemsToReload.isEmpty {
-            snapshot.reconfigureItems(itemsToReload)
-            dataSource.apply(snapshot, animatingDifferences: false)
-        }
-
-        chatMessageCollectionView.visibleCells
-            .compactMap { $0 as? ChatMessageCell }
-            .forEach { $0.highlightKeyword(nil) }
-        
-        searchUI.updateSearchResult(makeSearchResultState())
+        renderSearch()
     }
     
     @MainActor
@@ -2174,6 +2099,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         self.searchUI.isHidden = true
         self.chatUIView.isHidden = false
         
+        updateSearchMessageBoundary()
         clearPreviousHighlightIfNeeded()
         renderLatestMessageJump()
     }
@@ -2185,12 +2111,21 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
             searchUIBottomConstraint = searchUI.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -10)
             
             NSLayoutConstraint.activate([
-                searchUI.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-                searchUI.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-                searchUIBottomConstraint!,
-                searchUI.heightAnchor.constraint(equalToConstant: 50)
+                searchUI.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+                searchUI.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+                searchUIBottomConstraint!
             ])
+            searchMessageBottomConstraint = chatMessageCollectionView.bottomAnchor.constraint(equalTo: searchUI.topAnchor, constant: -8)
         }
+    }
+
+    private func updateSearchMessageBoundary() {
+        // 검색 바를 대화 위에 겹치지 않고 목록 바깥의 하단 영역으로 확보한다.
+        chatMessageCollectionViewBottomConstraint?.isActive = false
+        searchMessageBottomConstraint?.isActive = false
+        if searchUI.isHidden { chatMessageCollectionViewBottomConstraint?.isActive = true }
+        else { searchMessageBottomConstraint?.isActive = true }
+        view.setNeedsLayout()
     }
     
     @MainActor
@@ -2205,6 +2140,7 @@ class ChatViewController: UIViewController, UINavigationControllerDelegate, Chat
         
         searchUI.isHidden = false
         chatUIView.isHidden = true
+        updateSearchMessageBoundary()
         renderLatestMessageJump()
     }
     

@@ -8,7 +8,7 @@
 import Foundation
 
 /// 메시지 관련 데이터베이스 작업을 위한 프로토콜
-protocol FirebaseMessageRepositoryProtocol {
+protocol FirebaseMessageRepositoryProtocol: ChatSearchCandidateReading {
     func fetchMessageRange(roomID: String, range: ChatMessageSequenceRange) async throws -> [ChatMessage]
     func fetchConfirmedMessage(roomID: String, messageID: String) async throws -> ChatMessage?
     func fetchMessageDeletionRevision(roomID: String) async throws -> Int64
@@ -34,10 +34,16 @@ protocol FirebaseMessageRepositoryProtocol {
     func fetchMessagesAfter(room: ChatRoom, after messageID: String, limit: Int) async throws -> [ChatMessage]
 
     /// 서버 인덱스 기반 방 전체 메시지 검색 (추후 백엔드 검색 API 연동)
-    func searchMessagesInRoom(roomID: String, keyword: String) async throws -> ChatMessageServerSearchResponse
 }
 
 extension FirebaseMessageRepositoryProtocol {
+    // 기존 fake의 단계적 이전을 위한 실패 기본값이다. 성공한 빈 결과로 위장하지 않는다.
+    func fetchSearchUpperSequence(roomID: String) async throws -> Int64 {
+        throw ChatSearchFailure.indexConfiguration
+    }
+    func fetchSearchCandidatePage(scope: ChatSearchScope, after: ChatSearchCursor?, limit: Int) async throws -> ChatSearchCandidatePage {
+        throw ChatSearchFailure.indexConfiguration
+    }
     func fetchMessageRange(roomID: String, range: ChatMessageSequenceRange) async throws -> [ChatMessage] {
         throw ChatMessagePageError.invalidRequest
     }
