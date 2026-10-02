@@ -1,5 +1,17 @@
 # Chat Entrypoints
 
+## 채팅 메시지 검색
+
+[최종 계약·검증·배포 경계](../architecture/CHAT_MESSAGE_SEARCH.md)를 기준으로 한다. 구현·DEV QA는 완료했다.
+
+- 화면 진입: CustomNavigationBarView → ChatViewController.bindSearchEvents → ChatRoomViewModel → ChatSearchPresentationController → ChatRoomSearchSessionUseCase → ChatSearchSessionController/ChatSearchNavigator. ChatContainer와 ChatManagerProvider가 Repository·Store·접근/삭제 검증·공유 visibility를 조립한다.
+- 조회 수요: ChatSearchRun.pagesRemaining과 SessionController.requestPages/drive가 최초/계속 찾기 최대 5페이지, 사용자 과거 이동 후 잔여 10개 이하 선로딩 1페이지를 제한한다. 페이지당 후보 100개이며 새 유효 결과를 얻으면 멈춘다. 유휴·자동 선택은 조회 예산을 늘리지 않는다.
+- 표시: ChatSearchPresentationState.positionTitle은 실제 이동 완료 후 현재 순번/확보 개수(1/14)를 표시한다. ChatSearchUIView의 하단 capsule·중앙 숫자·오른쪽 화살표와 ChatViewController.updateSearchMessageBoundary가 마지막 메시지 가림을 막는다. 이동/선로딩은 숫자만 갱신하고 초기 대기에만 스피너를 표시한다.
+- 이동: ChatSearchNavigator는 마지막 사용자 의도를 유지한다. ChatSearchContextUseCase의 anchor+전후 60개 로딩, displaySearchWindow의 diffable completion과 실제 표시 성공 후 순번을 확정한다. 검색 중 visible/hidden 경로 모두 읽음 frontier 증가를 막는다.
+- 수명: UserBlockVisibilityStore의 accountEpoch/revision/ready, ChatSearchDeletionFence의 삭제 write 경계, ChatSearchAppLifecycleBinding의 foreground 검증, 계정 종료 stop을 따른다. 결과 삭제/차단 시 확보된 인접 결과만 선택한다. 차단 해제는 신규 검색에서 복구한다.
+- 삭제 주변 반복 방지: ChatDeletionSyncUseCase.sanitize → GRDBChatDeletionSyncStore.requiresResolvedDeletionFence에서 영속 marker가 동일하면 검색 재무효화만 생략한다. 실제 scrub은 유지하며 삭제 시각은 DB 저장 정밀도로 비교한다.
+- 저장/정규화: ChatMessageSearchIndex/ChatSearchUnicodeData, Socket messageSearchIndex.js, FirebaseChatSearchRepository/FirestoreChatSearchTransport, GRDBChatSearchStore/ChatSearchLocalReader를 본다. 기존 ChatSearchManager·전량 배열 검색 API는 제거했다.
+
 ## 채팅 미디어 7일 만료
 
 [최종 계약·검증·한계](../architecture/CHAT_MEDIA_RETENTION.md)를 기준으로 한다.

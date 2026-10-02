@@ -117,6 +117,9 @@
 
 ## 마이페이지 편집
 
+- 차단 목록(2026-10-02 UI 개선): `Controller/MyPageViewController.swift` ACTIVITY의 브랜드 요청 내역 다음 ‘차단한 사용자’ → `MyPageViewModel.blockedUsersTapped` → `MyPageCoordinator.showBlockedUsers` → `MyPageContainer.makeBlockedUsersViewController`. 우측 설정 메뉴에서는 제거했다.
+- `BlockedUsersViewModel.swift`는 기존 차단 관계 목록에 공개 프로필을 표시되는 행별로 조회해 합친다. 닉네임 스냅샷/기본 avatar fallback, 프로필 조회 중복 억제·새 목록 generation·해제 중복 억제·늦은 응답 배제를 관리한다. `Views/BlockedUsersViewController.swift`는 매거진 헤더/인원수/빈 목록·실패/재시도, `Views/BlockedUserCell.swift`는 AvatarImageView/닉네임/명시적 해제 버튼을 표시한다. 프로필 상세 이동 없음. Container에 이미 주입된 공개 프로필 Repository·AvatarImageManager·UnblockUseCase를 재사용하며 서버 API/데이터 계약은 동일하다.
+- 검증 위치: `OutPickTests/BlockedUsersViewModelTests.swift`, `verification/blocked-users.json`. 검색 차단/해제 효과와 새 메뉴·행 UI·차단 해제의 사용자 실기기 QA를 완료했다(2026-10-02). [최종 기록](../architecture/CHAT_MESSAGE_SEARCH.md).
 - 조립/route:
   - `OutPick/Features/MyPage/MyPageCompositionRoot.swift`
   - `MyPageContainer.swift`, `MyPageCoordinator.swift`

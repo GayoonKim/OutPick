@@ -1,5 +1,17 @@
 # Test Entrypoints
 
+## 채팅 검색·차단 목록
+
+[최종 검증 결과·수동 QA·배포 경계](../architecture/CHAT_MESSAGE_SEARCH.md)를 본다. 단계별 phase JSON은 당시 누적 게이트이며 최종 UI 회귀는 search-toolbar.json이다.
+
+- verification/chat-search/search-toolbar.json: 정규화·Repository·GRDB migration/삭제/cleanup·세션·fallback·visibility·이동·읽음 회귀. 최초 500후보 상한, 사용자 과거 이동 후 잔여 10개 선로딩, 유휴 무조회, 현재 순번/확보 개수, 이동/선로딩 스피너 없음, 동일 tombstone 반복 이동 방지를 포함한다.
+- ChatSearchNavigationTests의 repeatedContextTombstoneDoesNotRestartAutomaticSelection은 실제 GRDB/삭제 UseCase/Presentation을 결합한다. GRDBChatDeletionSyncStoreTests는 중복/새 revision/같은 revision 정책 교정/소수점 시각을 검사한다.
+- verification/blocked-users.json: BlockedUsersViewModelTests의 행별 수요 조회·프로필 실패 fallback·최신 사진/닉네임·중복 해제 억제·재시도·늦은 응답 배제 6개와 기존 visibility/avatar/config 회귀를 실행한다. 실제 메뉴·화면·해제는 사용자 수동 QA로 확인했다.
+- verification/chat-search/phase-6.json: Node Unicode/writer, Firestore emulator, iOS 및 ChatSearchScaleTests의 18개 규모/분포를 실행한다. 전량 reference 비교는 테스트 드라이버가 명시적으로 계속 찾기를 반복하는 측정이다. 제품이 백그라운드에서 전량 조회한다는 뜻이 아니다.
+- contracts/chat-search의 고정 fixture 25개·Unicode corpus 19,074행·매핑을 Swift/Node에서 검사한다. Socket/test/messages/messageSearchPersistence.test.js와 firestore-tests/chat-message-search.emulator.test.mjs가 서버 저장·삭제 경계를 검증한다.
+- DEV 관리자 실쿼리는 로컬 전용 harness로 확인했다. 정리한 QA 자료를 다시 생성하는 스크립트·로컬 dev-live 설정은 배포/회귀 게이트에 포함하지 않는다. 인증된 앱·오프라인·계정 전환·미읽음·방 종료는 사용자/Simulator QA 증거와 구분한다.
+- verification/chat-media-retention.json의 migration 필수 ID는 26번째 migration 이름으로 갱신했다. 이 변경이 미디어 전체 게이트 재실행을 의미하지 않는다.
+
 ## 채팅 텍스트 전송·키보드
 
 - `OutPickTests/KeyboardDismissSupportTests.swift`: 실제 `UIWindow`에 설치한 공통 제스처의 delegate에 테스트 touch를 전달해 전송 버튼·내부 아이콘 제외, 텍스트 입력 보호, 배경 터치 허용을 검증한다. 실제 손가락 탭·키보드 애니메이션·서버 전송을 검증하는 테스트는 아니다.

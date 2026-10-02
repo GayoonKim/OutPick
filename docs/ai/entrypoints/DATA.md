@@ -1,5 +1,17 @@
 # Data Entrypoints
 
+## 채팅 검색 임시 결과
+
+[최종 데이터/API 계약](../architecture/CHAT_MESSAGE_SEARCH.md)을 기준으로 한다.
+
+- ChatMessageSearchSession.swift → ChatSearchPersisting.swift → GRDBChatSearchStore.swift. ChatSearchSQL.swift의 26번째 migration(createChatSearchSessions)은 일반 캐시와 별도 session/hit/blockedAuthor 테이블을 생성한다. 본문·첨부를 복제하지 않고 ID·seq·작성자 metadata만 보관한다.
+- commitPage는 accountEpoch/generation/visibilityRevision·기대 cursor 검사, 삭제/차단 배제, insert-ignore, cursor/소진 기록을 한 transaction으로 처리한다. insertedCount로 신규 결과 여부를 판정한다. count/ordinal은 현재 유효 행 기준이며 결과 조회는 최대 100개다.
+- FirebaseChatSearchRepository의 opaque cursor는 세션·방·검색어·상한과 마지막 원본 후보(seq, ID)를 묶는다. 서버 source만 허용하고 cache/pending·잘못된 정렬·손상된 v2 projection을 거부한다.
+- GRDBChatSearchLocalReader는 고정 DatabaseSnapshot의 seq 범위를 최대 100개씩 읽어 동일 Swift contains를 적용한다. LIKE 전량 배열 검색은 없다.
+- GRDBChatDeletionSyncStore.messageIDs는 일반 캐시와 검색 전용 hit의 합집합을 최대 100개씩 복구한다. marker와 hit 제거는 원자적이다. requiresResolvedDeletionFence는 marker의 seq/revision/익명화/시각 및 잔존 hit를 비교해 중복 무효화를 막는다.
+- AppDatabase 재시작·계정 삭제·ChatRoomCleanupSQL·검색 종료가 임시 결과를 정리한다. 일반 캐시 prune은 검색 hit를 지우지 않는다. ChatPersistenceProvider가 동일 DB의 searchStore/searchLocalReader를 제공한다.
+- UserBlockVisibilityStore의 차단 집합은 세션 동안 누적하며 해제 후 신규 검색에서 복구한다. 삭제 write 완료/실패가 확인되기 전 공개를 보류한다. 주변 본문은 anchor+전후 60개, 선택 제거 시 neighbor로 확보된 인접 metadata 1개를 찾는다.
+
 ## 채팅 미디어 만료 계약
 
 - 서버 contract 3 확정이 `sentAt`, `mediaExpiresAt = sentAt + 168시간`, `attachmentID`, 원본·썸네일 bucket/path/generation을 생성한다. 메시지·mediaIndex·delivery 응답·답장 preview에 필요한 계약을 전달한다.

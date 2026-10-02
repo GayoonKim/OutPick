@@ -1,5 +1,15 @@
 # Firebase Entrypoints
 
+## 채팅 메시지 검색
+
+[최종 계약·검증·배포 경계](../architecture/CHAT_MESSAGE_SEARCH.md)를 기준으로 한다.
+
+- Socket messagePayload.js/sequenceStore.js → messageSearchIndex.js가 서버 본문에서 v2 projection을 생성한다. 클라이언트 검색 필드는 버리고 기존 seq/ACK/재전송 의미를 보존한다.
+- FirebaseMessageRepository가 같은 Firestore 인스턴스로 FirebaseChatSearchRepository/FirestoreChatSearchTransport를 조립한다. 배열 token + seq 상한, seq DESC/documentID DESC, 최대 100개, 값 cursor, source=.server가 계약이다.
+- firestore.indexes.json에 Messages COLLECTION 범위의 searchChars/searchNgrams2 각각 CONTAINS + seq DESC + __name__ DESC를 추가했다. Rules·Callable·Functions 제품 코드는 변경하지 않았다.
+- DEV outpick-test 인덱스 2개 READY, Socket outpick-socket-development-search-1002 트래픽 100%, 실제 관리자 인덱스 쿼리 및 인증된 앱 전송/검색 QA를 확인했다(2026-10-02). 운영 반영 증거가 아니다.
+- firestore-tests/chat-message-search.emulator.test.mjs는 일반/관리자 삭제·탈퇴 tombstone의 검색 필드 제거, 페이지 cursor·고정 상한·삭제 경계·동률·폐쇄 방 거부를 검사한다.
+
 ## 채팅 미디어 7일 만료
 
 - `Socket/src/media/directMediaUploadService.js`가 메시지·mediaIndex·delivery job·expiry job을 같은 transaction에서 확정한다. `mediaHandlers`는 contract 3만 허용하며 구형 worker 결과는 `functions/src/chat/media/readyService.ts`에서 새 메시지로 발행하지 않는다.
@@ -383,6 +393,7 @@ durable 시즌 discovery의 enqueue 완료 기록은 job을 transaction으로 �
 
 ### 전역 사용자 차단
 
+- 2026-10-02 검색 QA에서 DEV 구버전 blockUser·unblockUser 미배포를 확인해 기존 최신 두 함수만 반영했다. outpick-test `blockuser-00004-bas`/`unblockuser-00001-quk` ACTIVE, Functions 299개 및 사용자 차단/해제 QA 통과. [최종 검증·배포 경계](../architecture/CHAT_MESSAGE_SEARCH.md).
 - owner-only source는 `users/{uid}/blockedUsers/{blockedUID}`이며 기존 Rules로 본인 read만 허용하고 client write는 막는다. 이번 Phase 4에는 Rules/index 변경이 없다.
 - callable `blockUser`/`unblockUser`는 `functions/src/lookbook/safety/blockContracts.ts`의 exact payload 검증과 `functions.ts`의 인증 UID 권위 mutation을 사용한다. 자기 차단과 unknown field를 거부하고 차단 최초 `createdAt`을 보존한다.
 - iOS 서버 최신화는 본인 blockedUsers collection을 직접 읽고, 룩북 hidden author 조회는 더 이상 `blockingMe` collection-group을 합치지 않는다.
