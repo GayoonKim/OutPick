@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "runTimeoutMs": 180000,
+  "inputs": [
+    "tools/verification-gate",
+    "verification/lookbook-queue-contract.json",
+    "AGENTS.md"
+  ],
+  "checks": [
+    {
+      "id": "queue-gate-bootstrap",
+      "command": "node",
+      "args": [
+        "--test",
+        "tools/verification-gate/gate.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "command",
+      "nodeMajor": 24
+    }
+  ]
+}

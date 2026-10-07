@@ -1,5 +1,164 @@
 # OutPick Entrypoints
 
+Q7 합의한 검증 완료(2026-10-07): [최종 결과·커밋 기록·후속 미검증](tasks/lookbook-import-performance/product-queue-q7-final-results.md). K실제종료→같은execattempt2새파싱/재검토/저장, L총5회소진→실패목록→맨뒤수동새exec/새5회→성공제거를확인했다. K/L전체8접수·124JPEG·새task6/누적24·108.957초·queue/task둘다idle. 새26후보0%/base12 100%,서버필수6게이트와앱28개passed. 서버/Worker/앱/검증 커밋4개를 생성했고 설계·결과 문서67개 포함도 사용자 승인으로 확정했다. 실제장시간/24h삭제·관리자웹은후속미검증. 아래시점별구현중/미배포는과거이력이다.
+
+Q7 이어 실행 구현(2026-10-07): 사용자 승인으로 기존 K3건·남은5접수·새20분창1회·추가OOM0을 고정했다. `tools/lookbook-import-worker/scripts/q7-retry-runner.mjs --continue=true --fault-campaign=<새UUID>`는 `q7-retry-contract.mjs`의 동일3영수증·oldrun 실제 증거·미공개 원장 검사를 통과해야 같은 K task1개를 전달한다. 원본은 배타적 `continuation-original.json`에 보존하며 새 장애 campaign은 L만 대상으로 한다. QV13/14 포함 verifier40개 통과(`1791350705468-a622bcfb-7122-4c77-83d2-b5f4cbfcc93a`). 새 Worker snapshot 필수 검사/배포와 실제 검증은 아직 전이다. [확정 실행안](tasks/lookbook-import-performance/q7-retry-development-continuation-plan.md).
+
+Q7 K/L 실제 중단(2026-10-07): K3접수·실제OOM1회는확인했지만system logName 인코딩오류로자동정산이막혔다. `cloud-logging-evidence.ts`의exact필터/KR20은수정했고새candidate미배포다. [실제결과](tasks/lookbook-import-performance/q7-retry-development-results.md), [기존K유지·남은5접수이어실행제안](tasks/lookbook-import-performance/q7-retry-development-continuation-plan.md). 현재Q7미완료·최종커밋전이며원래20분창을임의연장하지않는다.
+
+Q7 K/L 재시도 검증(2026-10-07): Worker `queue/development-retry-fault.ts`는 검증된 Development campaign에서만 고의OOM1회/다운로드 전5회 실패를 소비한다. `scripts/q7-retry-runner.mjs`·`q7-retry-contract.mjs`는 제품최대8접수·20분·미확정 재전송 금지·실제 플랫폼 종료/124JPEG·실패목록 제거를 연결한다. [실행안](tasks/lookbook-import-performance/q7-retry-development-execution-plan.md), [필수 결과](tasks/lookbook-import-performance/q7-retry-local-results.md), [서버](entrypoints/FIREBASE.md), [검사](entrypoints/TESTS.md).
+
+Q7-R1/R2 구현·R3 로컬 검사 완료(2026-10-07): [현행 소스 게이트·원본·미검증](tasks/lookbook-import-performance/q7-retry-local-results.md) — 제품큐93/Functions324/Worker359/Firestore·Storage131/Q7 verifier31/Linux2 통과. [새 짧은 Development 실행안](tasks/lookbook-import-performance/q7-retry-development-execution-plan.md)은 K/L새2브랜드·실제 종료1회/제어 실패5회·수동 새 시작·최대8접수 제안이다. 새 장애 방법·유료 범위 확인 전 장치 구현/배포/실행은 하지 않았다. 아래 ‘검사 중/선택 대기’는 이전 이력이다.
+
+2026-10-07 Q7-R1 최신: D1/D2 추천안 확정 후 종료 정산·처음부터 재시도·실패 목록을 구현 중이다. 아래 R0 결정 대기는 과거 기록이다. 서버 callable `getSeasonImportFailures/requestSeasonImportFailureRetry/dismissSeasonImportFailure`는 Functions `lookbook/import/queue/{failure-service,failure-functions}.ts`; Worker는 `queue/{failure-record,restart,job-write,termination-retry}.ts`와 processor/server/batch-runner에서 연결한다. 실패 목록의 CAS는 version+executionID이며 원본 실행 이력은 보존한다. 필수 검사는 `verification/{functions,lookbook-product-queue,lookbook-import,firestore}.json`과 KR01~11 테스트다. 새 종료 경로의 전체 검사·원격 검증은 아직 완료 전이다. [최신 계약·상태](tasks/lookbook-import-performance/q7-retry-contract-plan.md).
+
+2026-10-07 Q7-R0 세부 계약안: [종료 정산·처음부터 재시도·실패 목록 API/데이터·변경 후보·필수 검사](tasks/lookbook-import-performance/q7-retry-contract-plan.md). 부분 저장은 현재 재사용되고 승인 저장은 추출 attempt 수를 유지함을 확인했다. 이번 등록의 부분 산출물 정리와 새 추출의 재검토 정책 D1/D2는 사용자 선택 대기다. 실패 identity/version·조회/수동재시도/명시적안함 callable 제안·원본 실행/완료 시즌 보호·시도5회와 실제 종료 증거 계약을 기록했다. 새 코드/실제 API/게이트 연결은 아직 없다.
+
+2026-10-07 Q7 세부 구현 계획 개정: [Q7-R0~R5·변경 후보·필수 검사](tasks/lookbook-import-performance/product-queue-q7-server-validation-plan.md), [전체 계획의 최신 정정](tasks/lookbook-import-performance/product-queue-implementation-plan.md). 종료 정산·처음부터 재시도·실패 목록 생명주기를 기존 계획에 반영했다. 현재 부분 산출물 정리·검토 승인 후 실패의 시도 예산/재검토·실패 목록 API/키의 세부 계약은 R0 진행 중이며 코드 착수 가능/전체 계획 완료로 표시하지 않는다. 이후 로컬 필수→새 짧은 원격 실행안→검증→최종 정리 순서다.
+
+2026-10-07 실패 목록 최종 확정: [문서 생명주기·재시도 결정](tasks/lookbook-import-performance/season-failure-retry-decision.md). 시즌별 목록 문서1개·재실패 최신화·성공 또는 명시적 ‘재시도 안 함’ 선택 시 제거·무선택 유지. 서버 실행 기록은 원래 보관 정책 유지. 이번은 설계 문서 반영이며 실제 데이터 삭제·코드 구현·새 게이트 실행은 없다.
+
+2026-10-07 최신 Q7 정정: [시즌 실패 기록·처음부터 재시도 결정](tasks/lookbook-import-performance/season-failure-retry-decision.md). 추가하려던 중간 복원·미완료 실행 재연결은 제외한다. 비정상 종료 확인 뒤 해당 시즌을 처음부터 자동 재시도(최초 포함 총5회)하고, 소진하면 실패 결과/이력을 남긴다. 전체 선택 시즌 처리 뒤 실패 목록에서 맨뒤 새 수동 요청·새5회로 재시도하며 완료 시즌은 유지한다. 현재 상세 정리/시도/API 계약과 Q7 새 검증은 준비 전이며 기존 코드 통과·Q7 완료를 뜻하지 않는다. 아래 중간 복원 계획은 이전 이력이다.
+
+2026-10-07 최신 확정: [Q7 집중 계획](tasks/lookbook-import-performance/product-queue-current-operations-plan.md). Q7은 기존 정상 A/B·A~J 결과와 짧은 실제 종료·복구 검증으로 마무리한다. 실제12/14/15분 플랫폼 경계 실측은 후속 미검증으로 분리하며 기존 안전장치·로컬 검사는 유지한다. 다음 핵심은 강제 종료 뒤 복구 상태 전환과 미완료 저장 재연결이다. [목록·운영 지침 후속 작업](tasks/admin-web-operations-migration/lookbook-list-operations-followup.md)은 관리자 웹으로 분리한다. 기존 snapshot을10개씩 조회하고 원본 사이트 순서를 유지하며 발매일 필드·미확인 표시를 추가하지 않는다. 이번 변경은 문서만이며 Q7 전체 완료·새 원격 실행을 뜻하지 않는다.
+
+2026-10-07 룩북 운영 정책: [관리자 웹 결정](tasks/admin-web-operations-migration/decisions.md)의 ‘룩북 등록·운영 기준’. 처음10개·더보기10개·선택 자유·최근1~2년 중심, 콜라보 우선 없음. 최근 발매한 룩북부터 확인·등록하는 운영 지침과 원본 사이트 순서로 표시하는 목록 계약을 구분한다. 관리자 웹의 별도 후속 작업이며 Q7의 선행 조건이 아니다.
+
+2026-10-07 잔여 검증 실행안 작성: [장시간·복구 최소 실행안](tasks/lookbook-import-performance/product-queue-q7-boundary-validation-plan.md). L/T/O각1회·11접수·90분·추가 관리예산3USD/기존누적10USD안이다. 정상6설정에서미시작항목을남기기위해2023SS를추가한7시즌안을준비했다(로컬30후보/HEAD6,704,829B). 강제종료시active/draining을조건부복구상태로정산하는경로와미완료execution/continuation재연결이현재없음을확인했다. 실제종료증거·완료/시도이력보존·전용Development고의지연/종료기능을추가하는방향은사용자확인전미확정이다. 원격변경/새접수/고의장애0,기존Q7미완료·커밋0. 승인순서대로실행안준비는진행했으며추가기술결정대기중이다.
+
+2026-10-07 최신: [A~J 실제 제품 검증 결과](tasks/lookbook-import-performance/product-queue-q7-ten-brands-results.md) — 36접수·16시즌 저장·710JPEG와 현재 공개 원장 대조가 완료됐다. 두 100ms 예약 wave에서 실제 서버 순번과 브랜드 대기·실행 비중첩을 확인했다. 앞 run 시작 후 신규 접수는 없었으므로 A/B의 active 중 도착과 동일한 조건으로 표시하지 않는다. 메모리 최고 84.05%, 최대 표본 공백 380.7ms, 이미지 실패·시즌 재시도·중단 0회. 실행기 job 기록 누락은 원본 보존·별도 job index 대조로 정산했으며 이후 도구 기록 연결을 수정했다. 최종 client31/Worker359/Linux2 필수 검사 통과. 실제 장시간·플랫폼 종료 및 청구 전체는 별도 미검증이다. 전체 Q7 완료·커밋은 아직 아니다. 아래 실행 전/진행 중 문구는 과거 기록이다.
+
+Q7 A~J 실행기 준비 완료(2026-10-07): `scripts/q7-wave.mjs::runQ7Wave`는 응답 대기 없이 절대 100ms 간격으로 최대10건을 시작한다. `q7-journal.mjs`/runner는 동시 기록을 직렬·원자 저장하고, 실패하면 새 투입을 멈춘 뒤 시작한 요청을 모두 정리한다. `assertQ7WaveEvidence`는 두 wave 각10건의 예정/시작/HTTP 직전 기록·실제 서버 순번과 서로 다른 브랜드 대기를 검증한다. 실제 서버 도착 간격을100ms로 단정하지 않고 편차와 순서 변경을 기록한다. 승인된 A6/B2/C~J각1·16시즌·36접수·기존 비용/2시간 상한은 유지한다. 필수 verifier gate `1791303321801-54c50236-ead4-40c3-ad2d-f126a1131cbc` passed31; digest `e3da40995238821d1f710fe61930efb6057e14c69792897cc00aa61f155c9c66`. 원격 A~J는 아직 실행 전이다.
+
+Q7 A/B 기능 저장 완료(2026-10-07): [결과·전체원본·실패보존·한계](tasks/lookbook-import-performance/product-queue-q7-smoke-results.md).7accepted/3succeeded/126JPEG golden+generation/63공개원장 확인,queueidle. `q7-runner --verify-only=true --resume=<runID>`는 확정7건만 재검사하며 mutation하지 않는다. `q7-storage-evidence::q7PublishedCoverReference`가 현재cover 원장경로/generation을 확인한다. client gate26건 통과. A~J100ms wave 보완/검증은 다음이다.
+
+Q7 기능 저장 smoke 전환 확정(2026-10-07): A2 추출44개/해시 완료, run 약3.2초로 active 구간을 관측하지 못해 original overlap smoke는 중단했다. 사용자 결정에 따라 같은 접수 유지·총7건 안의 저장 기능 완료를 이어가고 대기 조건은 A~J100ms에서 확인한다. `q7-runner --resume=<runID> --resume-after-extraction=true`→`q7-resume::assertQ7ExtractedContinuation`이 idle/동일released batch/검토대기2를 검사한다. report overlapObserved=false/functionalStorageSmoke/historicalFailurePreserved로 구분한다. Q7 gate24건 통과. 복구 해제 준비 이벤트도 Functions321/Emulator75건 뒤 Development handler1개 배포 완료.
+
+Q7 복구 재개 오류 후속(2026-10-07): candidate023에서 이전 성공 item을 다시 begin하려 해 QUEUE_ITEM_NOTQUEUED로 종료됐다. `src/queue/batch-runner.ts`는 terminal processingStatus를 재실행하지 않고 `coordinator.ts::finishBatchRun`에서 실제 execution/continuation 종료를 재확인한다. 불일치 시 차례 반환을 막는다. PQ06 Emulator 필수2건 추가/제품큐74건 통과. 새 Worker gate/후보가 필요하며 기존 A2 import는 preparing/접수2건 그대로다.
+
+Q7 현재 접수 이어 실행(2026-10-07): `scripts/q7-resume.mjs`가 확정 A 생성/A2 import의 payload digest·plan·선택 시즌 검사와 원본 중단 기록 보존을 담당한다. `q7-runner.mjs --stage=smoke --resume=<runID>`는 같은 계정·원격 snapshot·preparing 상태를 대조하고 OBSERVER_READY 후 기존 요청 조회로 기다린다. 새 후보의 conditional recovery는 별도 CLI로 적용한다. QV07 필수3건 포함 gate23건 통과. 기존 sample-gap 실패는 성능 통과로 바꾸지 않는다. [현행 계획/증거](tasks/lookbook-import-performance/product-queue-q7-server-validation-plan.md).
+
+Q7 sample-gap 최소 수정(2026-10-06): Linux1CPU/2GiB에서 첫 Playwright JS 모듈 로딩503.670ms/표본공백604.259ms, warm0.357ms를 재현했다. `src/index.ts::main`은 모듈만 Ready 전에 준비하며 실제 browser launch는 작업 차례에 유지한다. 표본/메모리/동시성 기준은 바꾸지 않는다. 이 runtime 수정은 새 gate·local bootstrap·Development 확인 전 미검증이며 현재 `92ad4778` batch는 복구 재개 전이다.
+
+Q7 실제 smoke 중단 분석(2026-10-06): `00022-zic`에서 목록 탐색 succeeded, 접수2회 후 실행기 preparing/jobID-null 처리 오류. 서버는 별도로 sample-gap922ms로 recoveryRequired이며 이미지job 미생성·import preparing다. 원본/로그/inspect는 run `92ad4778-f90e-408a-b062-8afc46383952/evidence/`에 보존했다. `scripts/q7-receipts.mjs::waitQ7Receipt`로 접수 준비와 discovery batch release를 조회로 확인하도록 도구를 수정하며 QV06 필수 검사2건 추가. 자원 측정 원인 확인 전 복구 재개/추가 접수는 하지 않는다.
+
+Q7 1~2 원격 완료·3 수정 검증 중(2026-10-06): recovery candidate `00021-kup`·최소 IAM·실제 ID token·preflight 통과 후 A를 조건부 정산했다. queue idle/batch released/stateRevision11, 원본 job correctionRequired·종료증거·90일 audit 보존. 실제 현재 UNAFFECTED는29후보/활성 more0/1page이며 paginate 문자열 오탐을 확인했다. `season-discovery-controls.ts`가 rendered 최종 활성 컨트롤·앞 pagination 판정과 가시 more 클릭 진입점이다. Worker 변경본은 새 gate 전이며 원격 수정본 적용·제품 smoke/A~J는 아직 미검증이다.
+
+Q7 복구 권한 방향 확정(2026-10-06): 본인 Google 운영 계정 하나→Development 전용 recovery SA→기존 조건부 복구 API. `src/queue/recovery-auth.ts`는 사용자 access token으로 `generateIdToken`만 요청하고, 배포 스크립트/Q7 preflight는 recovery env를 고정·검사한다. IAM 적용·새 gate·candidate·정산은 진행 중이며 아래 이전 gate 결과는 변경된 소스의 통과를 의미하지 않는다. 정확한 권한과 1~6 순서는 [통합 계획](tasks/lookbook-import-performance/product-queue-q7-server-validation-plan.md)의 확정 절을 따른다.
+
+이전 candidate 진행(2026-10-06): verified Worker-only Development snapshot 절차가 추가됐고 Worker gate `1791290297722-acd38c5e-89ae-442f-9a7e-cf88e2da3abb`(354 tests/lint/fixtures/deploy contract), product queue gate `1791289769511-4141e4a8-d6d9-4c08-9dc0-a49b5f414fcc`(72 emulator tests + Worker/Functions build)가 통과했다. Candidate `00020-yun`은 Q7 0% tag, digest `91c937c1…733b`, 성능 계측 enabled, 1 CPU/2GiB/concurrency2/900s로 Ready이며 base `00012-fih` 100%를 보존한다. 현재 Q7 preflight 통과, queues RUNNING/0 tasks. Recovery endpoint는 전용 Development IAM identity가 없어 아직 꺼져 있고 A head는 정산 전 상태다. [Q7 readiness](tasks/lookbook-import-performance/product-queue-q7-readiness.md)에서 권한 선택·상세 증거와 다음 순서를 확인한다.
+
+Q7 초기 실행 상태 이력(2026-10-06): [전체 단계](tasks/lookbook-import-performance/product-queue-q7-server-validation-plan.md), [P2 최소 연결 구현·검증](tasks/lookbook-import-performance/q7-verifier-p2-plan.md), [실행 조건·비용·Development 준비](tasks/lookbook-import-performance/product-queue-q7-readiness.md), [검증 행렬](tasks/lookbook-import-performance/q7-verification-matrix.md). Development Google 계정의 platform admin 확인 뒤 A 브랜드 생성과 최초 탐색을 접수했다. 29개 후보를 찾았으나 동적 더보기 잔여 신호로 job이 `correctionRequired`가 됐고, 이전 Worker의 도메인 상태 매핑 오류가 대기열을 `recoveryRequired`에 남겼다. 원본 evidence, settlement 구현 및 PQ14 emulator 계약은 readiness의 최신 상태를 따른다.
+
+**Q7 실행 진입점:** `tools/lookbook-import-worker/scripts/q7-runner.mjs` (`--stage=smoke|tenBrands`)가 Google 로그인 세션, active `platformAdmins` 확인, Deployment/task queue preflight, 기존 제품 callable, read-only Firestore/Storage 증거 수집을 연결한다. 로그인 페이지·journal·스토리지 판정·preflight는 같은 scripts 디렉터리의 `q7-session.mjs`, `q7-login.html`/`.js`, `q7-journal.mjs`, `q7-storage-evidence.mjs`, `q7-development-preflight.mjs`다. 필수 로컬 gate는 `verification/lookbook-q7-verifier.json`이다. uncertain mutation이 남은 run은 자동 재전송하지 않고 후속 실행을 차단한다.
+
+Q7 platformAdmins P1 구현·로컬 게이트 완료(2026-10-06): `createBrand`와 queue admission/status, extraction review/repair preview, discovery cancel/candidate resolution은 `platformAdmins/{uid}` 활성/비회수 권한을 확인한다. `queue/preparation.ts`는 접수 뒤 권한 회수를 배치 진행 중단으로 바꾸지 않도록 브랜드 활성 상태만 검사한다. Functions gate 320 tests와 제품 큐 Emulator gate 69 tests가 통과했다. 기존 공용 `brandAuthorization` 및 비 Q7 API·Firestore Rules는 이번 범위에서 유지한다. [설계/변경/검증](tasks/lookbook-import-performance/platform-admin-transition-plan.md).
+Q7 Development 도구 P2 구현: `outpick-test` 전용 Firebase Web app을 생성하고 public config는 ignore/mode 600으로 저장했다. 인증·journal·runner·실제 Storage bytes/hash/JPEG 검사·원격 preflight가 구현됐다. live smoke에서 A brand/discovery job이 생성됐고, 현재 queue head가 복구 확인 상태라 추가 요청은 차단돼 있다.
+
+Q7 권한 범위 확정: Q7 필수 경로 우선 전환(A), P1 로컬 구현·검증 완료. [최종 계획](tasks/lookbook-import-performance/platform-admin-transition-plan.md).
+
+Q7 플랫폼 관리자 전환 초기 설계 기록(2026-10-06): [권한 계약·호출부·P0~P3·필수 검증](tasks/lookbook-import-performance/platform-admin-transition-plan.md). 현재는 P1 완료, P2 검증 도구가 후속이다.
+
+Q7 실기기 테스트(2026-10-06): `LookbookImportQ7DevelopmentUITests.swift`는 기본 오픈채팅 화면에서 `룩북` 탭을 선택한 뒤 관리자 진입을 검사한다. 실제 XCTest 연결은 재실행으로 성공했고, 최초 테스트의 탭 전환 누락을 수정해 재검증한다. 최신 결과는 Q7 readiness를 따른다.
+
+**Q7 실행 순서(2026-10-06):** P2 최소 연결 → 로컬 필수 검사 → Development 준비 → 3시즌 smoke → 통과 시 A~J 16시즌 검증. smoke는 A 생성·최초 탐색까지 실행됐고 29개 후보를 찾았으나 동적 더보기 분류 및 큐 종료 상태 오류가 확인되어 중단됐다. A~J는 아직 시작하지 않았다. 최신 로컬 검증 ID와 Development 증거는 Q7 readiness를 따른다.
+
+**Q7 최신 local gates/Development:** Worker gate `1791281635620-7e62e5e7-a635-4676-ba50-bad7f96a3e09` passed(354 tests/lint/fixtures, digest `f5aef99a0b65da550e44598a23732be5794e4511446c4c9ac0ff6ded4eaf8f92`); product queue gate `1791281754202-5d0ebb8f-c857-4843-9a8a-889243b4b5b1` passed(72 emulator tests + Worker/Functions build, digest `f473851733e9f4a14d3e42b072d8896e01eaeb1a71010c80bc9e4b44a07f0ad0`). Development A batch는 여전히 복구 차단 상태이고 settlement candidate는 미배포다.
+
+**제품 큐 Q6 로컬 통합(2026-10-06):** [현행 구현·G-F/G-W/G-E/G-R/G-L/G-I 원본·미검증 범위](tasks/lookbook-import-performance/product-queue-q6-results.md). `functions/src/lookbook/import/queue/preparation.ts` → Functions queue dispatch → Worker `src/queue/{batch-runner,activation,checkpoint}.ts` → `processor.ts`/`season-discovery-processor.ts`가 모든 지원 batch kind의 활성화와 owner/epoch 실행권을 연결한다. `/tasks/import-batch`의 14분 retryable 503 및 처리 promise drain 경계는 `queue/http-deadline.ts`와 `server.ts`다. 즉시 재시도는 최초 포함 총5회다. 실제 Development URL/Storage 동작은 미검증이다.
+
+**Q5 앱 요청·복원 연결(2026-10-06):** [구현·iOS 게이트·결과](tasks/lookbook-import-performance/product-queue-q5-results.md). migration27의 `lookbookImportRequest`를 `AppCompositionRoot → LookbookRepositoryProvider → queue adapters/UseCase`에 주입한다. 접수 요청은 전송 전 같은 requestID/digest를 저장하고 서버 영수증의 requestID/brand/kind를 확인한다. 진행 화면은 requestID로 복원하며 대기·실행·검토·실패·복구 상태를 표시한다. G-I 28 tests/8 suites 통과. Q7 Development 검증은 미완료다.
+
+**Q4 제품 룩북 FIFO 최신 상태(2026-10-05):** `functions/src/lookbook/import/queue/maintenance-functions.ts`가 head 전달·5분 reconciliation을, `record-retention.ts`와 `asset-retention.ts`가 일일 기록·시간당 exact-generation 정리를 담당한다. Worker `src/queue/{recovery,cloud-logging-evidence,recovery-cli}.ts`와 `/recovery/{inspect,resume}`는 dedicated OIDC 설정이 없으면 비활성이다. Q4 시점의 G-F/G-E/G-W/G-R/G-L 및 정리 경계는 [Q4 결과](tasks/lookbook-import-performance/product-queue-q4-results.md), 최신 통합 gate는 [Q6 결과](tasks/lookbook-import-performance/product-queue-q6-results.md)를 따른다. Development 증거는 남았다.
+
+**Q3 최신 저장·브라우저 연결(2026-10-05):** `tools/lookbook-import-worker/src/queue/{asset-paths,asset-publication,browser-gate}.ts`가 queue-owned 이미지 저장의 실행별 경로·두 JPEG generation 확인 뒤 조건부 공개와, 이미지/hash 대 Chromium의 인스턴스별 상호 배제를 구현한다. 브라우저 실행 직전 실행 중 SourceBuffer 재사용 cache도 비운다. `functions/src/lookbook/deletion/assetWriteFence.ts`는 `uploading` 원장이 남은 post/season/brand purge를 차단하며 관련 복합 인덱스는 `firestore.indexes.json`에 추가했다. 최신 G-W Worker342개, G-E Emulator59개, G-L Linux 시나리오2개가 통과했다. 실제 URL/Storage/Worker HTTP 복구·배포/Development 검증은 미실행이다. 상세·미완료 범위는 [Q3 결과](tasks/lookbook-import-performance/product-queue-q3-results.md).
+
+**Q2 최신 Worker batch 연결(2026-10-05):** `tools/lookbook-import-worker/src/queue/{batch-runner,supervisor,runtime}.ts`가 지원된 `importSeasons` batch를 기존 `processJob`에 연결한다. `/tasks/import-batch`는 Cloud Tasks OIDC로 보호되고 retryable 오류는 대기 간격 없이 최초 포함 총5회 즉시 재시도한다. 100ms cgroup 표본·85%/1초·500ms gap·12분 admission stop이 포함되며 14분은 초과 기록만 남겨 응답 deadline은 미보장이다. Cloud Tasks sender/trigger와 discovery/continuation, Development 검증은 미완료다. Q3 Linux gate는 통과했다. 상세는 [Q2 기록](tasks/lookbook-import-performance/product-queue-q2-results.md)을 따른다.
+
+**Q2 묶음 실행권 진행(2026-10-05):** Worker `src/queue/{coordinator,checkpoint,runtime}.ts`는 owner/epoch·attempt 원장·retryAt·shared pipeline 상한·취소 후 drain을 제공한다. `queue/ownership.ts`와 processor/discovery claim은 구형 `/wake`·단건 task가 queue-owned job을 실행권 없이 가져가지 못하게 한다. 기본 `importSeasons` batch는 `processJob`와 연결됐고 retryable 오류는 대기 없이 최초 포함 총5회 재시도한다. 최신 결과는 위 Q2/Q3 항목 및 [Q2 기록](tasks/lookbook-import-performance/product-queue-q2-results.md)을 따른다.
+
+**Q1 나머지 접수·준비 이벤트 연결(2026-10-05):** `queue/followup-admission.ts`(승인/수동 재시도/보수), `discovery-admission.ts`(탐색/재시도/수정 후 재분석), `preparation-runner.ts`와 `preparation-functions.ts`(순번별 준비 이벤트)가 진입점이다. 실행은 root를 바로 변경하지 않고 executions/continuations에 고정한다. 신규 trigger2개 포함 export123개. 실제 Worker 활성화·전달 및 저장은 Q2/Q3이며 배포하지 않았다. [범위·검증·후속 계약](tasks/lookbook-import-performance/product-queue-q1-results.md).
+
+**Q1 브랜드 생성·최초 탐색 원자 접수(2026-10-05):** `brand/admin/functions.ts::createBrand`가 `shared/lookbookQueue/admission.ts::admitQueueRequestInTransaction`을 사용한다. 브랜드/이름 인덱스/탐색 입력/순번/`brandCreationRequests` 영수증을 함께 저장한다. 계약/model/projection/error도 shared로 이동해 기능 간 직접 의존을 없앴다. [Q1 기록](tasks/lookbook-import-performance/product-queue-q1-results.md). 앱 연결·배포 전이다.
+
+**Q1 실제 시즌 접수 연결(2026-10-05):** `import/functions.ts`의 `requestSeasonImport`, `requestSeasonCandidateImportJobs`, `requestSeasonAssetRetry` → `queue/season-admission.ts` → 공통 admission. 기존 job 조회와 후보 snapshot 고정, `asset-retry.ts`의 입력 digest·별도 실행 이력을 연결했다. 최신 요청 envelope/통일 영수증을 사용하며 아직 배포하지 않았다. Functions307개·Emulator23개 결과와 남은 연결은 [Q1 기록](tasks/lookbook-import-performance/product-queue-q1-results.md)에 보존한다.
+
+**Q1 기존 job 참조 보강(2026-10-05):** `queue/model.ts::AdmissionTarget.existingJobID` → `admission.ts` 식별자 검증 → `preparation.ts` 중복 영수증 반영. 기존 job·실행권·이력을 변경하지 않고 참조만 남긴다. 실제 접수 callable의 중복 판정 연결은 후속이며 상세 결과는 [Q1 기록](tasks/lookbook-import-performance/product-queue-q1-results.md)을 따른다.
+
+**제품 큐 Q1 진행(2026-10-05):** [공통 접수 계층·변경 파일·검증·남은 adapter](tasks/lookbook-import-performance/product-queue-q1-results.md). Functions `import/queue/{admission,preparation,dispatch,projection,authorization,functions,model}.ts`와 `import/taskService.ts`, 조회 callable `getSeasonImportBatch`를 추가했다. 기존 trigger/watchdog는 큐 소유 job을 제외한다. `verification/lookbook-product-queue.json`은 demo 프로젝트/8086의 실제 transaction·준비·전달/권한15개를 검증한다. 기존 실행 접수 callable 전체 연결과 Worker 실행은 아직 미완료이며 Q1 전체 완료가 아니다.
+
+**제품 큐 Q0 구현(2026-10-05):** [변경·게이트 원본·남은 범위](tasks/lookbook-import-performance/product-queue-q0-results.md). 사용자 구현 승인 후 공용 `contracts/lookbook-import-queue-v1.json`, Functions/Worker `queue/contracts.ts`, 앱 `Domains/Entities/LookbookImportQueueContract.swift`와 각5개 계약 검사를 연결했다. 정책/버전/공통 요청/시간 경계/상태 분류를 검사하며 기존 API·DI에는 아직 연결하지 않았다. Functions·Worker 기존 필수 검사를 유지하고 전용 iOS/자체 게이트를 추가했다. Q1 이후 접수/FIFO/실행/저장/복구 및 emulator/Linux 기능 검증은 후속이다. 아래 구현 승인 전 문구는 이전 이력이며 현재 결과는 링크를 따른다.
+
+**제품 큐 단계별 구현 계획(2026-10-05):** [Q0~Q7·변경 파일·완료 기준·필수 게이트](tasks/lookbook-import-performance/product-queue-implementation-plan.md). 계약/검증 연결 → 접수/FIFO → Worker 실행권/재개 → 저장/브라우저 → 복구/정리 → 앱 → 로컬 통합 → 승인된 Development 순서다. 정리100건/페이지·회당500건 또는120초 신규 투입 중단, 조회 오류10/20/40/60초, 신규 접수24시간/미래5분, 로컬 확정 기록30일, 접수 준비 총5회·무진행2구간·브라우저 전환 캐시 비우기를 사용자 확정했다. 아래 시점별 미확정 문구는 이 최신 결정으로 대체한다. 이번에는 계획 문서만 작성했으며 제품 코드·새 게이트·배포·IAM·삭제는 미실행이다. 코드 구현 승인 후 Q0부터 진행한다.
+
+**제품 큐 운영·검증 기준(2026-10-05):** [설계 §16~19](tasks/lookbook-import-performance/product-queue-design.md). 조회3/10초, 점검5분·파일 정리1시간·기록 정리일1회, 성공 상세24시간/최소 완료30일/장애 해결 후30일/복구 감사90일, 본인1인 조건부 복구 확정. PQ01~15의 필수 게이트 연결안·만료 요청 방지·보호 예외를 기록했다. 현재 iOS 게이트는 룩북을 선택하지 않는다. 문서만 변경했으며 새 검사 연결/실행·IAM·삭제는 미실행이다.
+
+**제품 큐 데이터/API·복구·브라우저·앱 연결(2026-10-05):** [설계 §12~15](tasks/lookbook-import-performance/product-queue-design.md). 최신 계약 통일(구버전 앱 호환 제외), Chromium1개·이미지와 분리, 목록 탐색도 같은 FIFO, GRDB 복원을 확정했다. batch/items/runs/산출물·진행 조회, bootID와 플랫폼 instance 증거의 구분, inspect/resume 제안, AppCompositionRoot→Container·GRDB migration/계정 삭제 진입점을 기록했다. 설계만 수행했으며 필수 게이트/운영 복구 도구는 아직 미구현이다.
+
+**시간·메모리·앱 정책 확정(2026-10-05):** [제품 큐 설계 §6·7·9·10](tasks/lookbook-import-performance/product-queue-design.md).12/14/15분 정상 분할·같은 차례 재개, 메모리85%1초/100ms측정/500ms초과 공백 중단 후 복구 확인, 기존 화면 상태 구분·요청 ID 재시작 복원을 확정했다. 제품 초기 검증 기준이며 구현·배포·제품 테스트는 미실행이다.
+
+**제품 import 대기열 세부 설계(2026-10-05):** [최신 검토본](tasks/lookbook-import-performance/product-queue-design.md). 닫힌요청/추가선택·검토승인·수동재시도 맨뒤/수동새5회/종료불명확 차단/묶음 Worker/실행별 경로·조건부 공개/미참조 파일24시간 후 정리 확정. 이미지별 재개와 Storage 삭제·공개 경합, callable→task→실행권→pipeline 및 iOS 변경 경계를 정리했다. PQ01~11은 검증 설계이며 제품 구현·실행·배포·삭제는 아직 하지 않았다.
+
+**A~J 실측 종료·T2 중단(2026-10-05):** [결과·검증·남은 범위](tasks/lookbook-import-performance/ten-brand-results.md). 실제 Development6성공/변환2메모리중단1/업로드8미실행1. 완주 게이트failed, 중단정리drained=true·후속차단 유지. 원본·분석·배포·게이트는 `output/lookbook-import-performance/ten-brand-live/`. 제품 반영·추가 실험 없음.
+
+**A~J 배포 전 확인(2026-10-05):** [대상·입력·비용 분석](tasks/lookbook-import-performance/ten-brand-readiness.md). 원본138개·Development 설정·OIDC/실행권·version5/8회/100ms 계약·검사한 소스 해시 대조 통과. 원본 증거와 비용 산술은 `output/lookbook-import-performance/ten-brand-readiness/`. 이번 push/배포/Worker 호출0, 다음은 새 revision 대상 대조 후 smoke와 본 비교다.
+
+**A~J 원격 version5 연결(2026-10-05):** [구현·검증 기록](tasks/lookbook-import-performance/ten-brand-connection-results.md). `remote-input.ts`가18시즌을 독립 ID로 매핑하고 `remote-contract.ts`가100ms 접수·고정8회·단계 증량을 묶는다. `remote-runner.ts`→`arrival-runner.ts` 실행, `remote-arrivals.ts`/`remote-report.ts`의 도착·정책·저장 증거 재검사와 variant별 집계가 진입점이다. Mac/Linux 각각 전체316개·필수208개, emulator5개, 테스트/runtime 이미지 대조를 모두 통과했다. 배포·실제 네트워크 비교는 이번 범위에서 미실행이다.
+
+**100ms 접수 로컬 검증 완료(2026-10-05):** Mac/Linux AMD64 각각313개·필수205개 통과, 실패·취소·skip0. Linux1CPU/2GiB에서 검사했고 기존 lint70경고는 남아 있다. 원본 로그·소스 해시·이미지 대조는 아래 A~J 검증 기록5절에 보존한다. 다음은 원격18시즌·8회 계약 연결이며, Firebase 실측은 이번에 실행하지 않았다.
+
+**A~J 실험 조건 확정(2026-10-05):** [입력·최소 행렬·요청량·비용·연결 계획](tasks/lookbook-import-performance/ten-brand-execution-proposal.md). 총18시즌(A8/B2/C~J각1), 접수 간격100ms(A0~J900ms), Worker 합산 시즌6/해제 비교, 준비 포함8회로 확정했다. 접수 간격 외 추천 조건은 유지한다. 새 계약 연결·필수 검증·승인된 유료 실행은 아직 미완료다.
+
+**최신 작업(2026-10-05) — A~J 로컬 최종 검사:** [검증 범위·결과·미구현 경계](tasks/lookbook-import-performance/ten-brand-validation.md). `performance/arrival-runner.ts`가100ms 접수를 재현하고 `season-runner.ts::beforeStart`가 도착 전 실행을 막는다. `arrival-runner.test.ts` TB03~06 및 기존 TB01/02를 `verification/lookbook-import.json` 필수 목록에 연결했다. 원격18시즌·8회 계약 연결과 유료 실행은 아직 미완료다. 제품 FIFO 방향과 기존 실측 증거는 보존한다.
+
+**최신 결정(2026-10-05) — 브랜드 요청 FIFO 확정:** [확정 사항·제품 연결 설계·남은 결정](tasks/lookbook-import-performance/phase-4-brand-dispatch-design.md). 현재 브랜드 안에서 시즌을 병렬 처리하고 저장·종료·정리 후 접수 순서대로 다음 요청을 진행한다. 뒤 요청 대기를 수용하고 단순성·순서 예측 가능성을 우선한다. 실측에 의한 큰 속도 개선 주장이 아니다. 다음은 요청 묶음/API·실행권·재시도/복구·공용 pipeline의 최소 설계 및 구현 계획이다. 제품 구현·추가 실험·배포는 아직 진행하지 않았으며 아래 기록은 이력이다.
+
+**검증 이력 — Development 역순3회 완료:** [계약·구현 계획·요청량·검증](tasks/lookbook-import-performance/development-reverse-comparison.md). version4는 준비→SP→PP만 허용한다. `remote-contract.ts`/`remote-report.ts`와 관련 필수 게이트가 진입점이며 이전5회 결과는 보존한다. Mac/Linux307개·emulator5개·실제3회·원본 재검사 게이트 모두 통과했다. 이번 SP 전체0.61%/첫 브랜드4.24% 단축으로 큰 처리량 개선 근거는 부족하다. 추가 성능 실험은 실행하지 않는다. 당시 제품 도입 보류 권고는 이후 FIFO 제품 결정으로 대체됐으며 세부 구현은 후속이다.
+
+**최신 — Development 실제 약식5회 완료:** [실측 결과·원본·게이트·비용 추정](tasks/lookbook-import-performance/development-screening-results.md). 준비1회와 PP/SP/PS/SS 각1회가 모두 성공했고 실제 실행·원본 재검사 게이트를 통과했다. 전체 처리100~104초, 브랜드 순차 후보의 첫 브랜드 완료는 약10% 빨랐으나 각1회·동일 인스턴스·고정 순서이므로 채택은 미판정이다. 추가 실행/운영 반영/삭제는 하지 않았다. 아래 승인 대기·미실행 문구는 실행 전 이력이다.
+
+실행 전 기록: **배포 전 준비:** [약식5회 실행안·현재 대상·비용·검증](tasks/lookbook-import-performance/development-screening-execution.md). 로컬 원 사이트 HTML7개/원본138개 검사가 통과했고 현재 설정·기존 OIDC와 서울 단가를 재확인했다. 준비 게이트2개 통과, Worker 소스 변경 없음. push/배포/Worker 실험 요청/Firebase 실험 쓰기는 아직 하지 않았다.
+
+**최신 — 약식5회(version3) 로컬 구현·검증 완료:** [확정 조건·구현·검사·요청량](tasks/lookbook-import-performance/development-screening.md). 준비1회+PP/SP/PS/SS 각1회로 축소한다. 다운로드4·변환1·업로드4·재사용128MiB는 유지한다. `remote-contract.ts`의5회 계약과 `remote-report.ts`의 단일 관측 집계가 현재 기준이며, 채택/반복악화/실패율 개선 판정은 하지 않는다. Mac/AMD64 각각307개·필수199개, emulator5개와 요청량/이미지 대조 게이트를 통과했다. 실제 배포·유료 실험은 미실행이다. 아래21회 실행안·version2·과거 ‘현재/다음’ 문구는 이전 이력이며 추가 실행 권한이 아니다.
+
+- **AMD64 기준 분리 완료:** [새 기준·최종 이미지·원본](tasks/lookbook-import-performance/development-amd64-golden.md). `performance-remote-input-amd64.json`, `remote-golden-profile.ts`, `remote-golden.test.ts`가 새 진입점이다. 기존 ARM 자료 보존, 독립2회274개 재현과 최종 runtime274개 exact 검사, Mac/AMD64 각각307개·emulator5개를 통과했다. 실제 배포·원격21회는 미실행이다.
+
+- **최신 배포 전 준비:** [AMD64 검증·인증 수정·실행안·golden 차단](tasks/lookbook-import-performance/development-amd64-readiness.md). `remote-auth.ts`/`remote-auth.test.ts`가 기존 OIDC 전용 권한을 사용하는 CLI 인증 진입점이다. 원본138개 일치, AMD64 JPEG274개 중152개가 ARM golden과 달라 기준 분리 결정 전 배포·실험을 보류한다.
+
+**현재 단계(2026-10-04):** 사용자가 다운로드4·변환1·업로드4를 유지한 다음 구현을 승인했다. [version2 네 구조20회+smoke1회 로컬 구현·검증 기록](tasks/lookbook-import-performance/development-network-implementation.md)과 [실행 대상·요청량·비용](tasks/lookbook-import-performance/development-network-comparison-plan.md)을 따른다. remote-contract/runner와 remote-campaign/report/target/CLI가 진입점이다. 이미지별 예약/R 연결은 보류했고 기존 결과는 보존한다. 배포·유료 실험은 미실행이다. 아래 ‘다음’과 AD2b 결정 대기는 이전 이력이다.
+
+- **룩북 AD2b 설계 검토:** [예약·실제 연결·AB01~12](tasks/lookbook-import-performance/adaptive-ad2b-plan.md). `dedupe` 예약 위치, 커버 원본 토큰 확대, CPU 준비 상태, 표본 확인 뒤 예약 반환 경계를 정리했다. 초기 예약량과 커버 방식 답변 후 구현하며 아래 AD2a 결과는 그대로 보존한다.
+
+- **룩북 AD2a 완료:** [구현·검사·18회 실측](tasks/lookbook-import-performance/adaptive-ad2a-results.md). `resource-feed.ts` → `memory-preparation.ts` → `memory-preparation-host.ts`가 공통 cgroup 계측·실제JPEG·외부 종료 검증 진입점이다. Mac/Linux292개·필수184개,18/18회·42변환 통과. 예약 E·기예약 제동 예외·실제 R 연결은 AD2b 후속이다.
+
+- **룩북 자동 동시성 AD1 구현:** [설계](tasks/lookbook-import-performance/adaptive-concurrency-design.md), [변경·필수 검사](tasks/lookbook-import-performance/adaptive-ad1-results.md). `adaptive-controller.ts`의 주입 표본 판단, `PipelineRuntime.setStageLimit`과 `ReadySeasonQueue.setLimit`의 명시적 실험 모드가 진입점이다. 실제 cgroup·메모리 예약·Worker 연결은 AD2에 남아 있다.
+
+- **룩북 Development 연결 D0~D3 완료(2026-10-04):** [승인 계획](tasks/lookbook-import-performance/development-comparison-plan.md), [변경·검증·남은 D4](tasks/lookbook-import-performance/development-connection-results.md). `performance/remote-{contract,io,firebase,store,runner}.ts`와 `reuse-input.ts::ConnectedIO`가 P/S30회·개발 전용 저장·실행권·취소/정리·증거를 담당한다. `OUTPICK_IMPORT_REMOTE_CAMPAIGN` 기본 off, 켜면 인증된 실험 route만 제공하고 제품 작업 route를 닫는다. Mac/Linux278개·필수170개 및 emulator4개 통과. 실제 배포·다운로드·Storage/Firestore 원격 실험과 제품 전역 FIFO는 미실행이다.
+
+- **룩북 브랜드 순차 비교 구현(2026-10-04):** [세부 설계·구현 계획](tasks/lookbook-import-performance/phase-3-brand-fifo-design.md), [실행·검증 기록](tasks/lookbook-import-performance/phase-3-brand-fifo-results.md). 현재 배포 인스턴스당1CPU/2GiB를 유지하며128MiB/두부하/3브랜드×2시즌/각5회로 비교한다. `performance/season-runner.ts`의 `serial-brands`, `brand-comparison.ts`의20회계획, `brand-metrics.ts`/`brand-statistics.ts`/`brand-report.ts`의대기포함지표·분모, `brand-progress.ts`의OOM경계기록이 진입점이다. 신규BF01~12 포함 Mac/Linux265개·필수157개 및20/20 실측·독립집계·정리를 통과했다. 대용량 전체0.86%단축/최고메모리93.37→83.36%/읽기22.29%감소로 S를 후속후보로 추천하되10%속도목표는 미달이다. 실제 근거는 실행 기록을 따르며 제품API/분산claim/클라우드설정은 미변경이다. 아래 결과는 이전 단계 이력이다.
+
+- **룩북 P4 15회 확인 완료(2026-10-04):** [고정 조건·게이트·원본·판정](tasks/lookbook-import-performance/phase-3-p4-confirmation.md). Mac/Linux253개·필수145개 통과. off3/5·128MiB5/5·256MiB3/5 성공, 감독 중단3회·실제OOM1회다.128 전체 중앙값219.582초/최고메모리94.048%, off대조 완주3쌍으로 속도채택 미판정. `large-comparison.ts::makeLargeConfirmationPlan`은15회계획, `large-statistics.ts`는 실패분모·5쌍판정 진입점이다. 성공JPEG17,424개/경로8,712건·원본재집계 일치, 내부반환14회 확인/OOM1회 미확인, 잔여컨테이너0. 다음 추천은 메모리 원인 진단 설계이며 제품/원격환경은 미변경이다. 아래 단계 요약은 각 당시의 이력이다.
+
+- **룩북 P4 비재사용 대조군 완료:** [조건·원본·결과](tasks/lookbook-import-performance/phase-3-p4-off-control.md). Mac/Linux250개·필수142개 통과, P4/off(커버 선준비 유지)1회219.558초 성공·최고86.55%·지속 중단 없음. JPEG1,584개/경로792건·재집계/반환 확인. `large-comparison.ts::makeLargeControlPlan`/독립 집계, `reuse-contract.ts`의 arm별커버 검사, `large-input.test.ts` 신규3개가 진입점이다. 다음 추천은P4/off·128·256 각5회 후보확정 비교이며 아직 미실행이다.
+
+- **룩북 대용량 준비7회 완료:** [승인·구현·게이트·실측](tasks/lookbook-import-performance/phase-3-large-input-design.md). Mac/Linux247개·필수139개 통과, 실측2성공(P4/128·256)·5메모리 중단(U4조건·P4/512). `performance/large-input.ts`/`large-comparison.ts`/`large-input.test.ts`가 입력·7회 집계·회귀 진입점이다. 원본/재집계/반환 대조 완료. 다음 추천은 P4/off 유효 대조군 확인이며 새 회차·제품 채택·Development는 미실행이다.
+
+- **룩북 제출 순서45회 완료:** [코드·게이트·원본·판정](tasks/lookbook-import-performance/phase-3-submission-design.md). Mac/Linux240개·필수132개 및45/45 성공. R4/B4는 첫 시즌 반복 악화로 채택 보류, P4는16MiB에서 U 대비 첫 시즌12.50% 단축·전체0.025% 단축으로 종료 지연 완화 후보 유지다. `performance/submission-comparison.ts`의 정책·행렬·trace 검사, `submission-runtime.ts`의 실험 전용 준비된 변환 우선 큐, `submission.test.ts`가 진입점이다. 최고 메모리89.32% 관측(지속 중단 없음), 다음은 대용량 입력·예산 압박 설계이며 제품 정책은 미변경이다.
+
+- **룩북 다른 부하·작은 예산 압박45회 완료:** [구현·게이트·원본·판정](tasks/lookbook-import-performance/phase-3-load-pressure-proposal.md). Mac/Linux232개·필수124개 통과, 실측45/45 성공·JPEG10,210개 정합성 확인. 16/32MiB는 첫 시즌 반복 악화로 채택 보류, 128MiB는 전체1.07% 단축으로 후속 후보 유지다. `reuse-comparison.ts`의 makeLoadPressurePlan/5쌍 집계, `reuse-contract.ts`의 입력 계약/읽기·cache 교차 검증, `load-pressure.test.ts`가 진입점이다. 다음은 부분 재사용 시 본문 제출 순서 설계이며 제품 API/기본값은 유지한다. 아래는 이전 단계 이력이다.
+
+- **룩북 커버 선준비 15회 완료:** [설계·코드·게이트·결과](tasks/lookbook-import-performance/phase-3-cover-preparation.md). Mac/Linux 전체226개·필수118개, 실측15/15 성공. 첫 시즌 current34.393초→prepared13.630초, 전체 off 대비1.04% 단축·반복 악화 없음. `reuse-input.ts`의 prepareCover, `reuse-trace.ts`의 prepare 사건, `reuse-comparison.ts`의 makeCoverPreparationPlan/5쌍 집계가 진입점이다. 다른 부하·예산 압박·실제 네트워크 검증이 남아 있으며 제품 API·기본값은 유지한다. 아래 기록은 이전 단계 이력이다.
+
+- **룩북 재사용 지연 진단 완료:** [2회 증거·다음 수정 후보](tasks/lookbook-import-performance/phase-3-reuse-diagnosis.md). Mac/Linux 222개·필수 114개 통과, 2/2 성공. on 첫 시즌 본문 13.342초 완료지만 커버는 다른 시즌 본문 변환 214건 뒤에서 대기해 36.681초 완료했다. `performance/reuse-trace.ts`와 `makeReuseDiagnosticPlan`이 계측/검증 진입점이다. 다음은 커버 원본 선준비 등 제출 순서 개선안 구체화이며 제품 정책 미변경이다.
+
+- **룩북 재사용 15회 완료:** [계약·검증·원본·지연 결과](tasks/lookbook-import-performance/phase-3-reuse-comparison.md). Mac/Linux 218개·필수 110개 통과, 15/15 성공. 읽기 약 49% 감소지만 전체 시간 개선 1% 미만·첫 시즌 약 2.44배 지연으로 현재 조합 채택 미추천이다. `performance/reuse-comparison.ts`가 계획/실행/집계, `reuse-input.ts`가 해시/같은 scope 저장, `reuse-entry.ts`가 진입점, `reuse-comparison.test.ts`가 5개 회귀다. 다음은 본문/커버 단계 시각 진단이며 제품 기본값 미변경이다.
+
+- **룩북 C 변환 30회 완료:** [실행 계약·원본·결과](tasks/lookbook-import-performance/phase-3-transform-confirmation.md). Mac/Linux 전체 213개/필수 105개 통과, 1·2 × 3부하 × 5쌍 모두 성공·전체/첫 시즌 반복 악화 없음. 시간 차이 0.36~2.38%로 작고 다중 시즌 메모리 여유가 더 큰 1을 우선 후보로 유지한다. `performance/comparison.ts`의 `makeTransformConfirmationPlan`, `transform-confirmation-report.ts`, `transform-confirmation.test.ts`가 진입점이다. 제품 기본값은 미변경이며 다음은 재사용 비교 입력·회차 검토다.
+
+- **룩북 로컬 구조 탐색 완료:** [54회 결과·자원 분석·후속 추천](tasks/lookbook-import-performance/phase-3-comparison.md). Mac/Linux 각각 207개/필수 99개 통과, 준비 18회와 본 54회 완료. 본 결과 48성공/6메모리 중단, C/E 각 9회 통과·약 45~46% 시간 단축. C 우선 후속 후보이며 최적값/제품 기본값/클라우드 배포는 미확정이다. `performance/{overhead,overhead-entry}.ts`는 off/on 준비 2회+교차 5쌍, `resources.ts`는 승인된 작은 cgroup 동기 읽기, `comparison-report.ts`는 실패 분모/54회 검증 진입점이다. 아래 201개 기록은 직전 단계다.
+
+- **룩북 URL 추출 성능 개선 Phase 0~3 진행(2026-10-03):** [설계](architecture/LOOKBOOK_IMPORT_PERFORMANCE_DESIGN.md), [계획](tasks/lookbook-import-performance/plan.md), [최신 A~F 연결·컨테이너 검증](tasks/lookbook-import-performance/phase-3-comparison.md). Worker `src/performance/{comparison,frozen-input,buffer-inventory,container-runner,local-entry,comparison-report}.ts`가 고정 입력·A~F 정책·바이트 보유량·컨테이너 종료·54회 집계/5쌍 판정의 진입점이다. 필수 테스트 93개를 연결해 전체 201개를 검사한다. 초기 정책/부하/표본 간격은 승인됐고 Docker 설치·Linux 이미지 빌드를 진행했다. 54회 본 비교·클라우드 배포·최적값 채택과 제품 분산 재시도는 별도다. [시즌/중단](tasks/lookbook-import-performance/phase-3-runner.md), [재사용](tasks/lookbook-import-performance/phase-2-reuse.md)도 참조한다.
+
 - **채팅 검색·차단 목록 구현 및 DEV QA 완료(2026-10-02):** [최종 계약·검증·배포 경계](architecture/CHAT_MESSAGE_SEARCH.md). 포함 검색, 최초/계속 찾기 최대 500후보, 사용자 과거 이동 후 잔여 10개 이하에서 1페이지 선로딩, 현재 순번/확보 개수를 표시한다. 계정 전환·미읽음·방 종료까지 확인하고 전용 QA 자료를 정리했다. [채팅 진입점](entrypoints/CHAT.md), [차단 목록](entrypoints/PROFILE.md), [검증](entrypoints/TESTS.md). 운영 배포는 별도다.
 
 - **채팅 전송 버튼·키보드 수정 완료:** 한 번 탭으로 전송·입력 비움·키보드 유지, 연속 전송·배경 dismiss를 iPhone 14에서 사용자 확인했고 iOS 게이트 17개가 통과했다. `OutPick/Infra/Utility/Support/KeyboardDismissSupport.swift`의 공통 제스처 → `ChatUIView`의 버튼 callback → `ChatViewController.handleSendButtonTap`이 진입점이다. 공통 dismiss는 입력창과 `UIControl` 하위 터치를 제외한다. [CHAT](entrypoints/CHAT.md), [회귀 테스트·수동 QA](entrypoints/TESTS.md)를 참고한다.
@@ -304,6 +463,7 @@
 - Firebase/Storage 운영 권한 확인: `docs/ai/entrypoints/FIREBASE.md`
 - 단위 테스트: `OutPickTests`
 - UI 테스트: `OutPickUITests`
+- Q7 Development 실기기 UI 진입점: `OutPickUITests/LookbookImportQ7DevelopmentUITests.swift`. 명시적 opt-in과 고유 run ID가 있어야 실행하며 총 관리자 확인 뒤 QA 브랜드 1개 생성·UNAFFECTED 후보 탐색을 확인한다. 제목/순서가 고정 fixture와 다르면 즉시 실패하고 시즌 선택·이미지 import는 하지 않는다. 실행 전제와 증거는 `docs/ai/tasks/lookbook-import-performance/product-queue-q7-readiness.md`를 따른다.
 
 ## 세부 진입점
 

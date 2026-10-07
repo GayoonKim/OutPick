@@ -138,6 +138,27 @@ export {
   reviewLookbookExtraction,
   runLookbookExtractionDiagnostic,
 } from "./lookbook/import/functions.js";
+export {getSeasonImportBatch} from "./lookbook/import/queue/functions.js";
+export {
+  getSeasonImportFailures,
+  requestSeasonImportFailureRetry,
+  dismissSeasonImportFailure,
+} from "./lookbook/import/queue/failure-functions.js";
+export {
+  onLookbookBatchPreparationRequested,
+  onLookbookPreparationSequenceChanged,
+} from "./lookbook/import/queue/preparation-functions.js";
+export {
+  onLookbookQueueHeadChanged,
+  onLookbookQueueBatchReady,
+  reconcileLookbookQueueDelivery,
+} from "./lookbook/import/queue/maintenance-functions.js";
+export {
+  cleanupExpiredLookbookImportAssets,
+} from "./lookbook/import/queue/asset-retention.js";
+export {
+  cleanupExpiredLookbookImportRecords,
+} from "./lookbook/import/queue/record-retention.js";
 export {
   cancelSeasonDiscovery,
   onSeasonDiscoveryQueued,

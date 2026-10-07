@@ -48,6 +48,7 @@ import {
   type PurgeDrainPage,
   type PurgeDrainTargetType,
 } from "./purgeDrain.js";
+import {assertNoActiveLookbookAssetWrites} from "./assetWriteFence.js";
 
 const LOOKBOOK_PURGE_LEASE_DURATION_MINUTES = 15;
 const LOOKBOOK_PURGE_LEASES_COLLECTION = "lookbookDeletionPurgeLeases";
@@ -2366,6 +2367,7 @@ async function purgePostTarget(
   seasonID: string,
   postID: string
 ): Promise<Record<string, number>> {
+  await assertNoActiveLookbookAssetWrites(db, {brandID, seasonID, postID});
   const postRef = lookbookPostDocument(brandID, seasonID, postID);
   const postSnap = await postRef.get();
   const paths = new Set<string>();
@@ -2408,6 +2410,7 @@ async function purgeSeasonTarget(
   brandID: string,
   seasonID: string
 ): Promise<Record<string, number>> {
+  await assertNoActiveLookbookAssetWrites(db, {brandID, seasonID});
   const seasonRef = db
     .collection("brands")
     .doc(brandID)
@@ -2457,6 +2460,7 @@ async function purgeSeasonTarget(
 async function purgeBrandTarget(
   brandID: string
 ): Promise<Record<string, number>> {
+  await assertNoActiveLookbookAssetWrites(db, {brandID});
   const brandRef = db.collection("brands").doc(brandID);
   const brandSnap = await brandRef.get();
   const paths = new Set<string>();

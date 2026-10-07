@@ -1,7 +1,7 @@
 /* eslint-disable require-jsdoc, valid-jsdoc, max-len */
 import * as admin from "firebase-admin";
 import {CloudTasksClient} from "@google-cloud/tasks";
-import {createHash, randomUUID} from "node:crypto";
+import {createHash} from "node:crypto";
 import {FieldValue} from "firebase-admin/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
@@ -20,8 +20,12 @@ import {db, defaultStorageBucket} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {
   assertBrandWriteAccess,
-  isTotalBrandAdmin,
 } from "../../shared/brandAuthorization.js";
+import {
+  assertActivePlatformAdmin,
+  hasActivePlatformAdminData,
+  isActivePlatformAdmin,
+} from "../../shared/platformAuthorization.js";
 import {
   approvedCandidateKeys,
   nextGeneration,
@@ -32,16 +36,10 @@ import {
   extractionEvidenceCleanupTarget,
   extractionIssueClusterCleanupTarget,
 } from "./evidenceCleanup.js";
-import {
-  repairRequestDisposition,
-  seasonRepairPlan,
-} from "./repairContract.js";
-import {
-  isCurrentPublishedSeasonDiscoverySnapshot,
-} from "./seasonDiscoveryContract.js";
-import {
-  discoverSeasonCandidates as runDiscoverSeasonCandidates,
-} from "./seasonCandidateDiscovery.js";
+import {admitImportFollowup} from "./queue/followup-admission.js";
+import {admitSeasonRequest, seasonAdmissionError} from "./queue/season-admission.js";
+import {admitDiscoveryRequest} from "./queue/discovery-admission.js";
+import {isBatchQueueJob} from "./queue/authorization.js";
 
 const LOOKBOOK_IMPORT_TASKS_LOCATION = "asia-northeast3";
 const LOOKBOOK_IMPORT_TASKS_QUEUE = "lookbook-import-jobs";
@@ -49,7 +47,6 @@ const LOOKBOOK_IMPORT_TASK_ENDPOINT = "/tasks/import-job";
 const LOOKBOOK_DISCOVERY_DIAGNOSTIC_ENDPOINT =
   "/tasks/discover-seasons-diagnostic";
 const LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS = 3;
-const LOOKBOOK_ASSET_RETRY_MODE = "assetFailureRetry";
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_RETENTION_DAYS = 60;
 const LOOKBOOK_EXTRACTION_DIAGNOSTIC_CLEANUP_LIMIT = 100;
 const LOOKBOOK_EXTRACTION_EVIDENCE_CLEANUP_LIMIT = 100;
@@ -98,31 +95,6 @@ function normalizedHTTPURL(rawValue: string, fieldName: string): string {
   return parsed.toString();
 }
 
-function requiredDocumentIDList(
-  value: unknown,
-  fieldName: string,
-  maxCount: number
-): string[] {
-  if (!Array.isArray(value)) {
-    throw new HttpsError("invalid-argument", `${fieldName} 값이 필요합니다.`);
-  }
-
-  const ids = value.map((item) => {
-    if (typeof item !== "string") {
-      throw new HttpsError(
-        "invalid-argument",
-        `${fieldName} 값이 올바르지 않습니다.`
-      );
-    }
-    return requiredDocumentID(item, fieldName);
-  });
-
-  const uniqueIDs = Array.from(new Set(ids));
-  if (uniqueIDs.length === 0 || uniqueIDs.length > maxCount) {
-    throw new HttpsError("invalid-argument", `${fieldName} 개수가 올바르지 않습니다.`);
-  }
-  return uniqueIDs;
-}
 
 function optionalDocumentIDList(
   value: unknown,
@@ -173,105 +145,8 @@ export function blocksDuplicateSeasonImport(status: unknown): boolean {
   );
 }
 
-type SeasonCandidateImportSeed = {
-  sourceTitle: string | null;
-  coverRemoteURL: string | null;
-  sourceSortIndex: number | null;
-};
 
-type SeasonDiscoverySnapshotIdentity = {
-  discoveryJobID: string;
-  generation: number;
-  candidateSnapshotHash: string;
-  candidateID: string;
-};
-
-async function assertCurrentSeasonDiscoverySnapshot(
-  transaction: FirebaseFirestore.Transaction,
-  brandRef: FirebaseFirestore.DocumentReference,
-  seasonURL: string,
-  discoverySnapshot: SeasonDiscoverySnapshotIdentity
-): Promise<void> {
-  const discoveryJobRef = brandRef
-    .collection("seasonDiscoveryJobs")
-    .doc(discoverySnapshot.discoveryJobID);
-  const candidateRef = discoveryJobRef
-    .collection("candidates")
-    .doc(discoverySnapshot.candidateID);
-  const [brandSnapshot, discoveryJobSnapshot, candidateSnapshot] =
-    await Promise.all([
-      transaction.get(brandRef),
-      transaction.get(discoveryJobRef),
-      transaction.get(candidateRef),
-    ]);
-  const brand = brandSnapshot.data();
-  const discoveryJob = discoveryJobSnapshot.data();
-  const candidate = candidateSnapshot.data();
-  const expiresAt = brand?.publishedSeasonDiscoveryExpiresAt;
-  const expiresAtMillis = expiresAt instanceof admin.firestore.Timestamp ?
-    expiresAt.toMillis() : null;
-  let candidateURLMatches = false;
-  if (typeof candidate?.seasonURL === "string") {
-    try {
-      candidateURLMatches = normalizedHTTPURL(
-        candidate.seasonURL,
-        "seasonCandidate.seasonURL"
-      ) === seasonURL;
-    } catch {
-      candidateURLMatches = false;
-    }
-  }
-  const snapshotIsCurrent =
-    brandSnapshot.exists &&
-    discoveryJobSnapshot.exists &&
-    candidateSnapshot.exists &&
-    candidateURLMatches &&
-    isCurrentPublishedSeasonDiscoverySnapshot({
-      publishedJobID: brand?.publishedSeasonDiscoveryJobID,
-      publishedGeneration: brand?.publishedSeasonDiscoveryGeneration,
-      publishedSnapshotHash: brand?.publishedSeasonDiscoverySnapshotHash,
-      publishedExpiresAtMillis: expiresAtMillis,
-      jobID: discoverySnapshot.discoveryJobID,
-      jobGeneration: discoveryJob?.generation,
-      jobSnapshotHash: discoveryJob?.candidateSnapshotHash,
-      jobStatus: discoveryJob?.status,
-      candidateGeneration: candidate?.generation,
-      candidateSnapshotHash: candidate?.snapshotHash,
-      candidateResolution: candidate?.resolution,
-      expectedGeneration: discoverySnapshot.generation,
-      expectedSnapshotHash: discoverySnapshot.candidateSnapshotHash,
-      nowMillis: Date.now(),
-    });
-  if (!snapshotIsCurrent) {
-    throw new HttpsError(
-      "failed-precondition",
-      "현재 공개된 시즌 후보 snapshot과 요청이 일치하지 않습니다."
-    );
-  }
-}
-
-type SeasonImportJobReceipt = {
-  jobID: string;
-  brandID: string;
-  status: string;
-  seasonURL: string;
-  sourceCandidateID: string | null;
-  duplicate: boolean;
-};
-
-type SeasonCandidateImportTarget = {
-  candidateID: string;
-  seasonURL: string;
-  seed: SeasonCandidateImportSeed;
-};
-
-type SeasonCandidateImportFailure = {
-  candidateID: string;
-  title: string | null;
-  errorMessage: string;
-};
-
-type LookbookImportTaskConfig = {
+export type LookbookImportTaskConfig = {
   projectID: string;
   locationID: string;
   queueID: string;
@@ -358,14 +233,6 @@ type SeasonDiscoveryWorkerResponse = {
   diagnostic: SeasonDiscoveryWorkerDiagnostic;
 };
 
-type AssetFailureRetryReceipt = {
-  sourceImportJobID: string;
-  seasonID: string;
-  status: string;
-  duplicate: boolean;
-  requestID: string;
-  taskName: string | null;
-};
 
 function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -402,7 +269,7 @@ function googleCloudProjectID(): string {
   return projectID;
 }
 
-function lookbookImportTaskConfig(): LookbookImportTaskConfig {
+export function lookbookImportTaskConfig(): LookbookImportTaskConfig {
   const workerURL = requiredRuntimeEnv("OUTPICK_LOOKBOOK_IMPORT_WORKER_URL")
     .replace(/\/+$/, "");
   return {
@@ -627,20 +494,6 @@ function diagnosticSummary(
   return summary;
 }
 
-function seasonCandidateImportSeedFromData(
-  data: FirebaseFirestore.DocumentData | undefined
-): SeasonCandidateImportSeed {
-  return {
-    sourceTitle: typeof data?.title === "string" ? data.title.trim() : null,
-    coverRemoteURL:
-      typeof data?.coverImageURL === "string" ?
-        data.coverImageURL.trim() :
-        null,
-    sourceSortIndex: Number.isInteger(data?.sortIndex) ?
-      Number(data?.sortIndex) :
-      null,
-  };
-}
 
 async function enqueueLookbookImportTask(
   brandID: string,
@@ -707,425 +560,6 @@ async function enqueueLookbookImportTask(
   }
 }
 
-async function enqueueLookbookAssetRetryTask(
-  brandID: string,
-  seasonID: string,
-  sourceJobID: string,
-  requestID: string
-): Promise<LookbookImportTaskReceipt> {
-  const config = lookbookImportTaskConfig();
-  const client = tasksClient();
-  const parent = client.queuePath(
-    config.projectID,
-    config.locationID,
-    config.queueID
-  );
-  const taskName = client.taskPath(
-    config.projectID,
-    config.locationID,
-    config.queueID,
-    deterministicAssetRetryTaskID(brandID, seasonID, sourceJobID, requestID)
-  );
-  const payload = {
-    mode: LOOKBOOK_ASSET_RETRY_MODE,
-    brandID,
-    seasonID,
-    sourceJobID,
-    requestID,
-    maxAttempts: LOOKBOOK_IMPORT_TASK_MAX_ATTEMPTS,
-    requestedAt: new Date().toISOString(),
-  };
-
-  try {
-    const [task] = await client.createTask({
-      parent,
-      task: {
-        name: taskName,
-        httpRequest: {
-          httpMethod: "POST",
-          url: `${config.workerURL}${LOOKBOOK_IMPORT_TASK_ENDPOINT}`,
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: Buffer.from(JSON.stringify(payload)),
-          oidcToken: {
-            serviceAccountEmail: config.serviceAccountEmail,
-            audience: config.audience,
-          },
-        },
-      },
-    });
-
-    return {
-      taskName: task.name ?? taskName,
-      alreadyExists: false,
-    };
-  } catch (error) {
-    if (isAlreadyExistsError(error)) {
-      return {taskName, alreadyExists: true};
-    }
-    throw error;
-  }
-}
-
-async function seasonCandidateImportSeed(
-  brandRef: FirebaseFirestore.DocumentReference,
-  sourceCandidateID: string | null,
-  seasonURL: string
-): Promise<SeasonCandidateImportSeed> {
-  if (sourceCandidateID === null) {
-    return {
-      sourceTitle: null,
-      coverRemoteURL: null,
-      sourceSortIndex: null,
-    };
-  }
-
-  const candidateSnap = await brandRef
-    .collection("seasonCandidates")
-    .doc(sourceCandidateID)
-    .get();
-
-  if (!candidateSnap.exists) {
-    throw new HttpsError("not-found", "시즌 후보를 찾을 수 없습니다.");
-  }
-
-  const candidateURL = candidateSnap.data()?.seasonURL;
-  if (
-    typeof candidateURL !== "string" ||
-    normalizedHTTPURL(candidateURL, "seasonCandidate.seasonURL") !== seasonURL
-  ) {
-    throw new HttpsError(
-      "invalid-argument",
-      "시즌 후보와 시즌 URL이 일치하지 않습니다."
-    );
-  }
-
-  const data = candidateSnap.data();
-  return seasonCandidateImportSeedFromData(data);
-}
-
-async function requestSeasonImportJob(
-  uid: string,
-  brandID: string,
-  seasonURL: string,
-  sourceCandidateID: string | null
-): Promise<SeasonImportJobReceipt> {
-  const brandRef = db.collection("brands").doc(brandID);
-  const candidateSeed = await seasonCandidateImportSeed(
-    brandRef,
-    sourceCandidateID,
-    seasonURL
-  );
-  return createSeasonImportJobFromSeed(
-    uid,
-    brandID,
-    seasonURL,
-    sourceCandidateID,
-    candidateSeed
-  );
-}
-
-async function createSeasonImportJobFromSeed(
-  uid: string,
-  brandID: string,
-  seasonURL: string,
-  sourceCandidateID: string | null,
-  candidateSeed: SeasonCandidateImportSeed,
-  discoverySnapshot: SeasonDiscoverySnapshotIdentity | null = null
-): Promise<SeasonImportJobReceipt> {
-  const retryReceipt = await requestAssetRetryForExistingImportIfNeeded(
-    uid, brandID, seasonURL, sourceCandidateID, discoverySnapshot
-  );
-  if (retryReceipt !== null) {
-    return retryReceipt;
-  }
-
-  const brandRef = db.collection("brands").doc(brandID);
-  const importJobsRef = brandRef.collection("importJobs");
-  const jobRef = importJobsRef.doc();
-
-  return db.runTransaction(
-    async (transaction): Promise<SeasonImportJobReceipt> => {
-      if (discoverySnapshot !== null) {
-        await assertCurrentSeasonDiscoverySnapshot(
-          transaction, brandRef, seasonURL, discoverySnapshot
-        );
-      }
-
-      const sourceURLSnapshot = await transaction.get(
-        importJobsRef.where("sourceURL", "==", seasonURL)
-      );
-
-      const sourceCandidateSnapshot = sourceCandidateID === null ?
-        null :
-        await transaction.get(
-          importJobsRef.where("sourceCandidateID", "==", sourceCandidateID)
-        );
-
-      const activeDuplicate = [
-        ...sourceURLSnapshot.docs,
-        ...(sourceCandidateSnapshot?.docs ?? []),
-      ].find((snapshot) => {
-        const job = snapshot.data();
-        return (
-          job.jobType === "importSeasonFromURL" &&
-          blocksDuplicateSeasonImport(job.status)
-        );
-      });
-
-      if (activeDuplicate) {
-        const job = activeDuplicate.data();
-        const duplicatePatch: Record<string, unknown> = {};
-        if (
-          typeof job.sourceTitle !== "string" &&
-          candidateSeed.sourceTitle !== null
-        ) {
-          duplicatePatch.sourceTitle = candidateSeed.sourceTitle;
-        }
-        if (
-          typeof job.coverRemoteURL !== "string" &&
-          candidateSeed.coverRemoteURL !== null
-        ) {
-          duplicatePatch.coverRemoteURL = candidateSeed.coverRemoteURL;
-        }
-        if (
-          !Number.isInteger(job.sourceSortIndex) &&
-          candidateSeed.sourceSortIndex !== null
-        ) {
-          duplicatePatch.sourceSortIndex = candidateSeed.sourceSortIndex;
-        }
-        if (Object.keys(duplicatePatch).length > 0) {
-          duplicatePatch.updatedAt = FieldValue.serverTimestamp();
-          transaction.update(activeDuplicate.ref, duplicatePatch);
-        }
-
-        return {
-          jobID: activeDuplicate.id,
-          brandID,
-          status: String(job.status ?? "queued"),
-          seasonURL,
-          sourceCandidateID: typeof job.sourceCandidateID === "string" ?
-            job.sourceCandidateID :
-            sourceCandidateID,
-          duplicate: true,
-        };
-      }
-
-      transaction.set(jobRef, {
-        brandID,
-        jobType: "importSeasonFromURL",
-        status: "queued",
-        phase: "dispatching",
-        dispatchMode: "cloudTasks",
-        sourceURL: seasonURL,
-        sourceCandidateID,
-        sourceTitle: candidateSeed.sourceTitle,
-        coverRemoteURL: candidateSeed.coverRemoteURL,
-        sourceSortIndex: candidateSeed.sourceSortIndex,
-        requestedBy: uid,
-        errorMessage: null,
-        assetCompletedCount: 0,
-        assetFailedCount: 0,
-        dispatchGeneration: 0,
-        reviewGeneration: 0,
-        reviewStatus: null,
-        resumeFrom: "parsing",
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-
-      return {
-        jobID: jobRef.id,
-        brandID,
-        status: "queued",
-        seasonURL,
-        sourceCandidateID,
-        duplicate: false,
-      };
-    }
-  );
-}
-
-async function requestAssetRetryForExistingImportIfNeeded(
-  uid: string,
-  brandID: string,
-  seasonURL: string,
-  sourceCandidateID: string | null,
-  discoverySnapshot: SeasonDiscoverySnapshotIdentity | null = null
-): Promise<SeasonImportJobReceipt | null> {
-  const importJobsRef = db
-    .collection("brands")
-    .doc(brandID)
-    .collection("importJobs");
-  const sourceURLSnapshot = await importJobsRef
-    .where("sourceURL", "==", seasonURL)
-    .get();
-  const sourceCandidateSnapshot = sourceCandidateID === null ?
-    null :
-    await importJobsRef
-      .where("sourceCandidateID", "==", sourceCandidateID)
-      .get();
-  const retryableJob = [
-    ...sourceURLSnapshot.docs,
-    ...(sourceCandidateSnapshot?.docs ?? []),
-  ].find((snapshot) => {
-    const job = snapshot.data();
-    return (
-      job.jobType === "importSeasonFromURL" &&
-      (job.status === "partialFailed" || job.status === "failed") &&
-      typeof job.targetSeasonID === "string" &&
-      Number(job.assetFailedCount ?? 0) > 0
-    );
-  });
-
-  if (!retryableJob) {
-    return null;
-  }
-
-  const retryReceipt = await requestSeasonAssetFailureRetry(
-    uid,
-    brandID,
-    retryableJob.id,
-    discoverySnapshot,
-    seasonURL
-  );
-  const sourceJob = retryableJob.data();
-  return {
-    jobID: retryReceipt.sourceImportJobID,
-    brandID,
-    status: retryReceipt.status,
-    seasonURL,
-    sourceCandidateID: typeof sourceJob.sourceCandidateID === "string" ?
-      sourceJob.sourceCandidateID :
-      sourceCandidateID,
-    duplicate: retryReceipt.duplicate,
-  };
-}
-
-function isInFlightAssetRetryStatus(status: unknown): boolean {
-  return status === "queued" || status === "processing";
-}
-
-async function requestSeasonAssetFailureRetry(
-  uid: string,
-  brandID: string,
-  sourceJobID: string,
-  discoverySnapshot: SeasonDiscoverySnapshotIdentity | null = null,
-  seasonURL: string | null = null
-): Promise<AssetFailureRetryReceipt> {
-  const brandRef = db.collection("brands").doc(brandID);
-  const importJobsRef = brandRef.collection("importJobs");
-  const sourceJobRef = importJobsRef.doc(sourceJobID);
-
-  const marker = await db.runTransaction(async (transaction) => {
-    const sourceJobSnapshot = await transaction.get(sourceJobRef);
-    if (discoverySnapshot !== null && seasonURL !== null) {
-      await assertCurrentSeasonDiscoverySnapshot(
-        transaction, brandRef, seasonURL, discoverySnapshot
-      );
-    }
-    if (!sourceJobSnapshot.exists) {
-      throw new HttpsError("not-found", "원본 import job을 찾을 수 없습니다.");
-    }
-    const sourceJob = sourceJobSnapshot.data() ?? {};
-    if (
-      sourceJob.jobType !== "importSeasonFromURL" ||
-      !["partialFailed", "failed"].includes(String(sourceJob.status))
-    ) {
-      throw new HttpsError(
-        "failed-precondition",
-        "실패 asset이 있는 완료 job만 재시도할 수 있습니다."
-      );
-    }
-    const targetSeasonID = requiredDocumentID(
-      requiredString(sourceJob, "targetSeasonID", 128),
-      "targetSeasonID"
-    );
-    normalizedHTTPURL(
-      requiredString(sourceJob, "sourceURL", 2048),
-      "sourceURL"
-    );
-    requiredDocumentIDList(
-      sourceJob.createdPostIDs,
-      "createdPostIDs",
-      120
-    );
-    if (
-      isInFlightAssetRetryStatus(sourceJob.assetRetryStatus) &&
-      typeof sourceJob.assetRetryRequestID === "string"
-    ) {
-      return {
-        requestID: sourceJob.assetRetryRequestID,
-        status: String(sourceJob.assetRetryStatus),
-        sourceImportJobID: sourceJobID,
-        seasonID: targetSeasonID,
-        duplicate: true,
-        enqueue: false,
-      };
-    }
-
-    const requestID = randomUUID();
-    transaction.update(sourceJobRef, {
-      assetRetryStatus: "queued",
-      assetRetryRequestID: requestID,
-      assetRetryRequestedBy: uid,
-      assetRetryRequestedAt: FieldValue.serverTimestamp(),
-      assetRetryTaskName: null,
-      assetRetryErrorMessage: null,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    return {
-      requestID,
-      status: "queued",
-      sourceImportJobID: sourceJobID,
-      seasonID: targetSeasonID,
-      duplicate: false,
-      enqueue: true,
-    };
-  });
-
-  if (marker.duplicate || !marker.enqueue) {
-    return {
-      sourceImportJobID: marker.sourceImportJobID,
-      seasonID: marker.seasonID,
-      status: marker.status,
-      duplicate: true,
-      requestID: marker.requestID,
-      taskName: null,
-    };
-  }
-
-  try {
-    const taskReceipt = await enqueueLookbookAssetRetryTask(
-      brandID,
-      marker.seasonID,
-      sourceJobID,
-      marker.requestID
-    );
-    await sourceJobRef.update({
-      assetRetryTaskName: taskReceipt.taskName,
-      assetRetryTaskEnqueuedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    return {
-      sourceImportJobID: marker.sourceImportJobID,
-      seasonID: marker.seasonID,
-      status: marker.status,
-      duplicate: taskReceipt.alreadyExists,
-      requestID: marker.requestID,
-      taskName: taskReceipt.taskName,
-    };
-  } catch (error) {
-    await sourceJobRef.update({
-      assetRetryStatus: "failed",
-      assetRetryErrorMessage: messageFromError(error),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    throw error;
-  }
-}
 
 async function runSeasonDiscoveryDiagnostic(
   uid: string,
@@ -1371,24 +805,11 @@ export const requestSeasonImport = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const seasonURL = normalizedHTTPURL(
-      requiredString(data, "seasonURL", 2048),
-      "seasonURL"
-    );
-    const sourceCandidateID = optionalDocumentID(
-      optionalString(data, "sourceCandidateID", 128),
-      "sourceCandidateID"
-    );
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    return requestSeasonImportJob(uid, brandID, seasonURL, sourceCandidateID);
+    try {
+      return await admitSeasonRequest(db, uid, recordData(request.data), "url");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -1396,18 +817,11 @@ export const requestSeasonAssetRetry = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const sourceJobID = requiredDocumentID(
-      requiredString(data, "sourceJobID", 128),
-      "sourceJobID"
-    );
-
-    await assertBrandWriteAccess(uid, brandID);
-    return requestSeasonAssetFailureRetry(uid, brandID, sourceJobID);
+    try {
+      return await admitSeasonRequest(db, uid, recordData(request.data), "assetRetry");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -1415,196 +829,11 @@ export const requestSeasonCandidateImportJobs = onCall(
   {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const candidateIDs = requiredDocumentIDList(
-      data.candidateIDs,
-      "candidateIDs",
-      80
-    );
-    const discoveryJobID = requiredDocumentID(
-      requiredString(data, "discoveryJobID", 128),
-      "discoveryJobID"
-    );
-    const generation = requiredNonNegativeIntegerValue(
-      data.generation,
-      "generation"
-    );
-    const candidateSnapshotHash = requiredString(
-      data,
-      "candidateSnapshotHash",
-      128
-    );
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    const brandRef = db.collection("brands").doc(brandID);
-    const [brandSnapshot, discoveryJobSnapshot] = await Promise.all([
-      brandRef.get(),
-      brandRef.collection("seasonDiscoveryJobs").doc(discoveryJobID).get(),
-    ]);
-    const brandData = brandSnapshot.data();
-    const discoveryJobData = discoveryJobSnapshot.data();
-    const publishedExpiresAt = brandData?.publishedSeasonDiscoveryExpiresAt;
-    if (
-      !brandSnapshot.exists ||
-      !discoveryJobSnapshot.exists ||
-      brandData?.publishedSeasonDiscoveryJobID !== discoveryJobID ||
-      brandData?.publishedSeasonDiscoveryGeneration !== generation ||
-      brandData?.publishedSeasonDiscoverySnapshotHash !== candidateSnapshotHash ||
-      discoveryJobData?.generation !== generation ||
-      discoveryJobData?.candidateSnapshotHash !== candidateSnapshotHash ||
-      !["succeeded", "awaitingReview"].includes(discoveryJobData?.status) ||
-      (
-        publishedExpiresAt instanceof admin.firestore.Timestamp &&
-        publishedExpiresAt.toMillis() <= Date.now()
-      )
-    ) {
-      throw new HttpsError(
-        "failed-precondition",
-        "현재 공개된 시즌 후보 snapshot과 요청이 일치하지 않습니다."
-      );
+    try {
+      return await admitSeasonRequest(db, uid, recordData(request.data), "candidates");
+    } catch (error) {
+      return seasonAdmissionError(error);
     }
-    const candidateRefs = candidateIDs.map((candidateID) => {
-      return discoveryJobSnapshot.ref.collection("candidates").doc(candidateID);
-    });
-    const candidateSnapshots = await db.getAll(...candidateRefs);
-    const failures: SeasonCandidateImportFailure[] = [];
-    const targetBySeasonURL = new Map<string, SeasonCandidateImportTarget>();
-    let duplicateWithinBatchCount = 0;
-
-    candidateSnapshots.forEach((candidateSnapshot) => {
-      const candidateID = candidateSnapshot.id;
-      const candidateData = candidateSnapshot.data();
-      const title = typeof candidateData?.title === "string" ?
-        candidateData.title.trim() :
-        null;
-
-      if (!candidateSnapshot.exists || !candidateData) {
-        failures.push({
-          candidateID,
-          title,
-          errorMessage: "시즌 후보를 찾을 수 없습니다.",
-        });
-        return;
-      }
-
-      if (
-        candidateData.resolution !== "newSeason" ||
-        candidateData.generation !== generation ||
-        candidateData.snapshotHash !== candidateSnapshotHash
-      ) {
-        failures.push({
-          candidateID,
-          title,
-          errorMessage: "신규 시즌으로 확정된 현재 후보만 가져올 수 있습니다.",
-        });
-        return;
-      }
-
-      try {
-        const seasonURL = normalizedHTTPURL(
-          requiredString(candidateData, "seasonURL", 2048),
-          "seasonCandidate.seasonURL"
-        );
-        if (targetBySeasonURL.has(seasonURL)) {
-          duplicateWithinBatchCount += 1;
-          return;
-        }
-        targetBySeasonURL.set(seasonURL, {
-          candidateID,
-          seasonURL,
-          seed: seasonCandidateImportSeedFromData(candidateData),
-        });
-      } catch (error) {
-        failures.push({
-          candidateID,
-          title,
-          errorMessage: messageFromError(error),
-        });
-      }
-    });
-
-    const targets = Array.from(targetBySeasonURL.values());
-    const creationResults = await mapWithConcurrency(
-      targets,
-      10,
-      async (target): Promise<
-        | {ok: true; receipt: SeasonImportJobReceipt}
-        | {ok: false; failure: SeasonCandidateImportFailure}
-      > => {
-        try {
-          return {
-            ok: true,
-            receipt: await createSeasonImportJobFromSeed(
-              uid,
-              brandID,
-              target.seasonURL,
-              target.candidateID,
-              target.seed,
-              {
-                discoveryJobID,
-                generation,
-                candidateSnapshotHash,
-                candidateID: target.candidateID,
-              }
-            ),
-          };
-        } catch (error) {
-          return {
-            ok: false,
-            failure: {
-              candidateID: target.candidateID,
-              title: target.seed.sourceTitle,
-              errorMessage: messageFromError(error),
-            },
-          };
-        }
-      }
-    );
-
-    const receipts = creationResults
-      .filter((result): result is {
-        ok: true;
-        receipt: SeasonImportJobReceipt;
-      } => {
-        return result.ok;
-      })
-      .map((result) => result.receipt);
-    failures.push(
-      ...creationResults
-        .filter((result): result is {
-          ok: false;
-          failure: SeasonCandidateImportFailure;
-        } => {
-          return !result.ok;
-        })
-        .map((result) => result.failure)
-    );
-
-    const jobIDs = Array.from(
-      new Set(receipts.map((receipt) => receipt.jobID))
-    );
-    return {
-      brandID,
-      discoveryJobID,
-      generation,
-      candidateSnapshotHash,
-      candidateIDs,
-      jobIDs,
-      requestedJobCount: candidateIDs.length,
-      createdJobCount: receipts.filter((receipt) => !receipt.duplicate).length,
-      duplicateJobCount:
-        receipts.filter((receipt) => receipt.duplicate).length +
-        duplicateWithinBatchCount,
-      requestedImportJobCount: receipts.length,
-      failedJobCount: failures.length,
-      skippedJobCount: duplicateWithinBatchCount,
-      failedCandidates: failures,
-    };
   }
 );
 
@@ -1737,7 +966,12 @@ export const getLookbookExtractionReview = onCall(
       requiredString(data, "jobID", 128),
       "jobID"
     );
-    await assertBrandWriteAccess(uid, brandID);
+    await assertActivePlatformAdmin(db, uid);
+    const brandSnapshot = await db.collection("brands").doc(brandID).get();
+    if (!brandSnapshot.exists || (brandSnapshot.data()?.deletionStatus &&
+        brandSnapshot.data()?.deletionStatus !== "active")) {
+      throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+    }
     const snapshot = await db
       .collection("brands")
       .doc(brandID)
@@ -1755,7 +989,7 @@ export const getLookbookExtractionReview = onCall(
     const imageCandidates = Array.isArray(job.imageCandidates) ?
       job.imageCandidates :
       [];
-    const canRetryAfterFix = await isTotalBrandAdmin(uid) &&
+    const canRetryAfterFix = await isActivePlatformAdmin(db, uid) &&
       hasVerifiedExtractionRetryRuntime(job);
     return {
       jobID,
@@ -1790,6 +1024,13 @@ export const reviewLookbookExtraction = onCall(
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
     const data = recordData(request.data);
+    if (data.decision === "approved" || data.decision === "approvedWithExclusions") {
+      try {
+        return await admitImportFollowup(db, uid, data, "reviewApproval");
+      } catch (error) {
+        return seasonAdmissionError(error);
+      }
+    }
     const brandID = requiredDocumentID(
       requiredString(data, "brandID", 128),
       "brandID"
@@ -1826,17 +1067,26 @@ export const reviewLookbookExtraction = onCall(
         "expectedCandidateCount"
       );
     const note = optionalString(data, "note", 500);
-    await assertBrandWriteAccess(uid, brandID);
-
+    const brandRef = db.collection("brands").doc(brandID);
     const jobRef = db.collection("brands").doc(brandID)
       .collection("importJobs").doc(jobID);
     const reviewRef = jobRef.collection("reviews")
       .doc(String(reviewGeneration));
+    const platformAdminRef = db.collection("platformAdmins").doc(uid);
     return db.runTransaction(async (transaction) => {
-      const [jobSnapshot, existingReview] = await Promise.all([
+      const [brandSnapshot, jobSnapshot, existingReview, platformAdmin] = await Promise.all([
+        transaction.get(brandRef),
         transaction.get(jobRef),
         transaction.get(reviewRef),
+        transaction.get(platformAdminRef),
       ]);
+      if (!hasActivePlatformAdminData(platformAdmin.data())) {
+        throw new HttpsError("permission-denied", "플랫폼 관리자 권한이 필요합니다.");
+      }
+      if (!brandSnapshot.exists || (brandSnapshot.data()?.deletionStatus &&
+          brandSnapshot.data()?.deletionStatus !== "active")) {
+        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+      }
       if (existingReview.exists) {
         const existing = existingReview.data() ?? {};
         if (
@@ -2015,62 +1265,11 @@ export const retryLookbookExtractionAfterFix = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    if (!(await isTotalBrandAdmin(uid))) {
-      throw new HttpsError("permission-denied", "총 관리자 권한이 필요합니다.");
+    try {
+      return await admitImportFollowup(db, uid, recordData(request.data), "manualRetry");
+    } catch (error) {
+      return seasonAdmissionError(error);
     }
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const jobID = requiredDocumentID(
-      requiredString(data, "jobID", 128),
-      "jobID"
-    );
-    const jobRef = db.collection("brands").doc(brandID)
-      .collection("importJobs").doc(jobID);
-    return db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(jobRef);
-      const job = snapshot.data();
-      if (!snapshot.exists || !job) {
-        throw new HttpsError("not-found", "재분석할 import job이 없습니다.");
-      }
-      if (
-        job.status !== "awaitingReview" ||
-        job.reviewStatus !== "correctionRequired" ||
-        !hasVerifiedExtractionRetryRuntime(job)
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "개선 검증이 끝난 이미지 부족 job만 다시 가져올 수 있습니다."
-        );
-      }
-      const reviewGeneration = nextGeneration(job.reviewGeneration);
-      const dispatchGeneration = nextGeneration(job.dispatchGeneration);
-      transaction.update(jobRef, {
-        status: "queued",
-        phase: "dispatching",
-        resumeFrom: "parsing",
-        reviewStatus: "reanalyzing",
-        reviewGeneration,
-        dispatchGeneration,
-        approvedCandidateKeys: [],
-        imageCandidates: [],
-        reviewCandidateKeys: [],
-        reviewSnapshotHash: null,
-        trustBaselineMatched: false,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return {
-        jobID,
-        status: "queued",
-        reviewGeneration,
-        dispatchGeneration,
-        retryRuntimeVersion: job.retryAvailableRuntimeVersion,
-      };
-    });
   }
 );
 
@@ -2087,105 +1286,11 @@ export const requestLookbookSeasonRepair = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const seasonID = requiredDocumentID(
-      requiredString(data, "seasonID", 128),
-      "seasonID"
-    );
-    const sourceImportJobID = requiredDocumentID(
-      requiredString(data, "sourceImportJobID", 128),
-      "sourceImportJobID"
-    );
-    await assertBrandWriteAccess(uid, brandID);
-    const seasonRef = db.collection("brands").doc(brandID)
-      .collection("seasons").doc(seasonID);
-    const jobRef = db.collection("brands").doc(brandID)
-      .collection("importJobs").doc(sourceImportJobID);
-    return db.runTransaction(async (transaction) => {
-      const [seasonSnapshot, jobSnapshot] = await Promise.all([
-        transaction.get(seasonRef),
-        transaction.get(jobRef),
-      ]);
-      const season = seasonSnapshot.data();
-      const job = jobSnapshot.data();
-      if (!seasonSnapshot.exists || !season) {
-        throw new HttpsError("not-found", "보수할 시즌을 찾을 수 없습니다.");
-      }
-      if (!jobSnapshot.exists || !job) {
-        throw new HttpsError("not-found", "원본 import job을 찾을 수 없습니다.");
-      }
-      if (
-        season.sourceImportJobID !== sourceImportJobID ||
-        job.targetSeasonID !== seasonID ||
-        job.jobType !== "importSeasonFromURL"
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "시즌과 원본 import job 연결이 올바르지 않습니다."
-        );
-      }
-      let disposition;
-      try {
-        disposition = repairRequestDisposition({
-          jobStatus: job.status,
-          repairStatus: job.repairStatus,
-          repairTargetSeasonID: job.repairTargetSeasonID,
-          requestedSeasonID: seasonID,
-        });
-      } catch (error) {
-        throw new HttpsError("failed-precondition", messageFromError(error));
-      }
-      if (disposition === "duplicate") {
-        return {
-          jobID: sourceImportJobID,
-          seasonID,
-          repairGeneration: nonNegativeIntegerValue(
-            job.repairGeneration,
-            0
-          ),
-          status: job.repairStatus,
-          duplicate: true,
-        };
-      }
-      const repairGeneration = nextGeneration(job.repairGeneration);
-      const dispatchGeneration = nextGeneration(job.dispatchGeneration);
-      const now = FieldValue.serverTimestamp();
-      transaction.update(jobRef, {
-        status: "queued",
-        phase: "dispatching",
-        resumeFrom: "parsing",
-        reviewStatus: "reanalyzing",
-        repairStatus: "analyzing",
-        repairGeneration,
-        repairTargetSeasonID: seasonID,
-        repairSnapshotHash: null,
-        dispatchGeneration,
-        imageCandidates: [],
-        imageCandidateContentHashes: [],
-        reviewCandidateKeys: [],
-        reviewSnapshotHash: null,
-        approvedCandidateKeys: [],
-        parseStatus: "pending",
-        contentStatus: "pending",
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        repairRequestedBy: uid,
-        repairRequestedAt: now,
-        updatedAt: now,
-      });
-      return {
-        jobID: sourceImportJobID,
-        seasonID,
-        repairGeneration,
-        dispatchGeneration,
-        status: "analyzing",
-        duplicate: false,
-      };
-    });
+    try {
+      return await admitImportFollowup(db, uid, recordData(request.data), "repairAnalyze");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -2202,7 +1307,12 @@ export const previewLookbookSeasonRepair = onCall(
       requiredString(data, "jobID", 128),
       "jobID"
     );
-    await assertBrandWriteAccess(uid, brandID);
+    await assertActivePlatformAdmin(db, uid);
+    const brandSnapshot = await db.collection("brands").doc(brandID).get();
+    if (!brandSnapshot.exists || (brandSnapshot.data()?.deletionStatus &&
+        brandSnapshot.data()?.deletionStatus !== "active")) {
+      throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
+    }
     const jobRef = db.collection("brands").doc(brandID)
       .collection("importJobs").doc(jobID);
     const jobSnapshot = await jobRef.get();
@@ -2254,222 +1364,11 @@ export const applyLookbookSeasonRepair = onCall(
   {region: FUNCTIONS_REGION, timeoutSeconds: 120, memory: "512MiB"},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-    const jobID = requiredDocumentID(
-      requiredString(data, "jobID", 128),
-      "jobID"
-    );
-    const repairGeneration = requiredNonNegativeIntegerValue(
-      data.repairGeneration,
-      "repairGeneration"
-    );
-    const repairSnapshotHash = requiredString(
-      data,
-      "repairSnapshotHash",
-      128
-    );
-    await assertBrandWriteAccess(uid, brandID);
-    const jobRef = db.collection("brands").doc(brandID)
-      .collection("importJobs").doc(jobID);
-    const repairRef = jobRef.collection("repairs")
-      .doc(String(repairGeneration));
-    const claim = await db.runTransaction(async (transaction) => {
-      const [jobSnapshot, repairSnapshot] = await Promise.all([
-        transaction.get(jobRef),
-        transaction.get(repairRef),
-      ]);
-      const job = jobSnapshot.data();
-      const repair = repairSnapshot.data();
-      if (!jobSnapshot.exists || !job || !repairSnapshot.exists || !repair) {
-        throw new HttpsError("not-found", "시즌 보수 미리보기가 없습니다.");
-      }
-      if (
-        nonNegativeIntegerValue(job.repairGeneration, 0) !==
-          repairGeneration ||
-        job.repairSnapshotHash !== repairSnapshotHash ||
-        repair.repairSnapshotHash !== repairSnapshotHash
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "시즌 보수 미리보기가 최신 상태가 아닙니다."
-        );
-      }
-      if (repair.status === "applied") {
-        return {
-          duplicate: true as const,
-          seasonID: requiredDocumentID(
-            requiredString(repair, "seasonID", 128),
-            "seasonID"
-          ),
-        };
-      }
-      if (
-        repair.status !== "previewReady" &&
-        repair.status !== "applying"
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "적용할 수 없는 시즌 보수 상태입니다."
-        );
-      }
-      let plan;
-      try {
-        plan = seasonRepairPlan(repair);
-      } catch (error) {
-        throw new HttpsError("data-loss", messageFromError(error));
-      }
-      const seasonID = requiredDocumentID(
-        requiredString(repair, "seasonID", 128),
-        "seasonID"
-      );
-      const now = FieldValue.serverTimestamp();
-      transaction.update(repairRef, {
-        status: "applying",
-        appliedBy: uid,
-        applyStartedAt: now,
-        updatedAt: now,
-      });
-      transaction.update(jobRef, {
-        repairStatus: "applying",
-        updatedAt: now,
-      });
-      return {duplicate: false as const, seasonID, plan};
-    });
-    if (claim.duplicate) {
-      return {
-        jobID,
-        seasonID: claim.seasonID,
-        repairGeneration,
-        status: "applied",
-        duplicate: true,
-      };
+    try {
+      return await admitImportFollowup(db, uid, recordData(request.data), "repairApply");
+    } catch (error) {
+      return seasonAdmissionError(error);
     }
-
-    const seasonRef = db.collection("brands").doc(brandID)
-      .collection("seasons").doc(claim.seasonID);
-    const seasonSnapshot = await seasonRef.get();
-    if (!seasonSnapshot.exists) {
-      throw new HttpsError("not-found", "보수할 시즌이 없습니다.");
-    }
-    const addRefs = claim.plan.add.map((entry) =>
-      seasonRef.collection("posts").doc(entry.postID)
-    );
-    const addSnapshots = addRefs.length > 0 ?
-      await db.getAll(...addRefs) :
-      [];
-    const existingAddIDs = new Set(
-      addSnapshots.filter((snapshot) => snapshot.exists)
-        .map((snapshot) => snapshot.id)
-    );
-    const now = admin.firestore.Timestamp.now();
-    const batch = db.batch();
-    [
-      ...claim.plan.keep,
-      ...claim.plan.reorder,
-      ...claim.plan.removeCandidates,
-    ].forEach((entry) => {
-      batch.set(seasonRef.collection("posts").doc(entry.postID), {
-        orderIndex: entry.proposedIndex,
-        sourceSortIndex: entry.proposedIndex,
-        repairedAt: now,
-        updatedAt: now,
-      }, {merge: true});
-    });
-    claim.plan.add.forEach((entry) => {
-      if (existingAddIDs.has(entry.postID)) {
-        batch.set(seasonRef.collection("posts").doc(entry.postID), {
-          orderIndex: entry.proposedIndex,
-          sourceSortIndex: entry.proposedIndex,
-          repairedAt: now,
-          updatedAt: now,
-        }, {merge: true});
-        return;
-      }
-      batch.set(seasonRef.collection("posts").doc(entry.postID), {
-        brandID,
-        seasonID: claim.seasonID,
-        authorID: null,
-        orderIndex: entry.proposedIndex,
-        sourceSortIndex: entry.proposedIndex,
-        status: "published",
-        assetSyncStatus: "pending",
-        sourceImportJobID: jobID,
-        media: [{
-          type: "image",
-          remoteURL: entry.sourceURL,
-          thumbPath: null,
-          detailPath: null,
-          sourcePageURL: seasonSnapshot.data()?.sourceURL ?? null,
-          contentHash: entry.contentHash,
-        }],
-        caption: entry.alt,
-        tagIDs: [],
-        metrics: {
-          likeCount: 0,
-          commentCount: 0,
-          replacementCount: 0,
-          saveCount: 0,
-          viewCount: 0,
-        },
-        createdAt: now,
-        updatedAt: now,
-      });
-    });
-    batch.set(seasonRef, {
-      postCount: claim.plan.resultingPostCount,
-      assetSyncStatus: "pending",
-      repairGeneration,
-      lastRepairSourceImportJobID: jobID,
-      repairedAt: now,
-      updatedAt: now,
-    }, {merge: true});
-    const dispatchGenerationSnapshot = await jobRef.get();
-    const dispatchGeneration = nextGeneration(
-      dispatchGenerationSnapshot.data()?.dispatchGeneration
-    );
-    const hasCover = typeof seasonSnapshot.data()?.coverRemoteURL === "string";
-    batch.update(jobRef, {
-      status: "queued",
-      phase: "dispatching",
-      resumeFrom: "materializing",
-      reviewStatus: "approved",
-      repairStatus: "applied",
-      targetSeasonID: claim.seasonID,
-      createdPostIDs: claim.plan.allPostIDs,
-      createdPostCount: claim.plan.resultingPostCount,
-      assetTotalCount: claim.plan.allPostIDs.length + (hasCover ? 1 : 0),
-      assetCompletedCount: 0,
-      assetFailedCount: 0,
-      dispatchGeneration,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      repairedBy: uid,
-      repairedAt: now,
-      updatedAt: now,
-    });
-    batch.update(repairRef, {
-      status: "applied",
-      appliedBy: uid,
-      appliedAt: now,
-      updatedAt: now,
-    });
-    await batch.commit();
-    return {
-      jobID,
-      seasonID: claim.seasonID,
-      repairGeneration,
-      dispatchGeneration,
-      status: "applied",
-      duplicate: false,
-      addedCount: claim.plan.add.length,
-      reorderedCount: claim.plan.reorder.length,
-      preservedRemoveCandidateCount:
-        claim.plan.removeCandidates.length,
-    };
   }
 );
 
@@ -2489,7 +1388,7 @@ export const onSeasonImportQueued = onDocumentWritten(
     const before = event.data?.before.data() as
       Record<string, unknown> | undefined;
     const after = afterSnap.data() as Record<string, unknown> | undefined;
-    if (!after) {
+    if (!after || isBatchQueueJob(after)) {
       return;
     }
 
@@ -2553,33 +1452,12 @@ export const discoverSeasonCandidates = onCall(
   {region: FUNCTIONS_REGION, timeoutSeconds: 60, memory: "512MiB"},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128),
-      "brandID"
-    );
-
-    await assertBrandWriteAccess(uid, brandID);
-
-    const brandSnap = await db.collection("brands").doc(brandID).get();
-    const brandData = brandSnap.data();
-    const lookbookArchiveURLValue = brandData?.lookbookArchiveURL;
-    if (
-      typeof lookbookArchiveURLValue !== "string" ||
-      lookbookArchiveURLValue.trim().length === 0
-    ) {
-      throw new HttpsError(
-        "failed-precondition",
-        "룩북 목록 URL이 등록되어 있지 않습니다."
-      );
+    try {
+      return await admitDiscoveryRequest(db, uid,
+        {...recordData(request.data), requestReason: "manualRefresh"}, "request");
+    } catch (error) {
+      return seasonAdmissionError(error);
     }
-
-    const lookbookArchiveURL = normalizedHTTPURL(
-      lookbookArchiveURLValue,
-      "lookbookArchiveURL"
-    );
-
-    return runDiscoverSeasonCandidates(db, brandID, lookbookArchiveURL);
   }
 );
 

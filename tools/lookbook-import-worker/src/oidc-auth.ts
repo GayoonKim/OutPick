@@ -1,6 +1,6 @@
 import {OAuth2Client} from "google-auth-library";
 
-export type WorkerCaller = "functions" | "task";
+export type WorkerCaller = "functions" | "task" | "recovery";
 
 export interface VerifiedOIDCIdentity {
   email: string | null;
@@ -15,6 +15,7 @@ export interface WorkerAuthConfig {
   audience: string;
   taskServiceAccountEmail: string;
   functionsServiceAccountEmail: string;
+  recoveryServiceAccountEmail?: string;
 }
 
 export class OIDCAuthenticationError extends Error {
@@ -71,9 +72,12 @@ export function allowedEmailForCaller(
   caller: WorkerCaller,
   config: WorkerAuthConfig,
 ): string {
-  return caller === "task" ?
-    config.taskServiceAccountEmail :
-    config.functionsServiceAccountEmail;
+  if (caller === "task") return config.taskServiceAccountEmail;
+  if (caller === "functions") return config.functionsServiceAccountEmail;
+  if (config.recoveryServiceAccountEmail) {
+    return config.recoveryServiceAccountEmail;
+  }
+  throw new OIDCAuthenticationError(403, "복구 호출이 설정되지 않았습니다.");
 }
 
 function bearerToken(authorizationHeader: string | undefined): string {

@@ -13,6 +13,7 @@ struct AccountDeletionLocalDataCleanupTests {
         _ = try await SearchStoreFixture.commit(search, scope, hits: [SearchStoreFixture.hit("search-only", 1)])
         let tables = [
             "chatSearchSession", "chatSearchHit", "chatSearchBlockedAuthor",
+            "lookbookImportRequest",
             "RoomProfileDisplayCache",
             "LocalChatUser",
             "chatOutgoingOutbox",
@@ -22,6 +23,12 @@ struct AccountDeletionLocalDataCleanupTests {
             "chatMessage"
         ]
         try await database.dbPool.write { db in
+            try db.execute(sql: """
+                INSERT INTO lookbookImportRequest(
+                    ownerUID, requestID, contractVersion, kind, inputJSON,
+                    payloadDigest, localState, createdAt, updatedAt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, arguments: ["user-1", "request-1", 1, "importSeasons", "{}", "digest", "needsReconcile", 1, 1])
             try db.execute(
                 sql: "INSERT INTO LocalChatUser (userID, nickname) VALUES (?, ?)",
                 arguments: ["user-1", "아웃피커"]

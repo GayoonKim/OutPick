@@ -15,8 +15,12 @@ Usage:
   scripts/ai/deploy-lookbook-import-worker.sh production [--plan]
   scripts/ai/deploy-lookbook-import-worker.sh development --deploy-candidate
   scripts/ai/deploy-lookbook-import-worker.sh production --deploy-candidate
+  scripts/ai/deploy-lookbook-import-worker.sh development --deploy-candidate \
+    --gate-summary output/verification/<worker-gate-run>/summary.json
 
 The default action is --plan. A candidate deploy always uses --no-traffic.
+Development may deploy a verified Worker snapshot from a passed Worker gate.
+Production continues to require a clean committed tree.
 Production candidate deploy additionally requires:
   OUTPICK_CONFIRM_WORKER_DEPLOY=outpick-664ae/lookbook-import-worker
 EOF
@@ -24,6 +28,14 @@ EOF
 
 environment_name="${1:-}"
 action="${2:---plan}"
+gate_summary_argument=""
+
+if [[ "$#" -eq 4 && "${3:-}" == "--gate-summary" && -n "${4:-}" ]]; then
+  gate_summary_argument="$4"
+elif [[ "$#" -gt 2 ]]; then
+  usage >&2
+  exit 2
+fi
 
 case "$environment_name" in
   development)
@@ -59,10 +71,47 @@ case "$action" in
     ;;
 esac
 
+if [[ -n "$gate_summary_argument" &&
+      ( "$environment_name" != "development" || "$action" != "--deploy-candidate" ) ]]; then
+  echo "검증된 dirty source snapshot은 Development candidate 배포에만 허용합니다." >&2
+  exit 2
+fi
+
 # Cloud Run은 service명과 traffic tag의 결합 길이를 46자로 제한한다.
 # Development service명이 길어 분 단위 UTC timestamp를 포함한 11자 tag를 사용한다.
 candidate_tag="c$(date -u +%y%m%d%H%M)"
+if [[ -n "$gate_summary_argument" ]]; then
+  # Q7 runner와 Functions는 안정된 0% candidate tag URL을 사용한다.
+  candidate_tag="q7-20261006"
+fi
 source_revision="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+deployment_source_dir="$WORKER_DIR"
+verification_digest=""
+snapshot_manifest=""
+if [[ -n "$gate_summary_argument" ]]; then
+  snapshot_root="$ROOT_DIR/output/lookbook-import-performance/worker-deploy-snapshots"
+  mkdir -p "$snapshot_root"
+  snapshot_directory="$snapshot_root/candidate-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  if [[ "$gate_summary_argument" = /* ]]; then
+    gate_summary_path="$gate_summary_argument"
+  else
+    gate_summary_path="$ROOT_DIR/$gate_summary_argument"
+  fi
+  snapshot_info="$(node "$ROOT_DIR/scripts/ai/create-lookbook-import-worker-deploy-snapshot.mjs" \
+    --project "$ROOT_DIR" \
+    --gate-summary "$gate_summary_path" \
+    --snapshot "$snapshot_directory")"
+  deployment_source_dir="$(printf '%s\n' "$snapshot_info" | sed -n 's/^snapshot=//p')"
+  snapshot_manifest="$(printf '%s\n' "$snapshot_info" | sed -n 's/^manifest=//p')"
+  verification_digest="$(printf '%s\n' "$snapshot_info" | sed -n 's/^verification_digest=//p')"
+  source_revision="$(printf '%s\n' "$snapshot_info" | sed -n 's/^source_revision=//p')"
+  [[ -d "$deployment_source_dir" && -f "$snapshot_manifest" &&
+     "$verification_digest" =~ ^[a-f0-9]{64}$ &&
+     "$source_revision" =~ ^[a-f0-9]{40}$ ]] || {
+    echo "검증된 Worker source snapshot을 만들지 못했습니다." >&2
+    exit 1
+  }
+fi
 env_vars="OUTPICK_FIREBASE_PROJECT_ID=$project_id"
 env_vars+=",OUTPICK_FIREBASE_STORAGE_BUCKET=$storage_bucket"
 env_vars+=",OUTPICK_IMPORT_ASSET_SYNC_CONCURRENCY=3"
@@ -70,6 +119,21 @@ env_vars+=",OUTPICK_IMPORT_OIDC_AUDIENCE=$oidc_audience"
 env_vars+=",OUTPICK_IMPORT_TASKS_SERVICE_ACCOUNT_EMAIL=$task_service_account"
 env_vars+=",OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL=$functions_service_account"
 env_vars+=",OUTPICK_WORKER_SOURCE_REVISION=$source_revision"
+if [[ -n "$verification_digest" ]]; then
+  env_vars+=",OUTPICK_WORKER_VERIFICATION_DIGEST=$verification_digest"
+fi
+if [[ "$environment_name" == "development" ]]; then
+  env_vars+=",OUTPICK_IMPORT_PERFORMANCE_ENABLED=true"
+  env_vars+=",OUTPICK_IMPORT_RECOVERY_SERVICE_ACCOUNT_EMAIL=lookbook-import-recovery@outpick-test.iam.gserviceaccount.com"
+fi
+if [[ -n "${OUTPICK_Q7_RETRY_FAULT_CAMPAIGN:-}" ]]; then
+  if [[ "$environment_name" != "development" || -z "$gate_summary_argument" ||
+        ! "$OUTPICK_Q7_RETRY_FAULT_CAMPAIGN" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$ ]]; then
+    echo "고의 장애는 검증된 Development candidate campaign에만 허용합니다." >&2
+    exit 2
+  fi
+  env_vars+=",OUTPICK_Q7_RETRY_FAULT_CAMPAIGN=$OUTPICK_Q7_RETRY_FAULT_CAMPAIGN"
+fi
 env_vars+=",OUTPICK_SEASON_DISCOVERY_CONTRACT_REVISION=$season_discovery_contract_revision"
 env_vars+=",OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION=$season_discovery_extractor_version"
 
@@ -77,7 +141,7 @@ deploy_command=(
   gcloud run deploy "$service_name"
   --project "$project_id"
   --region "$REGION"
-  --source "$WORKER_DIR"
+  --source "$deployment_source_dir"
   --service-account "$worker_service_account"
   --set-env-vars "$env_vars"
   --no-allow-unauthenticated
@@ -98,6 +162,9 @@ print_contract() {
   printf 'functions_service_account=%s\n' "$functions_service_account"
   printf 'candidate_tag=%s\n' "$candidate_tag"
   printf 'source_revision=%s\n' "$source_revision"
+  printf 'verification_digest=%s\n' "${verification_digest:-not-provided}"
+  printf 'deployment_source=%s\n' "$deployment_source_dir"
+  printf 'snapshot_manifest=%s\n' "${snapshot_manifest:-not-created}"
   printf 'season_discovery_contract_revision=%s\n' "$season_discovery_contract_revision"
   printf 'season_discovery_extractor_version=%s\n' "$season_discovery_extractor_version"
   printf 'command='
@@ -111,8 +178,9 @@ if [[ "$action" == "--plan" ]]; then
   exit 0
 fi
 
-if ! git -C "$ROOT_DIR" diff --quiet ||
-   ! git -C "$ROOT_DIR" diff --cached --quiet; then
+if [[ -z "$verification_digest" ]] &&
+   { ! git -C "$ROOT_DIR" diff --quiet ||
+     ! git -C "$ROOT_DIR" diff --cached --quiet; }; then
   echo "candidate 배포는 commit된 clean worktree에서만 허용합니다." >&2
   exit 1
 fi
@@ -149,12 +217,14 @@ previous_revision="$(
   exit 1
 }
 
-(
-  cd "$WORKER_DIR"
-  npm test
-  npm run lint
-  npm run test:fixtures
-)
+if [[ -z "$verification_digest" ]]; then
+  (
+    cd "$WORKER_DIR"
+    npm test
+    npm run lint
+    npm run test:fixtures
+  )
+fi
 
 printf 'previous_revision=%s\n' "$previous_revision"
 "${deploy_command[@]}"

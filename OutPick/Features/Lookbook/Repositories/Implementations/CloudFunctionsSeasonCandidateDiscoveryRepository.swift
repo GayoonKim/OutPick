@@ -18,18 +18,44 @@ enum SeasonCandidateDiscoveryError: LocalizedError {
 
 struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol {
     typealias JobObserver = (BrandID, String) -> AsyncThrowingStream<[String: Any], Error>
+    typealias SourceArchiveURLProvider = (BrandID) async throws -> String
+
+    private struct QueueInput: Codable {
+        let mode: String
+        let requestReason: String?
+        let jobID: String?
+        let generation: Int?
+        let candidateSnapshotHash: String?
+    }
 
     private let transport: any CloudFunctionsTransporting
     private let db: Firestore
     private let observeJob: JobObserver
+    private let requestCoordinator: LookbookImportQueueRequestCoordinator
+    private let sourceArchiveURLProvider: SourceArchiveURLProvider
 
     init(
         transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(),
         db: Firestore = .firestore(),
-        observeJob: JobObserver? = nil
+        observeJob: JobObserver? = nil,
+        requestStore: any LookbookImportRequestStoringRepositoryProtocol = UnavailableLookbookImportRequestStore(),
+        currentUserUIDProvider: @escaping () -> String = { LoginManagerCurrentUserProvider().canonicalUserID },
+        sourceArchiveURLProvider: SourceArchiveURLProvider? = nil
     ) {
         self.transport = transport
         self.db = db
+        requestCoordinator = LookbookImportQueueRequestCoordinator(
+            requestStore: requestStore,
+            ownerUIDProvider: currentUserUIDProvider
+        )
+        self.sourceArchiveURLProvider = sourceArchiveURLProvider ?? { brandID in
+            let snapshot = try await db.collection("brands").document(brandID.value).getDocument()
+            guard let sourceURL = snapshot.data()?["lookbookArchiveURL"] as? String,
+                  !sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw SeasonCandidateDiscoveryError.failed(message: "룩북 목록 URL을 불러오지 못했습니다.")
+            }
+            return sourceURL
+        }
         self.observeJob = observeJob ?? { brandID, jobID in
             Self.jobStream(db: db, brandID: brandID, jobID: jobID)
         }
@@ -48,28 +74,38 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
     func requestSeasonDiscovery(
         brandID: BrandID
     ) async throws -> SeasonCandidateDiscoveryResult {
-        let response = try await transport.call(
-            "requestSeasonDiscovery",
-            data: [
-                "brandID": brandID.value,
-                "requestReason": "manualRefresh"
-            ]
+        let sourceURL = try await sourceArchiveURLProvider(brandID)
+        let prepared = try await requestCoordinator.prepare(
+            kind: "discoverSeasons",
+            brandID: brandID.value,
+            input: QueueInput(
+                mode: "request",
+                requestReason: "manualRefresh",
+                jobID: nil,
+                generation: nil,
+                candidateSnapshotHash: nil
+            )
         )
-        let decoder = CloudFunctionResponseDecoder(dictionary: response)
-        let jobID = try decoder.string("jobID")
-        let generation = try decoder.int("generation")
-        let sourceURL = try decoder.string("sourceArchiveURL")
-
-        return SeasonCandidateDiscoveryResult(
-            brandID: brandID,
-            jobID: jobID,
-            generation: generation,
-            status: .queued,
-            sourceURL: sourceURL,
-            candidateCount: 0,
-            candidateSnapshotHash: nil,
-            requestedAt: Date()
-        )
+        let sending = try await requestCoordinator.begin(prepared)
+        do {
+            var data = requestFields(for: sending)
+            data["brandID"] = brandID.value
+            data["requestReason"] = "manualRefresh"
+            let response = try await transport.call("requestSeasonDiscovery", data: data)
+            let receipt = try SeasonImportCloudFunctionsMapper.queueReceipt(response)
+            try requestCoordinator.validateReceipt(receipt, request: sending, brandID: brandID.value)
+            _ = try await requestCoordinator.markAccepted(
+                sending,
+                brandID: brandID.value,
+                batchID: receipt.batchID,
+                stateRevision: receipt.stateRevision,
+                receipt: receipt
+            )
+            return discoveryResult(from: receipt, fallbackJobID: nil, sourceURL: sourceURL)
+        } catch {
+            await requestCoordinator.markNeedsReconcile(sending)
+            throw error
+        }
     }
 
     func observeSeasonDiscovery(
@@ -138,10 +174,36 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
     }
 
     func retrySeasonDiscovery(brandID: BrandID, jobID: String) async throws {
-        _ = try await transport.call(
-            "retrySeasonDiscovery",
-            data: ["brandID": brandID.value, "jobID": jobID]
+        let prepared = try await requestCoordinator.prepare(
+            kind: "discoverSeasons",
+            brandID: brandID.value,
+            input: QueueInput(
+                mode: "retry",
+                requestReason: nil,
+                jobID: jobID,
+                generation: nil,
+                candidateSnapshotHash: nil
+            )
         )
+        let sending = try await requestCoordinator.begin(prepared)
+        do {
+            var data = requestFields(for: sending)
+            data["brandID"] = brandID.value
+            data["jobID"] = jobID
+            let response = try await transport.call("retrySeasonDiscovery", data: data)
+            let receipt = try SeasonImportCloudFunctionsMapper.queueReceipt(response)
+            try requestCoordinator.validateReceipt(receipt, request: sending, brandID: brandID.value)
+            _ = try await requestCoordinator.markAccepted(
+                sending,
+                brandID: brandID.value,
+                batchID: receipt.batchID,
+                stateRevision: receipt.stateRevision,
+                receipt: receipt
+            )
+        } catch {
+            await requestCoordinator.markNeedsReconcile(sending)
+            throw error
+        }
     }
 
     func cancelSeasonDiscovery(brandID: BrandID, jobID: String) async throws {
@@ -155,21 +217,37 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
         brandID: BrandID,
         job: SeasonCandidateDiscoveryResult
     ) async throws -> SeasonCandidateDiscoveryResult {
-        let response = try await transport.call(
-            "retrySeasonDiscoveryAfterExtractionFix",
-            data: try mutationPayload(brandID: brandID, job: job)
+        let basePayload = try mutationPayload(brandID: brandID, job: job)
+        let prepared = try await requestCoordinator.prepare(
+            kind: "discoverSeasons",
+            brandID: brandID.value,
+            input: QueueInput(
+                mode: "afterFix",
+                requestReason: nil,
+                jobID: job.jobID,
+                generation: job.generation,
+                candidateSnapshotHash: job.candidateSnapshotHash
+            )
         )
-        let decoder = CloudFunctionResponseDecoder(dictionary: response)
-        return SeasonCandidateDiscoveryResult(
-            brandID: brandID,
-            jobID: try decoder.string("jobID"),
-            generation: try decoder.int("generation"),
-            status: .queued,
-            sourceURL: try decoder.string("sourceArchiveURL"),
-            candidateCount: 0,
-            candidateSnapshotHash: nil,
-            requestedAt: Date()
-        )
+        let sending = try await requestCoordinator.begin(prepared)
+        do {
+            var data = requestFields(for: sending)
+            data.merge(basePayload) { _, new in new }
+            let response = try await transport.call("retrySeasonDiscoveryAfterExtractionFix", data: data)
+            let receipt = try SeasonImportCloudFunctionsMapper.queueReceipt(response)
+            try requestCoordinator.validateReceipt(receipt, request: sending, brandID: brandID.value)
+            _ = try await requestCoordinator.markAccepted(
+                sending,
+                brandID: brandID.value,
+                batchID: receipt.batchID,
+                stateRevision: receipt.stateRevision,
+                receipt: receipt
+            )
+            return discoveryResult(from: receipt, fallbackJobID: nil, sourceURL: job.sourceURL)
+        } catch {
+            await requestCoordinator.markNeedsReconcile(sending)
+            throw error
+        }
     }
 
     func fetchReviewCandidates(
@@ -297,4 +375,33 @@ struct CloudFunctionsSeasonCandidateDiscoveryRepository: SeasonCandidateDiscover
             "candidateSnapshotHash": snapshotHash
         ]
     }
+
+    private func requestFields(for request: LookbookImportRequest) -> [String: Any] {
+        let envelope = requestCoordinator.envelope(for: request)
+        return [
+            "queueContractVersion": envelope.queueContractVersion,
+            "requestID": envelope.requestID,
+            "requestCreatedAt": envelope.requestCreatedAt
+        ]
+    }
+
+    private func discoveryResult(
+        from receipt: LookbookImportQueueReceipt,
+        fallbackJobID: String?,
+        sourceURL: String
+    ) -> SeasonCandidateDiscoveryResult {
+        let item = receipt.items.first
+        return SeasonCandidateDiscoveryResult(
+            brandID: BrandID(value: receipt.brandID),
+            jobID: item?.jobID ?? fallbackJobID
+                ?? LookbookImportQueueContract.deterministicJobID(batchID: receipt.batchID, itemID: item?.itemID ?? "discovery"),
+            generation: 0,
+            status: .queued,
+            sourceURL: sourceURL,
+            candidateCount: 0,
+            candidateSnapshotHash: nil,
+            requestedAt: Date()
+        )
+    }
+
 }

@@ -1,5 +1,19 @@
 # OutPick Data Schema Index
 
+## Q7 K/L Development 전용 장애 원장(2026-10-07)
+
+`lookbookImportQ7FaultCampaigns/{campaignID}`는 서버 전용 검증 데이터다. projectID=outpick-test, mode=q7RetryKL, maxMutations=8, state, startedAt/expiresAt(최대20분), revision, verificationDigest, uidHash를 기록한다. `targets/{executionID}`에는 exact campaign/brand/job/execution/batch/ordinal과 scenario(oomAfterUpload·retryableBeforeDownload), attempt1 또는 attemptLimit5, consumedAt/consumedAttempts, 첫 업로드 generation·size를 기록한다. 공개 API·클라이언트 쓰기를 추가하지 않는다. 다음 승인 batch/새 수동 execution은 제외한다.
+
+정리 시 run 상세가 이미 만료됐으면 `lookbookImportRecoveryAudits/termination-{runID}`의 action=automaticTerminationRetry·exact project/batch/run·미만료90일 플랫폼 종료 evidence를 같은 transaction에서 재검사한다. 종료 불명확/다른 run/현재 참조는 정리하지 않는다. Development cleanup scheduler는 아직 미배포이며 이번 원격 검증은24h 이후의 실제 삭제 대신 정리 예약·현재 참조 보호를 검사한다.
+
+## 룩북 실패 목록·종료 재시도 최신 계약(2026-10-07, 로컬 구현 중)
+
+- `brands/{brandID}/seasonImportFailures/{hash([importJobs, sourceURL])}`: 동일 URL별 문서1개. state=failed/retryQueued/retrying/awaitingReview, version, latestRequestID/latestBatchID/latestJobID/latestExecutionID, attemptCount/attemptLimit, 오류·시각·expiresAt. 실패30일, 진행·검토 보호. 재실패 최신화, 성공·명시적 안 함 제거. 삭제 후 재생성 경합은 version뿐 아니라 executionID도 검사한다.
+- `brands/{brandID}/seasonImportFailureActions/{hash(uid,requestID)}`: 안 함 metadata 영수증·payload digest·expiresAt30일. 원본 job/execution/attempt 삭제 없음. 실행의 dismissedFailureID/failureDismissedAt은 같은 실행의 늦은 실패 목록 재생성을 차단한다.
+- execution.restartFromParsing/terminationRunID/restartPreparedAt/lastRestartSource는 새 추출·정리 사실만 기록하며 중간 상태 복원을 하지 않는다. 같은 자동 시도는 최초 포함 총5회, 수동 새 execution은 새5회다. reviewApproval은 같은 추출의 후속이며 새 추출 재시도 때는 이전 승인 snapshot을 비운다.
+- run.terminationEvidence/terminationVerifiedAt/settlement/settledAt 및 자동 정산 감사90일은 실제 플랫폼 증거와 정산을 기록한다. 기존 terminalConfirmed/inFlight는 임의 성공값으로 바꾸지 않는다. write ledger.batchID/runID는 종료된 미확정 업로드의 증거를 연결한다. orphan 파일은 참조 해제24시간 뒤 exact generation 정리다.
+- callable/API·코드·검증 위치: [계약](tasks/lookbook-import-performance/q7-retry-contract-plan.md), [Firebase 진입점](entrypoints/FIREBASE.md). expiry collection-group index2개 추가, Rules 완화 없음. 아직 원격 배포·새 정리 실행 전이다.
+
 - 2026-09-11 채팅 캐시 복구: coverage 테이블·GRDB migration 추가 없음. 기존 메시지 행의 seq 연속성을 검사하고 서버 seq 범위로 누락을 복구한다. 저장 transaction 내부에서 기존 삭제 marker를 적용하며 계정/방 session 무효화를 확인한다. 서버 재확인으로 식별자 충돌을 교정할 때만 충돌 캐시 행과 FTS/media projection을 교체한다. 서버 lastReadSeq와 방별 캐시 prune 정책은 유지한다. 상세 `tasks/chat-message-cache-sync/progress.md`, 코드 `entrypoints/CHAT.md`.
 
 - 사진300MB 후속 계약(로컬 구현/서버 배포 전): contract3 `kind=images`의 display/thumbnail `sizeBytes` 각각1~300,000,000bytes, display 합계≤300,000,000bytes, attachmentCount≤30. 영상 및 legacy 계약은 기존 한도를 유지한다. `Socket/src/media/directMediaUploadService.js`와 앱 `ChatPhotoSizePolicy`가 검사한다. 실패 사진은 기존 `ChatMediaSelection` JSON(source index/path/isVideo, parent pendingChunk) 형식의 child 원장으로 보존하고 child 저장 후 parent에서 소비한다. GRDB migration 없음. 상세 `tasks/chat-media-preview-continuity/photo-size-failure-recovery.md`.
@@ -39,7 +53,7 @@
 | 브랜드 관리 | `brandAdmins/{uid}`, `brands/{brandID}/admins/{uid}` | [LOOKBOOK](entrypoints/LOOKBOOK.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | 스타일 무드 | `styleMoods`, `styleMoodTermIndex`, `styleMoodSeedMetadata` | [FIREBASE](entrypoints/FIREBASE.md), ADR-022 |
 | 브랜드 요청 | `brandRequests`, `brandRequestNameIndex`, daily counter/user limit | [FIREBASE](entrypoints/FIREBASE.md) |
-| 시즌 import/discovery | `seasonDiscoveryJobs/{jobID}/candidates`, `seasonDiscoveryJobs/{jobID}/reviews`, `importJobs`, `lookbookExtractionDiagnostics` | [worker architecture](architecture/LOOKBOOK_IMPORT_WORKER.md) |
+| 시즌 import/discovery | `lookbookImportQueue/main`, `lookbookImportBatches/{batchID}`, `seasonDiscoveryJobs/{jobID}/candidates`, `importJobs/{jobID}/executions/{executionID}` | [worker architecture](architecture/LOOKBOOK_IMPORT_WORKER.md), [FIREBASE](entrypoints/FIREBASE.md) |
 | 룩북 삭제 | `lookbookDeletionRequests`, `lookbookDeletionAuditLogs`, `lookbookDeletionPurgeLeases` | 아래 계약, [FIREBASE](entrypoints/FIREBASE.md), ADR-018 |
 
 ## 인증과 사용자 식별
@@ -56,7 +70,7 @@
 - `Rooms.participantUIDs`, 사용자 문서의 legacy `joinedRooms` 배열, `roomStates`는 신규 source로 사용하지 않는다.
 - GRDB `LocalChatUser.userID`, `RoomProfileDisplayCache.userID`, `chatMessage.senderUID`도 같은 UID 의미다.
 - 개발 DB에서 재현된 legacy `chatMessage.senderID NOT NULL` schema만 migration으로 현재 schema로 재작성한다.
-- 현재 구현은 23개 GRDB migration이며 `addRoomRoleEventToChatMessage`가 `chatMessage.roleEvent` JSON column을, `addUnreadMessageSeqToChatMessage`가 일반 메시지 전용 unread sequence를 추가한다. Phase 7.3은 `chatOutgoingOutbox`에 upload identity·processing 상태·terminal/expiry·재시도용 session identity를 추가한다. signed PUT URL·필수 header 같은 bearer credential은 로컬 DB에 저장하지 않는다.
+- 현재 구현은 27개 GRDB migration이다. Chat schema 변경에는 `addRoomRoleEventToChatMessage`가 `chatMessage.roleEvent` JSON column을, `addUnreadMessageSeqToChatMessage`가 일반 메시지 전용 unread sequence를 추가한다. `lookbookImportRequest`는 migration 27에서 추가한 계정별 미확정 queue 요청·확정 receipt 로컬 기록이다. 미확정 요청은 자동 만료에서 보호하고 settled receipt만 30일 뒤 정리한다. 계정 삭제에서 함께 제거한다. signed PUT URL·필수 header 같은 bearer credential은 로컬 DB에 저장하지 않는다.
 - 메시지 저장 중 FTS 오류는 삼키지 않고 message/FTS/media transaction 전체를 rollback한다. 상세 결정은 `docs/ai/tasks/core-infrastructure-modularization/decisions/phase-3-grdb.md`를 따른다.
 
 ### 비공개 계정과 공개 프로필
@@ -254,6 +268,20 @@
 
 - 브랜드/시즌/포스트/댓글 상호작용은 `users/{uid}` 하위 state projection과 각 interaction store를 사용한다.
 - 정확한 collection path와 DTO는 관련 Repository 및 `firestore.rules`를 함께 확인한다.
+
+### 제품 FIFO import 실행 이력
+
+- 요청 순번의 source는 server-only `lookbookImportQueue/main`; batch 입력·receipt는 `lookbookImportBatches/{batchID}`다. `items`는 선택 순서, admission 결과, `jobID/executionID`, 처리 checkpoint를 가진다.
+- `lookbookImportBatches/{batchID}/runs/{runID}`는 owner, process `bootID`, 증가 epoch, heartbeat, finish disposition, inFlight, terminal confirmation, 그리고 batch supervisor의 `resourceEvidence`(cgroup memory 표본·중단 원인·12/14분 관측)를 기록한다. `progress/{key}`에는 epoch에 종속된 실제 phase/result fingerprint를 저장하며 heartbeat를 progress로 보지 않는다. Worker가 현재 run에서 실행권을 확인한 job root에는 `queueActiveRunID`를 둔다. 새 batch run이 claim된 뒤에만 바뀌어 이전 run의 late writes를 식별한다.
+- import/discovery job의 `executions/{executionID}`는 하나의 승인된 처리 이력이다. 실제 시도별 결과는 `attempts/{00001...}`에 보관하고 retry 시도 수는 최초를 포함해 총5회(import) 또는3회(discovery)다. 현재 import runner는 retryable 오류에 즉시 재시도한다. 승인 continuation은 기존 execution의 attempt count를 증가시키지 않는다.
+- `executions/{executionID}/continuations/{batchID}`는 승인/수동 재시도/보수/asset 재시도 입력과 frozen expectation, 실행 상태를 가진다. `activatedAt`은 현재 batch가 고정 입력을 검증해 첫 도메인 활성화를 완료했음을 나타낸다. 정상 분할 후 다시 실행될 때 이 필드가 있으면 도메인 활성화를 되풀이하지 않고 현재 run 식별자만 전환한다. 실행 attempt 시작/종료는 owner epoch 확인과 같은 transaction에서 batch item·progress·execution 이력에 반영한다.
+- queue source, batches, runs, progress, executions, continuations, attempts, claims, recovery decisions는 서버 전용이다. Worker batch runner는 OIDC route에서 import/discovery/asset retry/review/manual retry/repair를 활성화하고, 각 root job에 `queueActiveRunID`를 기록한다. asset retry child job에는 `queueActivatedForBatchID`가 있어 최초 활성화의 source 변경과 재진입을 구분한다. queue-owned asset write는 upload 전 execution/epoch/write ledger를 만들고 `thumbPath/detailPath`를 두 generation 확인 뒤 owner 조건부 transaction으로 게시한다. `status=uploading` 원장은 삭제 함수가 post/season/brand 범위별 purge를 시작하지 못하게 한다. `firestore.indexes.json`의 status+brandID/targetSeasonPath/targetPath composite index와 executionID+epoch+status write index가 사용된다. stale delivery 회수, 24시간 뒤 정확한 generation 정리, batch/brand 최소 receipt 및 복구 감사 만료 정리는 Q4에 로컬 구현됐다. 실제 Development legacy route 차단은 아직 확인하지 않았다. [Q3 기록](tasks/lookbook-import-performance/product-queue-q3-results.md), [Q4 구현·게이트](tasks/lookbook-import-performance/product-queue-q4-results.md), [Q6 통합](tasks/lookbook-import-performance/product-queue-q6-results.md).
+- `lookbookImportBatches/{batchID}`의 `receiptExpiresAt`, `detailCleanupAfter`, `detailsPruned`, `retentionNextAt`은 상세/최소 receipt 정리 일정을 기록한다. 성공 상세는 24시간, 최소 receipt는 30일, 해결된 실패 상세는 최종 종료 후30일 보관한다. `runs`, `inputs`, `progress`, `preparationAttempts` 및 collection-group attempt 기록은 batch 상세 정리 대상이며 매일 page100·최대5 pages/500 record changes·120초 상한으로 정리한다.
+- `brandCreationRequests/{requestKey}`는 요청자·payloadDigest·result 외에 `receiptExpiresAt`과 `retentionNextAt`을 가진다. 30일 전에는 삭제하지 않는다. 만료돼도 현재 FIFO head 또는 미종료/검토 중 batch를 가리키면 receipt를 연장한다.
+- `lookbookImportBatches/{batchID}/recoveryDecisions/{decisionID}`는 결정 ID, project/service/revision, epoch/runID, 이전·이후 stateRevision, report digest, actor email, 종료 evidence와 `createdAt/expiresAt`을 보관한다. 만료는90일 뒤이며 해당 batch가 현재 head이거나 `recoveryRequired`면 연장 보호한다.
+- queue-owned write ledger `assets/{assetKey}/writes/{writeID}`는 `status`, 실행ID/epoch, 두 객체 경로 및 Storage generation, terminal cleanup state/expiry를 보관한다. uploading ledger는 현재 epoch의 종료 확인·복구 전까지 자동 삭제 대상이 아니다. `failed/unpublished/replaced`의 미참조 산출물은 완료 상태·참조·exact generation을 확인한 뒤24시간 지나면 시간당 정리 대상이 된다. 실제 원격 Storage 삭제는 별도 Development 실행 승인 대상이다.
+- Worker 복구 경로 `/recovery/inspect`는 읽기 전용이다. `/recovery/resume`은 재시도 가능한 중단을, `/recovery/settle-correction`은 evidence상 terminal인 단일 `discoverSeasons` batch의 `correctionRequired` domain 결과만 현재 head/epoch/stateRevision/reportDigest·`terminalConfirmed`/`inFlight`/asset-write 상태와 함께 transaction 재검증한 뒤 정산한다. 기존 domain job 결과와 run 종료 evidence는 유지하고 `recoveryDecisions`에 decision ID·actor·90일 audit를 기록한다. recovery OIDC service account 설정이 없으면 endpoint는 off다. Worker Cloud Logging read 권한이 없으면 platform termination 증명을 요구하는 불확정 run은 fail closed하며, durable-drain evidence를 충족하는 이번 A 결과와 구분한다. Development 전용 recovery identity·본인 Google 운영 계정 하나의 OpenIdTokenCreator·runtime logging.logEntries.list custom role 안을 확정하고 IAM read-back/ID token 발급을 확인했다. 현재 candidate 배포 및 exact A 검사·정산은 Q7 readiness를 따른다.
+- 앱 로컬 `lookbookImportRequest(ownerUID, requestID)`는 queue envelope의 contractVersion·생성 시각, brand/kind/payload digest, local state, server batch receipt/revision과 retention 시각을 저장한다. 이 테이블은 Firebase source of truth가 아니라 앱 재시작 후 같은 요청 복원용이다. 쓰기·계정 정리는 `GRDBLookbookImportRequestStore`와 AppDatabase account deletion path에서 한다. 상세는 [Q5 결과](tasks/lookbook-import-performance/product-queue-q5-results.md).
 
 ### 브랜드 요청
 

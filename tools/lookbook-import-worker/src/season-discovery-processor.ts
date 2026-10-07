@@ -1,10 +1,12 @@
 /* eslint-disable max-len */
 import {createHash, randomUUID} from "node:crypto";
-import type {Firestore} from "firebase-admin/firestore";
+import type {Firestore, Transaction} from "firebase-admin/firestore";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import type {Storage} from "firebase-admin/storage";
 
 import {RetryableImportError} from "./import-error.js";
+import {isQueueOwnedJob} from "./queue/ownership.js";
+import {readOwnedBatch, type BatchOwnership} from "./queue/coordinator.js";
 import {
   processDiscoverSeasonsDiagnosticRequest,
   type DiscoverSeasonsDiagnosticResponse,
@@ -38,11 +40,14 @@ type ProcessResult = {
   candidateCount?: number;
   duplicate?: boolean;
 };
+type QueueDiscoveryExecution = {ownership: BatchOwnership; ordinal: number;
+  executionID: string; kind: string};
 
 export async function processSeasonDiscoveryTaskRequest(
   dependencies: {firestore: Firestore; storage: Storage},
   request: SeasonDiscoveryTaskRequest,
   taskRetryCount: number,
+  queueExecution?: QueueDiscoveryExecution,
 ): Promise<ProcessResult> {
   const {firestore} = dependencies;
   const brandID = documentID(request.brandID, "brandID");
@@ -65,7 +70,24 @@ export async function processSeasonDiscoveryTaskRequest(
     if (!canClaimSeasonDiscoveryJob(job, {
       generation, dispatchGeneration, extractorVersion,
       extractionContractRevision,
-    })) return null;
+    }, queueExecution !== undefined)) return null;
+    if (queueExecution) {
+      const batch = await readOwnedBatch(firestore, transaction,
+        queueExecution.ownership);
+      const item = Array.isArray(batch.items) ?
+        batch.items[queueExecution.ordinal] as Record<string, unknown> | undefined :
+        undefined;
+      const execution = (await transaction.get(jobRef.collection("executions")
+        .doc(queueExecution.executionID))).data();
+      if (batch.kind !== "discoverSeasons" || batch.kind !== queueExecution.kind ||
+          batch.brandID !== brandID || item?.admissionStatus !== "created" ||
+          item.jobID !== jobID || item.executionID !== queueExecution.executionID ||
+          job.queueBatchID !== queueExecution.ownership.batchID ||
+          job.queueExecutionID !== queueExecution.executionID ||
+          job.queueActiveRunID !== queueExecution.ownership.runID ||
+          execution?.status !== "active" ||
+          execution.activeRunID !== queueExecution.ownership.runID) return null;
+    }
     transaction.update(jobRef, {
       status: "running",
       phase: "fetching",
@@ -96,14 +118,14 @@ export async function processSeasonDiscoveryTaskRequest(
     return await publishDiscovery({
       ...dependencies, brandID, jobID, generation, dispatchGeneration,
       extractionContractRevision, leaseOwner,
-      sourceArchiveURL: claim.sourceArchiveURL, diagnostic,
+      sourceArchiveURL: claim.sourceArchiveURL, diagnostic, queueExecution,
     });
   } catch (error) {
     const permanent = isPermanentFailure(error);
     const exhausted = taskRetryCount + 1 >= maxAttempts;
     const failureResult = await finalizeFailure({
       firestore, brandID, jobID, generation, dispatchGeneration, leaseOwner,
-      error, permanent, exhausted,
+      error, permanent, exhausted, queueExecution,
     });
     if (failureResult === "ignored") {
       return {accepted: true, status: "ignored", duplicate: true};
@@ -128,6 +150,7 @@ async function finalizeFailure(input: {
   error: unknown;
   permanent: boolean;
   exhausted: boolean;
+  queueExecution?: QueueDiscoveryExecution;
 }): Promise<"ignored" | "cancelled" | "failed" | "retry"> {
   const brandRef = input.firestore.collection("brands").doc(input.brandID);
   const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(input.jobID);
@@ -137,6 +160,11 @@ async function finalizeFailure(input: {
     ]);
     const brand = brandSnap.data();
     const job = jobSnap.data();
+    if (input.queueExecution && (!job ||
+        !await queueDiscoveryExecutionIsCurrent(input.firestore, transaction,
+          input.queueExecution, input.brandID, input.jobID, job))) {
+      return "ignored";
+    }
     const current = brandSnap.exists && jobSnap.exists &&
       isCurrentSeasonDiscoveryAttempt(brand, job, input);
     if (!current) return "ignored";
@@ -214,6 +242,7 @@ async function publishDiscovery(input: {
   leaseOwner: string;
   sourceArchiveURL: string;
   diagnostic: DiscoverSeasonsDiagnosticResponse;
+  queueExecution?: QueueDiscoveryExecution;
 }): Promise<ProcessResult> {
   const brandRef = input.firestore.collection("brands").doc(input.brandID);
   const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(input.jobID);
@@ -256,32 +285,22 @@ async function publishDiscovery(input: {
   const expiresAt = status === "succeeded" ?
     Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000) : null;
 
-  const batch = input.firestore.batch();
-  for (const candidate of snapshotPayload) {
-    batch.set(jobRef.collection("candidates").doc(candidate.candidateID), {
-      ...candidate,
-      brandID: input.brandID,
-      jobID: input.jobID,
-      generation: input.generation,
-      sourceArchiveURL: input.sourceArchiveURL,
-      snapshotHash,
-      expiresAt,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  }
-  await batch.commit();
-
   const published = await input.firestore.runTransaction(async (transaction) => {
     const [brandSnap, jobSnap] = await Promise.all([
       transaction.get(brandRef), transaction.get(jobRef),
     ]);
     const brand = brandSnap.data();
     const job = jobSnap.data();
+    if (input.queueExecution && (!job ||
+        !await queueDiscoveryExecutionIsCurrent(input.firestore, transaction,
+          input.queueExecution, input.brandID, input.jobID, job))) {
+      return false;
+    }
     const valid = brandSnap.exists && jobSnap.exists &&
       (!brand?.deletionStatus || brand.deletionStatus === "active") &&
       brand?.activeSeasonDiscoveryJobID === input.jobID &&
-      brand?.lastSeasonDiscoveryGeneration === input.generation &&
+      (input.queueExecution ||
+        brand?.lastSeasonDiscoveryGeneration === input.generation) &&
       job?.generation === input.generation &&
       job?.dispatchGeneration === input.dispatchGeneration &&
       job?.leaseOwner === input.leaseOwner &&
@@ -317,6 +336,19 @@ async function publishDiscovery(input: {
         );
       }
       return false;
+    }
+    for (const candidate of snapshotPayload) {
+      transaction.set(jobRef.collection("candidates").doc(candidate.candidateID), {
+        ...candidate,
+        brandID: input.brandID,
+        jobID: input.jobID,
+        generation: input.generation,
+        sourceArchiveURL: input.sourceArchiveURL,
+        snapshotHash,
+        expiresAt,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     }
     for (const candidate of snapshotPayload) {
       if (candidate.resolution === "matchedByUniqueNormalizedTitle" && candidate.matchedSeasonID) {
@@ -422,11 +454,43 @@ async function publishDiscovery(input: {
       }),
     });
   }
+  if (!published && input.queueExecution) {
+    return {accepted: true, status: "ignored", duplicate: true};
+  }
   return {
     accepted: true,
     status: published ? status : "superseded",
     candidateCount: snapshotPayload.length,
   };
+}
+
+async function queueDiscoveryExecutionIsCurrent(
+  db: Firestore,
+  transaction: Transaction,
+  execution: QueueDiscoveryExecution,
+  brandID: string,
+  jobID: string,
+  job: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const batch = await readOwnedBatch(db, transaction, execution.ownership);
+    const items = Array.isArray(batch.items) ?
+      batch.items as Array<Record<string, unknown>> : [];
+    const item = items[execution.ordinal];
+    const executionSnapshot = await transaction.get(db.doc(
+      `brands/${brandID}/seasonDiscoveryJobs/${jobID}/executions/${execution.executionID}`));
+    const itemExecution = executionSnapshot.data();
+    return batch.kind === "discoverSeasons" && batch.kind === execution.kind &&
+      batch.brandID === brandID && item?.admissionStatus === "created" &&
+      item.jobID === jobID && item.executionID === execution.executionID &&
+      job.queueBatchID === execution.ownership.batchID &&
+      job.queueExecutionID === execution.executionID &&
+      job.queueActiveRunID === execution.ownership.runID &&
+      itemExecution?.status === "active" &&
+      itemExecution.activeRunID === execution.ownership.runID;
+  } catch {
+    return false;
+  }
 }
 
 function candidateID(url: string): string {
@@ -470,8 +534,10 @@ export function canClaimSeasonDiscoveryJob(
     extractorVersion: string;
     extractionContractRevision: number;
   },
+  queueExecution = false,
 ): boolean {
-  return ["queued", "dispatching"].includes(String(job.status)) &&
+  return (queueExecution || !isQueueOwnedJob(job)) &&
+    ["queued", "dispatching"].includes(String(job.status)) &&
     job.generation === request.generation &&
     job.dispatchGeneration === request.dispatchGeneration &&
     job.extractorVersion === request.extractorVersion &&
@@ -489,10 +555,12 @@ export function isCurrentSeasonDiscoveryAttempt(
     generation: number;
     dispatchGeneration: number;
     leaseOwner: string;
+    queueExecution?: QueueDiscoveryExecution;
   },
 ): boolean {
   return brand?.activeSeasonDiscoveryJobID === attempt.jobID &&
-    brand?.lastSeasonDiscoveryGeneration === attempt.generation &&
+    (attempt.queueExecution ||
+      brand?.lastSeasonDiscoveryGeneration === attempt.generation) &&
     job?.status === "running" &&
     job?.generation === attempt.generation &&
     job?.dispatchGeneration === attempt.dispatchGeneration &&

@@ -208,13 +208,14 @@ test("충분한 정적 후보는 rendered discovery 대상이 아니다", () => 
   );
 });
 
-test("load-more 감지는 공통 로직 개선으로 분류된다", () => {
+test("확장 신호를 아직 렌더링으로 처리하지 못하면 공통 로직 개선으로 분류된다", () => {
   const classification = classifyDiscovery({
     candidateCount: 12,
     loadMoreDetected: true,
     dynamicRenderingDetected: false,
     renderedFallbackUsed: false,
     renderedImproved: false,
+    unresolvedExpansion: false,
   });
 
   assert.equal(classification.status, "needsReview");
@@ -226,6 +227,37 @@ test("load-more 감지는 공통 로직 개선으로 분류된다", () => {
   );
 });
 
+test("더 보기와 동적 렌더링 신호가 렌더링 확장으로 해소되면 통과한다", () => {
+  const classification = classifyDiscovery({
+    candidateCount: 29,
+    loadMoreDetected: true,
+    dynamicRenderingDetected: true,
+    renderedFallbackUsed: true,
+    renderedImproved: false,
+    unresolvedExpansion: false,
+  });
+
+  assert.equal(classification.status, "passed");
+  assert.deepEqual(classification.failureReasons, []);
+  assert.equal(classification.suggestedFixScope, "unknown");
+});
+
+test("렌더링 뒤에도 확장 한도에 도달하면 불완전 추출로 남긴다", () => {
+  const classification = classifyDiscovery({
+    candidateCount: 29,
+    loadMoreDetected: true,
+    dynamicRenderingDetected: true,
+    renderedFallbackUsed: true,
+    renderedImproved: true,
+    unresolvedExpansion: true,
+  });
+
+  assert.equal(classification.status, "needsReview");
+  assert.deepEqual(classification.failureReasons, ["load_more_detected"]);
+  assert.equal(classification.suggestedFixes[0]?.type,
+    "enable_load_more_click_loop");
+});
+
 test("후보 0개는 failed 진단으로 분류된다", () => {
   const classification = classifyDiscovery({
     candidateCount: 0,
@@ -233,6 +265,7 @@ test("후보 0개는 failed 진단으로 분류된다", () => {
     dynamicRenderingDetected: false,
     renderedFallbackUsed: false,
     renderedImproved: false,
+    unresolvedExpansion: false,
   });
 
   assert.equal(classification.status, "failed");

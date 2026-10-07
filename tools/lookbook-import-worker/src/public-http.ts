@@ -116,6 +116,7 @@ export async function responseBytes(
   response: UndiciResponse,
   maxBytes: number,
   typeLabel: string,
+  onReceivedBytes?: (count: number) => void,
 ): Promise<Buffer> {
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
@@ -132,6 +133,7 @@ export async function responseBytes(
   let totalBytes = 0;
   for await (const chunk of response.body) {
     const bytes = Buffer.from(chunk);
+    onReceivedBytes?.(bytes.length);
     totalBytes += bytes.length;
     if (totalBytes > maxBytes) {
       await response.body.cancel();

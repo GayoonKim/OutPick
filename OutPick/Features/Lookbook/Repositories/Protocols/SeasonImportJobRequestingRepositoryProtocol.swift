@@ -13,6 +13,9 @@ protocol SeasonImportJobRequestingRepositoryProtocol {
         discoveryJobID: String,
         generation: Int,
         candidateIDs: [String],
-        candidateSnapshotHash: String
-    ) async throws -> SeasonImportBatchRequestResult
+        candidateSnapshotHash: String,
+        envelope: LookbookImportQueueContract.RequestEnvelope
+    ) async throws -> LookbookImportQueueReceipt
+
+    func getSeasonImportBatch(requestID: String) async throws -> LookbookImportQueueReceipt
 }

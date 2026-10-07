@@ -104,4 +104,13 @@ enum LookbookExtractionReviewDecision: String {
 struct LookbookExtractionReviewReceipt: Equatable {
     let status: String
     let duplicate: Bool
+    let requestID: String?
+    let batchID: String?
+
+    init(status: String, duplicate: Bool, requestID: String? = nil, batchID: String? = nil) {
+        self.status = status
+        self.duplicate = duplicate
+        self.requestID = requestID
+        self.batchID = batchID
+    }
 }

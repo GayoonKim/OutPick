@@ -153,6 +153,57 @@ struct SeasonDiscoveryManagementViewModelTests {
         #expect(repository.fixedRetryJobIDs.isEmpty)
     }
 
+    @Test func assetRetryReturnsWithoutWaitingForQueuedBatchToFinish() async throws {
+        let job = SeasonImportJob(
+            id: "job-1",
+            brandID: BrandID(value: "brand-1"),
+            jobType: .importSeasonFromURL,
+            status: .partialFailed,
+            phase: .completed,
+            sourceURL: "https://example.com/season",
+            seasonTitle: "2026 SS",
+            sourceTitle: nil,
+            sourceCandidateID: nil,
+            sourceImportJobID: nil,
+            targetSeasonID: SeasonID(value: "season-1"),
+            requestedBy: "user-1",
+            errorMessage: nil,
+            assetRetryStatus: nil,
+            assetCompletedCount: 2,
+            assetFailedCount: 1,
+            reviewStatus: nil,
+            reviewGeneration: 0,
+            repairStatus: nil,
+            repairGeneration: 0,
+            extractionQualityReasons: [],
+            extractionIssueStatus: nil,
+            retryAvailableRuntimeVersion: nil,
+            extractionIssueWontFixReason: nil,
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 1)
+        )
+        let useCase = SeasonImportManagementUseCaseFake(jobs: [job])
+        let queueUseCase = SeasonImportQueueUseCaseFake(receipts: [queuedReceipt()])
+        let viewModel = SeasonImportManagementViewModel(
+            brandID: BrandID(value: "brand-1"),
+            useCase: useCase,
+            discoveryRepository: SeasonDiscoveryRepositoryFake(),
+            queueUseCase: queueUseCase
+        )
+        await viewModel.load()
+        var didFinish = false
+        let retryTask = Task { @MainActor in
+            await viewModel.retryAssets(for: job)
+            didFinish = true
+        }
+        defer { retryTask.cancel() }
+
+        try await waitUntil { didFinish }
+
+        #expect(useCase.loadCount == 2)
+        #expect(viewModel.retryingJobID == nil)
+    }
+
     @Test func reviewResolutionRemovesCandidateAndCompletesOnlyWhenEmpty() async throws {
         let repository = SeasonDiscoveryRepositoryFake()
         repository.reviewCandidates = [
@@ -247,14 +298,81 @@ struct SeasonDiscoveryManagementViewModelTests {
 
 private final class SeasonImportManagementUseCaseFake:
     ManageSeasonImportJobsUseCaseProtocol {
-    func loadJobs(brandID: BrandID) async throws -> [SeasonImportJob] { [] }
+    private let jobs: [SeasonImportJob]
+    private(set) var loadCount = 0
+
+    init(jobs: [SeasonImportJob] = []) {
+        self.jobs = jobs
+    }
+
+    func loadJobs(brandID: BrandID) async throws -> [SeasonImportJob] {
+        loadCount += 1
+        return jobs
+    }
 
     func retryAssets(
         brandID: BrandID,
         sourceJobID: String
     ) async throws -> SeasonAssetRetryReceipt {
+        SeasonAssetRetryReceipt(
+            sourceImportJobID: sourceJobID,
+            seasonID: "season-1",
+            status: "queued",
+            isDuplicate: false
+        )
+    }
+}
+
+private struct SeasonImportQueueUseCaseFake: StartSeasonImportExtractionUseCaseProtocol {
+    let receipts: [LookbookImportQueueReceipt]
+
+    func execute(
+        brandID: BrandID,
+        candidates: [SeasonCandidate]
+    ) async throws -> LookbookImportQueueReceipt {
+        guard let receipt = receipts.first else { throw NSError(domain: "unused", code: -1) }
+        return receipt
+    }
+
+    func loadProgress(requestID: String) async throws -> SeasonImportExtractionProgress {
         throw NSError(domain: "unused", code: -1)
     }
+
+    func reconcileUnsettledRequests(brandID: BrandID) async throws -> [LookbookImportQueueReceipt] {
+        receipts
+    }
+
+    func latestUnsettledRequestID(brandID: BrandID) async throws -> String? {
+        receipts.first?.requestID
+    }
+
+    func unsettledRequestID(brandID: BrandID, candidates: [SeasonCandidate]) async throws -> String? {
+        receipts.first?.requestID
+    }
+}
+
+private func queuedReceipt() -> LookbookImportQueueReceipt {
+    LookbookImportQueueReceipt(
+        contractVersion: 1,
+        requestID: "123e4567-e89b-42d3-a456-426614174000",
+        batchID: String(repeating: "a", count: 64),
+        brandID: "brand-1",
+        kind: "importSeasons",
+        state: .queued,
+        stateRevision: 1,
+        items: [
+            LookbookImportQueueReceipt.Item(
+                itemID: "item-1",
+                targetID: "candidate-1",
+                ordinal: 0,
+                admissionStatus: "created",
+                processingStatus: "queued",
+                jobID: "job-1",
+                executionID: "execution-1",
+                errorCode: nil
+            )
+        ]
+    )
 }
 
 private final class SeasonDiscoveryRepositoryFake:

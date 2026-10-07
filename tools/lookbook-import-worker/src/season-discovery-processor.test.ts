@@ -29,6 +29,12 @@ test("queued와 dispatching의 정확한 generation만 claim한다", () => {
   assert.equal(canClaimSeasonDiscoveryJob(
     {...job, generation: 3}, request,
   ), false);
+  assert.equal(canClaimSeasonDiscoveryJob(
+    {...job, queueContractVersion: 1, queueBatchID: "batch-1"}, request,
+  ), false);
+  assert.equal(canClaimSeasonDiscoveryJob(
+    {...job, queueActivationRequired: true}, request,
+  ), false);
 });
 
 test("현재 brand pointer와 dispatch lease가 같은 attempt만 확정한다", () => {

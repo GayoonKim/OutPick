@@ -1,11 +1,17 @@
+import {validateCampaign, type RemoteCampaign}
+  from "./performance/remote-contract.js";
+
 export interface WorkerConfig {
   projectID: string;
   storageBucket: string;
   port: number;
   assetSyncConcurrency: number;
+  performanceEnabled: boolean;
+  remoteCampaign?: RemoteCampaign;
   oidcAudience: string;
   taskServiceAccountEmail: string;
   functionsServiceAccountEmail: string;
+  recoveryServiceAccountEmail?: string;
   workerRevision: string;
   workerSourceRevision: string;
   seasonDiscoveryContractRevision: number;
@@ -78,6 +84,9 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     environmentContract.functionsServiceAccountEmail,
     "OUTPICK_IMPORT_FUNCTIONS_SERVICE_ACCOUNT_EMAIL",
   );
+  const recoveryServiceAccountEmail = optionalRecoveryServiceAccountEmail(
+    env.OUTPICK_IMPORT_RECOVERY_SERVICE_ACCOUNT_EMAIL, projectID,
+  );
   const workerRevision = requiredEnv(env, "K_REVISION");
   const workerSourceRevision = requiredRevision(
     env, "OUTPICK_WORKER_SOURCE_REVISION",
@@ -92,20 +101,50 @@ export function loadConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const seasonDiscoveryExtractorVersion = requiredEnv(
     env, "OUTPICK_SEASON_DISCOVERY_EXTRACTOR_VERSION",
   );
+  const performanceValue = env.OUTPICK_IMPORT_PERFORMANCE_ENABLED ?? "false";
+  if (performanceValue !== "true" && performanceValue !== "false") {
+    throw new Error("OUTPICK_IMPORT_PERFORMANCE_ENABLED는 true/false여야 합니다.");
+  }
+  const remoteCampaign = env.OUTPICK_IMPORT_REMOTE_CAMPAIGN ?
+    validateCampaign(JSON.parse(env.OUTPICK_IMPORT_REMOTE_CAMPAIGN)) :
+    undefined;
+  if (remoteCampaign && (projectID !== "outpick-test" ||
+    remoteCampaign.sourceRevision !== workerSourceRevision)) {
+    throw new Error(
+      "원격 실험은 Development의 일치하는 소스에서만 허용됩니다.");
+  }
 
   return {
     projectID,
     storageBucket,
     port,
     assetSyncConcurrency,
+    performanceEnabled: performanceValue === "true",
+    remoteCampaign,
     oidcAudience,
     taskServiceAccountEmail,
     functionsServiceAccountEmail,
+    ...(recoveryServiceAccountEmail ? {recoveryServiceAccountEmail} : {}),
     workerRevision,
     workerSourceRevision,
     seasonDiscoveryContractRevision,
     seasonDiscoveryExtractorVersion,
   };
+}
+
+function optionalRecoveryServiceAccountEmail(
+  rawValue: string | undefined, projectID: string,
+): string | undefined {
+  const value = rawValue?.trim().toLowerCase();
+  if (!value) return undefined;
+  const pattern = new RegExp(
+    `^[a-z0-9-]+@${projectID}\\.iam\\.gserviceaccount\\.com$`);
+  if (!pattern.test(value)) {
+    throw new Error(
+      "OUTPICK_IMPORT_RECOVERY_SERVICE_ACCOUNT_EMAIL은 같은 프로젝트의 " +
+      "전용 service account여야 합니다.");
+  }
+  return value;
 }
 
 function requiredRevision(env: NodeJS.ProcessEnv, key: string): string {

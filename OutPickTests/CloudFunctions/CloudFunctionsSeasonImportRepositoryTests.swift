@@ -3,25 +3,74 @@ import Testing
 @testable import OutPick
 
 struct CloudFunctionsSeasonImportRepositoryTests {
+    @Test func rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        transport.responses = [[:]]
+        transport.responseHandler = { call in
+            guard call.name == "requestSeasonImport" else { return nil }
+            var response = Self.queueReceipt(
+                call,
+                kind: "importSeasons",
+                targetID: "season-url",
+                jobID: "job-1"
+            )
+            response["requestID"] = "223e4567-e89b-42d3-a456-426614174000"
+            return response
+        }
+        let requestStore = GRDBLookbookImportRequestStore(database: try TemporaryAppDatabase.make())
+        let repository = CloudFunctionsSeasonImportRepository(
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" }
+        )
+
+        do {
+            _ = try await repository.requestSeasonImport(
+                brandID: BrandID(value: "brand-1"),
+                seasonURL: "https://season.example.com",
+                sourceCandidateID: nil
+            )
+            Issue.record("다른 요청의 영수증을 받아들이면 안 됩니다.")
+        } catch {
+            #expect(transport.calls.count == 1)
+        }
+        let unresolved = try await requestStore.fetchUnsettled(ownerUID: "user-1", brandID: "brand-1")
+        #expect(unresolved.count == 1)
+        #expect(unresolved[0].localState == .needsReconcile)
+    }
+
     @Test func coversSeasonImportCallableContracts() async throws {
         let transport = CloudFunctionsTransportSpy()
         transport.responses = [
-            ["jobID": "job-1", "status": "queued", "seasonURL": "https://season.example.com"],
-            [
-                "brandID": "brand-1", "candidateIDs": ["candidate-1"], "jobIDs": ["job-2"],
-                "requestedJobCount": 1, "failedJobCount": 0, "skippedJobCount": 0
-            ],
-            ["sourceImportJobID": "job-1", "seasonID": "season-1", "status": "queued"],
-            [
-                "brandID": "brand-1", "jobID": "discovery-1", "generation": 3,
-                "status": "queued", "coalesced": true,
-                "sourceArchiveURL": "https://archive.example.com"
-            ]
+            [:], [:], [:], [:]
         ]
         let brandID = BrandID(value: "brand-1")
-        let importing = CloudFunctionsSeasonImportRepository(transport: transport)
+        let requestStore = GRDBLookbookImportRequestStore(database: try TemporaryAppDatabase.make())
+        transport.responseHandler = { call in
+            switch call.name {
+            case "requestSeasonImport":
+                return Self.queueReceipt(call, kind: "importSeasons", targetID: "season-url", jobID: "job-1")
+            case "requestSeasonCandidateImportJobs":
+                return Self.queueReceipt(call, kind: "importSeasons", targetID: "candidate-1", jobID: "job-1")
+            case "requestSeasonAssetRetry":
+                return Self.queueReceipt(call, kind: "assetRetry", targetID: "job-1", jobID: "job-1")
+            case "requestSeasonDiscovery":
+                return Self.queueReceipt(call, kind: "discoverSeasons", targetID: "brand-1", jobID: "discovery-1")
+            default:
+                return nil
+            }
+        }
+        let importing = CloudFunctionsSeasonImportRepository(
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" }
+        )
         let jobs = CloudFunctionsSeasonImportJobRequestingRepository(transport: transport)
-        let retry = CloudFunctionsSeasonAssetRetryRepository(transport: transport)
+        let retry = CloudFunctionsSeasonAssetRetryRepository(
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" }
+        )
         let discovery = CloudFunctionsSeasonCandidateDiscoveryRepository(
             transport: transport,
             observeJob: { _, _ in
@@ -33,7 +82,10 @@ struct CloudFunctionsSeasonImportRepositoryTests {
                     ])
                     continuation.finish()
                 }
-            }
+            },
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" },
+            sourceArchiveURLProvider: { _ in "https://archive.example.com" }
         )
 
         _ = try await importing.requestSeasonImport(
@@ -46,7 +98,12 @@ struct CloudFunctionsSeasonImportRepositoryTests {
             discoveryJobID: "discovery-1",
             generation: 3,
             candidateIDs: ["candidate-1"],
-            candidateSnapshotHash: "snapshot-hash"
+            candidateSnapshotHash: "snapshot-hash",
+            envelope: LookbookImportQueueContract.RequestEnvelope(
+                queueContractVersion: 1,
+                requestID: "123e4567-e89b-42d3-a456-426614174000",
+                requestCreatedAt: 1_800_000_000_000
+            )
         )
         _ = try await retry.requestAssetRetry(brandID: brandID, sourceJobID: "job-1")
         let result = try await discovery.discoverSeasonCandidates(brandID: brandID)
@@ -57,8 +114,18 @@ struct CloudFunctionsSeasonImportRepositoryTests {
         ])
         #expect(transport.calls[0].data["sourceCandidateID"] == nil)
         #expect(transport.calls[3].data["requestReason"] as? String == "manualRefresh")
-        #expect(batch.requestedImportJobCount == 1)
+        #expect(batch.items.map(\.targetID) == ["candidate-1"])
+        #expect(transport.calls[1].data["requestID"] as? String == "123e4567-e89b-42d3-a456-426614174000")
+        #expect(transport.calls[1].data["queueContractVersion"] as? Int == 1)
         #expect(result.candidateCount == 4)
+        for index in [0, 2, 3] {
+            #expect(transport.calls[index].data["queueContractVersion"] as? Int == 1)
+            #expect(transport.calls[index].data["requestID"] as? String != nil)
+            #expect(transport.calls[index].data["requestCreatedAt"] as? Int64 != nil)
+        }
+        let acceptedRequests = try await requestStore.fetchUnsettled(ownerUID: "user-1", brandID: brandID.value)
+        #expect(acceptedRequests.count == 3)
+        #expect(acceptedRequests.allSatisfy { $0.localState == .accepted })
     }
 
     @Test func coversExtractionReviewCallableContracts() async throws {
@@ -83,11 +150,24 @@ struct CloudFunctionsSeasonImportRepositoryTests {
                     ]
                 ]
             ],
-            ["status": "queued", "duplicate": false],
-            ["status": "queued", "duplicate": false]
+            [:], [:]
         ]
+        transport.responseHandler = { call in
+            guard ["reviewLookbookExtraction", "retryLookbookExtractionAfterFix"].contains(call.name) else {
+                return nil
+            }
+            return Self.queueReceipt(
+                call,
+                kind: call.name == "reviewLookbookExtraction" ? "reviewApproval" : "manualRetry",
+                targetID: "job-1",
+                jobID: "job-1"
+            )
+        }
+        let requestStore = GRDBLookbookImportRequestStore(database: try TemporaryAppDatabase.make())
         let repository = CloudFunctionsLookbookExtractionReviewRepository(
-            transport: transport
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" }
         )
         let brandID = BrandID(value: "brand-1")
         let review = try await repository.loadReview(
@@ -114,15 +194,14 @@ struct CloudFunctionsSeasonImportRepositoryTests {
         ])
         #expect(review.candidates.map(\.candidateKey) == ["candidate-1"])
         #expect(transport.calls[1].data["reviewGeneration"] as? Int == 1)
+        #expect(transport.calls[1].data["requestID"] as? String != nil)
+        #expect(transport.calls[2].data["requestID"] as? String != nil)
     }
 
     @Test func coversSeasonRepairCallableContracts() async throws {
         let transport = CloudFunctionsTransportSpy()
         transport.responses = [
-            [
-                "jobID": "job-1", "seasonID": "season-1",
-                "repairGeneration": 2, "status": "analyzing", "duplicate": false
-            ],
+            [:],
             [
                 "jobID": "job-1", "brandID": "brand-1", "seasonID": "season-1",
                 "repairGeneration": 2, "repairSnapshotHash": "repair-hash",
@@ -148,13 +227,24 @@ struct CloudFunctionsSeasonImportRepositoryTests {
                     ]
                 ]
             ],
-            [
-                "jobID": "job-1", "seasonID": "season-1",
-                "repairGeneration": 2, "status": "applied", "duplicate": false
-            ]
+            [:]
         ]
+        transport.responseHandler = { call in
+            guard ["requestLookbookSeasonRepair", "applyLookbookSeasonRepair"].contains(call.name) else {
+                return nil
+            }
+            return Self.queueReceipt(
+                call,
+                kind: "repair",
+                targetID: "season-1",
+                jobID: "job-1"
+            )
+        }
+        let requestStore = GRDBLookbookImportRequestStore(database: try TemporaryAppDatabase.make())
         let repository = CloudFunctionsLookbookSeasonRepairRepository(
-            transport: transport
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" }
         )
         let brandID = BrandID(value: "brand-1")
         let seasonID = SeasonID(value: "season-1")
@@ -185,5 +275,34 @@ struct CloudFunctionsSeasonImportRepositoryTests {
             transport.calls[2].data["repairSnapshotHash"] as? String
                 == "repair-hash"
         )
+        #expect(transport.calls[0].data["requestID"] as? String != nil)
+        #expect(transport.calls[2].data["requestID"] as? String != nil)
+    }
+
+    private static func queueReceipt(
+        _ call: CloudFunctionsTransportSpy.Call,
+        kind: String,
+        targetID: String,
+        jobID: String
+    ) -> [String: Any] {
+        [
+            "contractVersion": 1,
+            "requestID": call.data["requestID"] as? String ?? "123e4567-e89b-42d3-a456-426614174000",
+            "batchID": String(repeating: "a", count: 64),
+            "brandID": call.data["brandID"] as? String ?? "brand-1",
+            "kind": kind,
+            "receiptState": "queued",
+            "stateRevision": 1,
+            "items": [[
+                "itemID": "item-1",
+                "targetID": targetID,
+                "ordinal": 0,
+                "admissionStatus": "created",
+                "processingStatus": "queued",
+                "jobID": jobID,
+                "executionID": "execution-1",
+                "errorCode": NSNull()
+            ]]
+        ]
     }
 }

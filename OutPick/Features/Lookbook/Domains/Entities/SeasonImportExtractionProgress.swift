@@ -9,9 +9,24 @@ import Foundation
 
 struct SeasonImportExtractionProgress: Equatable {
     enum ItemStatus: Equatable {
+        case queued
         case processing
+        case retryWaiting
         case succeeded
+        case awaitingReview
         case failed
+        case skipped
+        case duplicate
+        case recoveryRequired
+
+        var isTerminal: Bool {
+            switch self {
+            case .succeeded, .awaitingReview, .failed, .skipped, .duplicate:
+                return true
+            case .queued, .processing, .retryWaiting, .recoveryRequired:
+                return false
+            }
+        }
     }
 
     struct Item: Equatable, Identifiable {
@@ -27,8 +42,15 @@ struct SeasonImportExtractionProgress: Equatable {
     let completedCount: Int
     let failedCount: Int
     let items: [Item]
+    let batchState: LookbookImportQueueContract.BatchState?
+    let stateRevision: Int64?
 
     var isFinished: Bool {
-        totalCount > 0 && completedCount >= totalCount
+        totalCount > 0 && (
+            completedCount >= totalCount || batchState == .recoveryRequired || batchState == .released
+        )
     }
+
+    var reviewRequiredCount: Int { items.filter { $0.status == .awaitingReview }.count }
+    var recoveryRequiredCount: Int { items.filter { $0.status == .recoveryRequired }.count }
 }

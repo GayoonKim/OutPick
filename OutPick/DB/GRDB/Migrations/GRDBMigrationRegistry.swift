@@ -27,7 +27,8 @@ enum GRDBMigrationRegistry {
         "addUnreadMessageSeqToChatMessage",
         "addMediaExpiresAtToChatModels",
         "addMediaGenerationsToIndexes",
-        "createChatSearchSessions"
+        "createChatSearchSessions",
+        "createLookbookImportRequests"
     ]
 
     static func migrate(_ writer: some DatabaseWriter) throws {
@@ -270,6 +271,38 @@ enum GRDBMigrationRegistry {
 
         migrator.registerMigration("createChatSearchSessions") { db in
             try ChatSearchSQL.createSchema(in: db)
+        }
+        migrator.registerMigration("createLookbookImportRequests") { db in
+            try db.create(table: "lookbookImportRequest", options: [.ifNotExists]) { table in
+                table.column("ownerUID", .text).notNull()
+                table.column("requestID", .text).notNull()
+                table.column("contractVersion", .integer).notNull()
+                table.column("brandID", .text)
+                table.column("kind", .text).notNull()
+                table.column("inputJSON", .text).notNull()
+                table.column("payloadDigest", .text).notNull()
+                table.column("localState", .text).notNull()
+                table.column("batchID", .text)
+                table.column("receiptJSON", .text)
+                table.column("stateRevision", .integer)
+                table.column("createdAt", .integer).notNull()
+                table.column("updatedAt", .integer).notNull()
+                table.column("settledAt", .integer)
+                table.column("expiresAt", .integer)
+                table.primaryKey(["ownerUID", "requestID"])
+            }
+            try db.create(
+                index: "idx_lookbookImportRequest_owner_state_updated",
+                on: "lookbookImportRequest",
+                columns: ["ownerUID", "localState", "updatedAt"],
+                ifNotExists: true
+            )
+            try db.create(
+                index: "idx_lookbookImportRequest_expiry",
+                on: "lookbookImportRequest",
+                columns: ["expiresAt"],
+                ifNotExists: true
+            )
         }
         return migrator
     }

@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "runTimeoutMs": 2100000,
+  "inputs": [
+    "verification",
+    "tools/verification-gate",
+    "Configurations",
+    "scripts/build",
+    "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
+    "OutPick",
+    "OutPickTests",
+    "OutPickUITests",
+    "OutPick.xcodeproj",
+    "AGENTS.md",
+    "contracts/lookbook-import-queue-v1.json"
+  ],
+  "checks": [
+    {
+      "id": "lookbook-queue-contract-ios",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO",
+        "-only-testing:OutPickTests/LookbookImportQueueContractTests",
+        "-only-testing:OutPickTests/GRDBLookbookImportRequestStoreTests",
+        "-only-testing:OutPickTests/StartSeasonImportExtractionUseCaseTests",
+        "-only-testing:OutPickTests/AppDatabaseMigrationTests",
+        "-only-testing:OutPickTests/AccountDeletionLocalDataCleanupTests",
+        "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests",
+        "-only-testing:OutPickTests/CloudFunctionsSeasonImportRepositoryTests",
+        "-only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests"
+      ],
+      "cwd": ".",
+      "timeoutMs": 1800000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "LookbookImportQueueContractTests/policyAndStatesMatchSharedFixture()",
+        "LookbookImportQueueContractTests/envelopeValidatesSharedCases()",
+        "LookbookImportQueueContractTests/newAdmissionTimeBoundariesMatchSharedFixture()",
+        "LookbookImportQueueContractTests/oldReceiptEnvelopeRemainsDecodable()",
+        "LookbookImportQueueContractTests/unknownBatchStateIsRejected()",
+        "LookbookImportQueueContractTests/receiptMustMatchRequestBrandAndQueueKind()",
+        "GRDBLookbookImportRequestStoreTests/samePendingPayloadReusesSameIdentityButOtherAccountsStayIsolated()",
+        "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
+        "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
+        "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
+        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
+        "CloudFunctionsSeasonImportRepositoryTests/coversExtractionReviewCallableContracts()",
+        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonRepairCallableContracts()",
+        "CloudFunctionsSeasonImportRepositoryTests/rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved()",
+        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
+        "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()"
+      ]
+    }
+  ]
+}

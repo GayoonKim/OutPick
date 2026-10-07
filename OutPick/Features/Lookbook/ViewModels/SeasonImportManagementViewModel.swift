@@ -9,6 +9,7 @@ final class SeasonImportManagementViewModel: ObservableObject {
     @Published private(set) var discoveryResult: SeasonCandidateDiscoveryResult?
     @Published private(set) var isMutatingDiscovery = false
     @Published private(set) var discoveryErrorMessage: String?
+    @Published private(set) var queueReceipts: [LookbookImportQueueReceipt] = []
 
     var presentedErrorMessage: String? {
         discoveryErrorMessage ?? errorMessage
@@ -17,15 +18,21 @@ final class SeasonImportManagementViewModel: ObservableObject {
     private let brandID: BrandID
     private let useCase: any ManageSeasonImportJobsUseCaseProtocol
     private let discoveryRepository: any SeasonCandidateDiscoveryRepositoryProtocol
+    private let queueUseCase: (any StartSeasonImportExtractionUseCaseProtocol)?
+    private var isScreenActive = true
+    private var isMonitoring = false
+    private var pollingTask: Task<Void, Never>?
 
     init(
         brandID: BrandID,
         useCase: any ManageSeasonImportJobsUseCaseProtocol,
-        discoveryRepository: any SeasonCandidateDiscoveryRepositoryProtocol
+        discoveryRepository: any SeasonCandidateDiscoveryRepositoryProtocol,
+        queueUseCase: (any StartSeasonImportExtractionUseCaseProtocol)? = nil
     ) {
         self.brandID = brandID
         self.useCase = useCase
         self.discoveryRepository = discoveryRepository
+        self.queueUseCase = queueUseCase
     }
 
     func load() async {
@@ -36,35 +43,71 @@ final class SeasonImportManagementViewModel: ObservableObject {
 
         do {
             jobs = try await useCase.loadJobs(brandID: brandID)
+            if let queueUseCase {
+                queueReceipts = try await queueUseCase.reconcileUnsettledRequests(brandID: brandID)
+            }
         } catch {
             errorMessage = "시즌 가져오기 현황을 불러오지 못했습니다."
         }
     }
 
     func monitor() async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { [weak self] in
-                guard let self else { return }
-                await self.load()
-                await self.pollActiveJobs()
-            }
-            group.addTask { [weak self] in
-                await self?.observeLatestDiscovery()
-            }
+        guard !isMonitoring else { return }
+        isMonitoring = true
+        defer {
+            isMonitoring = false
+            pollingTask?.cancel()
+            pollingTask = nil
         }
+        await load()
+        startPollingIfNeeded()
+        await observeLatestDiscovery()
     }
 
     func hasActiveRetry(for job: SeasonImportJob) -> Bool {
         job.isAssetRetryInFlight
     }
 
+    func setScreenActive(_ active: Bool) {
+        isScreenActive = active
+        if active {
+            startPollingIfNeeded()
+        } else {
+            pollingTask?.cancel()
+        }
+    }
+
     private func pollActiveJobs() async {
-        while !Task.isCancelled && jobs.contains(where: {
-            $0.status == .queued || $0.status == .processing || $0.isAssetRetryInFlight
-        }) {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        defer {
+            pollingTask = nil
+            startPollingIfNeeded()
+        }
+        var consecutiveErrors = 0
+        while !Task.isCancelled && isScreenActive && hasActiveWork {
+            let waiting = queueReceipts.contains {
+                $0.state == .preparing || $0.state == .queued || $0.state == .retryWaiting
+            }
+            let seconds: UInt64 = consecutiveErrors > 0 ? [10, 20, 40, 60][min(consecutiveErrors - 1, 3)] : (waiting ? 10 : 3)
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled else { return }
+            guard isScreenActive else { return }
             await load()
+            if errorMessage == nil { consecutiveErrors = 0 } else { consecutiveErrors = min(consecutiveErrors + 1, 4) }
+        }
+    }
+
+    private func startPollingIfNeeded() {
+        guard isMonitoring, isScreenActive, pollingTask == nil, hasActiveWork else { return }
+        pollingTask = Task { [weak self] in
+            await self?.pollActiveJobs()
+        }
+    }
+
+    private var hasActiveWork: Bool {
+        jobs.contains {
+            $0.status == .queued || $0.status == .processing || $0.isAssetRetryInFlight
+        } || queueReceipts.contains {
+            [.preparing, .queued, .active, .draining, .retryWaiting].contains($0.state)
         }
     }
 
@@ -80,7 +123,7 @@ final class SeasonImportManagementViewModel: ObservableObject {
                 sourceJobID: job.id
             )
             jobs = try await useCase.loadJobs(brandID: brandID)
-            await pollActiveJobs()
+            startPollingIfNeeded()
         } catch {
             errorMessage = "재시도하지 못했습니다."
         }

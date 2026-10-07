@@ -49,4 +49,24 @@ struct LookbookSeasonRepairReceipt: Equatable {
     let generation: Int
     let status: SeasonRepairStatus
     let duplicate: Bool
+    let requestID: String?
+    let batchID: String?
+
+    init(
+        jobID: String,
+        seasonID: SeasonID,
+        generation: Int,
+        status: SeasonRepairStatus,
+        duplicate: Bool,
+        requestID: String? = nil,
+        batchID: String? = nil
+    ) {
+        self.jobID = jobID
+        self.seasonID = seasonID
+        self.generation = generation
+        self.status = status
+        self.duplicate = duplicate
+        self.requestID = requestID
+        self.batchID = batchID
+    }
 }

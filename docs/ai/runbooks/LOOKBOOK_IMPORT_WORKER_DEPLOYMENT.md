@@ -8,7 +8,10 @@ Development와 Production Worker의 project, Storage bucket, URL/OIDC audience, 
 
 ## 진입점
 
+Q7 K/L 전용 장애 검증(2026-10-07): 사용자 승인 뒤 `OUTPICK_Q7_RETRY_FAULT_CAMPAIGN=<고정 UUIDv4>`와 passed Worker `--gate-summary`를 함께 사용한다. 이 설정은 Development verified snapshot에서만 허용하며 Production·공개 endpoint로 활성화하지 않는다. 시작 시 service/project/revision/digest를 검증하고 실제 소비는 서버 원장의 exact campaign/batch/job/execution·20분 창을 요구한다. 새 승인 batch/수동 execution에 장치를 반복 적용하지 않는다. [실행안·한도](../tasks/lookbook-import-performance/q7-retry-development-execution-plan.md), [진입점](../entrypoints/FIREBASE.md).
+
 - 배포 계약: `scripts/ai/deploy-lookbook-import-worker.sh`
+- dirty 작업트리의 Development 배포 snapshot: `scripts/ai/create-lookbook-import-worker-deploy-snapshot.mjs`
 - 계약 테스트: `scripts/ai/test-deploy-lookbook-import-worker.sh`
 - Worker 시작 검증: `tools/lookbook-import-worker/src/config.ts`
 - HTTP/OIDC 경계: `tools/lookbook-import-worker/src/server.ts`, `oidc-auth.ts`
@@ -53,6 +56,17 @@ Development:
 scripts/ai/deploy-lookbook-import-worker.sh development --deploy-candidate
 ```
 
+작업트리에 다른 미커밋 변경이 있어도 Development candidate를 검증된 Worker gate 결과로 배포해야 할 때는 다음 형식을 사용한다.
+
+```bash
+scripts/ai/deploy-lookbook-import-worker.sh development --deploy-candidate \
+  --gate-summary output/verification/{worker-gate-run}/summary.json
+```
+
+이 경로는 Production에서 거부된다. 스크립트는 Worker 필수 gate가 모두 통과했고 현재 입력 digest·HEAD가 summary와 일치하는지 확인한 뒤 Worker 파일만 `output/lookbook-import-performance/worker-deploy-snapshots/`에 복사한다. snapshot manifest와 SHA-256을 남기고, candidate revision 환경변수 `OUTPICK_WORKER_VERIFICATION_DIGEST`에 gate source digest를 기록한다. Development에서는 Q7 관측용 `OUTPICK_IMPORT_PERFORMANCE_ENABLED=true`도 설정한다. 새 candidate는 `--no-traffic`으로 생성하며 기존 100% traffic은 유지한다. Q7 runner가 사용하는 안정된 tag `q7-20261006`만 새 candidate revision으로 옮기므로, 고정 tag URL을 설정한 Functions는 새 Worker를 호출하고 다른 traffic은 바뀌지 않는다. 이 경로에서는 gate summary가 정확한 현재 소스를 증명하므로 배포 전 Worker 테스트를 재실행하지 않는다. summary 누락·실패·오래된 digest·소스 변경은 배포 전에 거부한다.
+
+배포 출력에서 `snapshot_manifest`의 verification digest와 candidate revision을 기록한다. Q7 runner 실행 전 같은 digest를 `OUTPICK_Q7_EXPECTED_WORKER_VERIFICATION_DIGEST`에 설정한다. Q7 preflight는 해당 값이 고정 tag가 가리키는 candidate revision의 digest 환경변수와 일치하지 않으면 모든 제품 mutation 전에 중단한다. candidate Ready 상태, tag 대상 revision, 0% tag/기존 100% traffic, `requestSeasonImport` URL, 두 Cloud Tasks queue의 대기 작업 0건도 읽기 전용으로 확인한다.
+
 Production:
 
 ```bash
@@ -64,7 +78,7 @@ scripts/ai/deploy-lookbook-import-worker.sh production --deploy-candidate
 
 ## 4. Candidate 검증
 
-1. `candidate_revision`이 Ready인지 확인한다.
+1. `candidate_revision`이 Ready인지 확인한다. snapshot 배포라면 revision의 `OUTPICK_WORKER_VERIFICATION_DIGEST`가 출력된 manifest의 verification digest와 일치하는지도 확인한다.
 2. Candidate tag URL에 각 환경의 정확한 audience로 발급한 OIDC token을 사용한다.
 3. `/readyz`가 200인지 확인한다.
 4. Cloud Tasks 계정의 빈 `/tasks/import-job` 요청이 IAM과 앱 인증을 통과해 payload 검증 500에 도달하는지 확인한다.
@@ -98,6 +112,12 @@ gcloud logging read \
 ```
 
 ## 5. Traffic 전환
+
+### Development Q7 복구 호출
+
+사용자 승인(2026-10-06): 운영자 `gayunkim.1@gmail.com` 하나에 recovery SA 리소스의 `roles/iam.serviceAccountOpenIdTokenCreator`, recovery SA에는 특정 Development Worker service의 `roles/run.invoker`만 추가한다. runtime SA에는 `logging.logEntries.list`만 있는 custom role을 추가한다. 이 권한은 프로젝트 일반 로그 읽기이며 code query는 exact service/revision/trace만 사용한다. SA key·넓은 TokenCreator·로그 수정/삭제·Production 변경은 포함하지 않는다.
+
+배포 스크립트가 Development recovery env를 설정하고 Q7 preflight가 exact email을 확인한다. `scripts/lookbook-import-recovery.mjs`는 `src/queue/recovery-auth.ts`를 통해 사용자 access token으로 `generateIdToken`을 직접 호출한다. inspect 대상 revision은 현재 candidate가 아니라 기존 run의 revision이다. inspect 통과 후 report digest/state revision/고정 decision ID로 `settle-correction`을 호출한다. `/recovery/resume`으로 terminal correction 결과를 재실행하지 않는다.
 
 Candidate 검증을 모두 통과하고 사용자가 Production 전환을 명시 승인한 뒤에만 실행한다.
 

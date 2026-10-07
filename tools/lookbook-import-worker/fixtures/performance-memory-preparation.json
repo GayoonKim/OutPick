@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "median-jpeg",
+      "image": {
+        "seasonID": "2025SS",
+        "kind": "post",
+        "path": "images/2025SS-010-a8275db33f78.jpg",
+        "sha256": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+        "bytes": 822696,
+        "format": "jpeg",
+        "width": 1350,
+        "height": 1687,
+        "channels": 3,
+        "depth": "uchar",
+        "pages": 1,
+        "orientation": null,
+        "hasAlpha": false,
+        "isProgressive": true,
+        "pixelChannelBytes": 6832350
+      },
+      "golden": [
+        {
+          "kind": "post",
+          "sourceHash": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 88123,
+          "sha256": "e528a31a71a5feb473774441b3779aa66cebea9e20ef380165a07db6ebce93a2",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 614317,
+          "sha256": "ea9f01a34199c071d911b762d1e6258a7022d6b9372508747a35a9954763dd87",
+          "width": 1350,
+          "height": 1687
+        }
+      ]
+    },
+    {
+      "id": "largest-pixels-jpeg",
+      "image": {
+        "seasonID": "2025FW",
+        "kind": "post",
+        "path": "images/2025FW-006-f9cfca2c3e1d.jpg",
+        "sha256": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+        "bytes": 953820,
+        "format": "jpeg",
+        "width": 4050,
+        "height": 5400,
+        "channels": 3,
+        "depth": "uchar",
+        "pages": 1,
+        "orientation": 1,
+        "hasAlpha": false,
+        "isProgressive": true,
+        "pixelChannelBytes": 65610000
+      },
+      "golden": [
+        {
+          "kind": "post",
+          "sourceHash": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31332,
+          "sha256": "603b4223492bc8433c2ffa7e7f33dfdd7969047fa2f7ba3544fdc2c3c73611d3",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 304504,
+          "sha256": "ecd0a2f1502aae14f5d133f6e2f3bdb155e5220836bb5dbfae3f7d7d68e2ff8b",
+          "width": 1440,
+          "height": 1920
+        }
+      ]
+    },
+    {
+      "id": "largest-file-jpeg",
+      "image": {
+        "seasonID": "2026FW",
+        "kind": "post",
+        "path": "images/2026FW-008-d2ac404470c2.jpg",
+        "sha256": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+        "bytes": 2737602,
+        "format": "jpeg",
+        "width": 3240,
+        "height": 4050,
+        "channels": 3,
+        "depth": "uchar",
+        "pages": 1,
+        "orientation": null,
+        "hasAlpha": false,
+        "isProgressive": true,
+        "pixelChannelBytes": 39366000
+      },
+      "golden": [
+        {
+          "kind": "post",
+          "sourceHash": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 54319,
+          "sha256": "328d942da6c95bf4f029fd34358c755258c7c0eb8e53415b26d6fad512a5ec6f",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 671170,
+          "sha256": "38431e0bd6295182705593ea97304bd4ce4eebed4632f651e8a04d5c42dfe060",
+          "width": 1536,
+          "height": 1920
+        }
+      ]
+    },
+    {
+      "id": "rgba-png",
+      "image": {
+        "seasonID": "2024SS",
+        "kind": "post",
+        "path": "images/2024SS-021-08a2139c423b.png",
+        "sha256": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+        "bytes": 928786,
+        "format": "png",
+        "width": 700,
+        "height": 875,
+        "channels": 4,
+        "depth": "uchar",
+        "pages": 1,
+        "orientation": null,
+        "hasAlpha": true,
+        "isProgressive": false,
+        "pixelChannelBytes": 2450000
+      },
+      "golden": [
+        {
+          "kind": "post",
+          "sourceHash": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 38515,
+          "sha256": "7ed8ed6dbace42831e6377d7f19737cf8848ffbfa949786273e2c656c1b3bc2f",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 71216,
+          "sha256": "7694ca963a7e90090c94e1c4d2108f5a6f55140fcab6c0a8692aa2ef88a1cc9e",
+          "width": 700,
+          "height": 875
+        }
+      ]
+    },
+    {
+      "id": "largest-cover",
+      "image": {
+        "seasonID": "2026FW",
+        "kind": "cover",
+        "path": "images/2026FW-cover-17fcf219eb07.jpg",
+        "sha256": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+        "bytes": 144053,
+        "format": "jpeg",
+        "width": 800,
+        "height": 1000,
+        "channels": 3,
+        "depth": "uchar",
+        "pages": 1,
+        "orientation": null,
+        "hasAlpha": false,
+        "isProgressive": false,
+        "pixelChannelBytes": 2400000
+      },
+      "golden": [
+        {
+          "kind": "cover",
+          "sourceHash": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 15937,
+          "sha256": "322899db005c7e2738b74b5fdb357279592a901b3d5c8dce3cd4f43edbc6f5d5",
+          "width": 410,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 81852,
+          "sha256": "90c2905a61af2b00dcc0e26d6c1b35befcdcef51552f91b28708890ade15678c",
+          "width": 800,
+          "height": 1000
+        }
+      ]
+    }
+  ],
+  "runs": 18,
+  "transforms": 42
+}
