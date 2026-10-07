@@ -91,6 +91,22 @@ test("caller에 맞는 검증된 계정만 허용한다", async () => {
   assert.equal(functionsIdentity.email, config.functionsServiceAccountEmail);
 });
 
+test("복구 caller는 별도 설정 계정만 허용하고 기본 off다", async () => {
+  const recoveryEmail =
+    "lookbook-import-recovery@outpick-test.iam.gserviceaccount.com";
+  assert.throws(() => allowedEmailForCaller("recovery", config),
+    isAuthError(403));
+  assert.equal(allowedEmailForCaller("recovery", {
+    ...config, recoveryServiceAccountEmail: recoveryEmail,
+  }), recoveryEmail);
+  await assert.rejects(authenticateOIDCRequest("Bearer token", "recovery",
+    config, fakeVerifier(recoveryEmail)), isAuthError(403));
+  const identity = await authenticateOIDCRequest("Bearer token", "recovery",
+    {...config, recoveryServiceAccountEmail: recoveryEmail},
+    fakeVerifier(recoveryEmail));
+  assert.equal(identity.email, recoveryEmail);
+});
+
 function fakeVerifier(
   email: string,
   emailVerified = true,

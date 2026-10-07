@@ -5,10 +5,26 @@ import test from "node:test";
 import {
   extractImageCandidates,
   fallbackReasonForExtraction,
+  queueOutcomeForSeasonDiscovery,
   requiresApprovedReviewSnapshot,
 } from "./processor.js";
 
 const candidate = {sourceURL: "https://brand.example/lookbook.jpg", alt: null};
+
+test("목록 추출 결과는 도메인 종료 상태를 대기열 결과로 보존한다", () => {
+  assert.deepEqual(queueOutcomeForSeasonDiscovery("succeeded"),
+    {status: "succeeded"});
+  assert.deepEqual(queueOutcomeForSeasonDiscovery("awaitingReview"),
+    {status: "awaitingReview"});
+  assert.deepEqual(queueOutcomeForSeasonDiscovery("correctionRequired"),
+    {status: "correctionRequired"});
+  assert.deepEqual(queueOutcomeForSeasonDiscovery("failed"),
+    {status: "failed"});
+  assert.deepEqual(queueOutcomeForSeasonDiscovery("cancelled"),
+    {status: "cancelled"});
+  assert.equal(queueOutcomeForSeasonDiscovery("ignored"), null);
+  assert.equal(queueOutcomeForSeasonDiscovery("superseded"), null);
+});
 
 test("새 시즌은 빈 moodIDs로 materialize하고 legacy concept를 쓰지 않는다", () => {
   const source = readFileSync(

@@ -29,7 +29,8 @@
       "nodeMajor": 24,
       "reportNames": [
         "rules",
-        "transactions"
+        "transactions",
+        "transactions-reports"
       ],
       "requiredTests": [
         "firestore-tests/room-document-id.rules.test.mjs::authenticated owner can atomically create room, member, and joined projection",

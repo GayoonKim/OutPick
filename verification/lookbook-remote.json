@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "runTimeoutMs": 600000,
+  "inputs": [
+    "tools/lookbook-import-worker", "tools/verification-gate",
+    "verification/lookbook-remote.json",
+    "firebase.lookbook-performance.json",
+    "firestore.rules", "storage.rules", "firestore-tests/package.json",
+    "firestore-tests/package-lock.json", "AGENTS.md"
+  ],
+  "checks": [
+    {
+      "id": "remote-worker-build",
+      "command": "npm",
+      "args": ["--prefix", "tools/lookbook-import-worker", "run", "build"],
+      "cwd": ".", "timeoutMs": 120000, "kind": "command", "nodeMajor": 24
+    },
+    {
+      "id": "remote-emulator",
+      "command": "node",
+      "args": ["tools/lookbook-import-worker/scripts/run-remote-emulator.mjs"],
+      "cwd": ".", "timeoutMs": 360000, "kind": "node", "nodeMajor": 24,
+      "reportNames": ["main"],
+      "requiredTests": [
+        "tools/lookbook-import-worker/scripts/remote.emulator.mjs::RD05 8회 계약은 고정 순서를 지키며 추가 회차와 변경된 종료 계약을 거부한다",
+        "tools/lookbook-import-worker/scripts/remote.emulator.mjs::RD01 독립 요청 경합은 한 실행권만 허용하고 중복과 타 owner 종료를 거부한다",
+        "tools/lookbook-import-worker/scripts/remote.emulator.mjs::RD02 종료 미확인과 중단 회차는 시간 경과에도 자동 인계하지 않는다",
+        "tools/lookbook-import-worker/scripts/remote.emulator.mjs::RD03 고정 순서 입력 변경과 만료 캠페인은 접수하지 않는다",
+        "tools/lookbook-import-worker/scripts/remote.emulator.mjs::RD04 실험 문서와 객체는 인증 클라이언트도 직접 접근할 수 없다"
+      ]
+    }
+  ]
+}

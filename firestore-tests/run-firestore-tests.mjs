@@ -53,7 +53,6 @@ const result = spawnSync(
       "brand-storage.rules.test.mjs " +
       "&& node --test --test-concurrency=1 " + reporterArgs("transactions") + "profile-transactions.emulator.test.mjs " +
       "account-deletion.emulator.test.mjs moderation-principal.emulator.test.mjs " +
-      "moderation-reports.emulator.test.mjs " +
       "comment-write-rate-limit.emulator.test.mjs " +
       "chat-moderation.emulator.test.mjs room-succession-deadline.emulator.test.mjs " +
       "chat-message-search.emulator.test.mjs " +
@@ -71,4 +70,19 @@ const result = spawnSync(
 if (result.error) {
   throw result.error;
 }
-process.exit(result.status ?? 1);
+// 신고 동시 접수는 앞 파일의 트랜잭션 잠금 상태를 공유하지 않는 새 에뮬레이터에서 검사한다.
+const reports = spawnSync(
+  "firebase",
+  [
+    "emulators:exec",
+    "--only",
+    "firestore,storage",
+    "--project",
+    "outpick-rules-test",
+    "node --test --test-concurrency=1 " + reporterArgs("transactions-reports") +
+      "moderation-reports.emulator.test.mjs",
+  ],
+  {env: environment, stdio: "inherit"},
+);
+if (reports.error) throw reports.error;
+process.exit((result.status ?? 1) || (reports.status ?? 1));

@@ -21,7 +21,9 @@ type Endpoint = {
   eventTrigger?: {
     retry?: boolean;
     eventType?: string;
+    document?: string;
     eventFilterPathPatterns?: {document?: string};
+    eventFilters?: {document?: string};
   };
   scheduleTrigger?: {
     schedule?: string;
@@ -45,6 +47,10 @@ type Endpoint = {
 type ExportedFunction = {__endpoint?: Endpoint};
 
 const callableNames = [
+  "getSeasonImportFailures",
+  "requestSeasonImportFailureRetry",
+  "dismissSeasonImportFailure",
+  "getSeasonImportBatch",
   "exchangeKakaoToken",
   "getMyModerationState",
   "submitUserReport",
@@ -139,6 +145,32 @@ const callableNames = [
 ] as const;
 
 const firestoreEndpoints = {
+  onLookbookQueueHeadChanged: {
+    eventType: "google.cloud.firestore.document.v1.written",
+    document: "lookbookImportQueue/main",
+    timeoutSeconds: 120,
+    availableMemoryMb: 256,
+    maxInstances: 1,
+  },
+  onLookbookQueueBatchReady: {
+    eventType: "google.cloud.firestore.document.v1.written",
+    document: "lookbookImportBatches/{batchID}",
+    timeoutSeconds: 120,
+    availableMemoryMb: 256,
+    maxInstances: 1,
+  },
+  onLookbookBatchPreparationRequested: {
+    eventType: "google.cloud.firestore.document.v1.written",
+    document: "lookbookImportBatches/{batchID}",
+    timeoutSeconds: 540,
+    availableMemoryMb: null,
+  },
+  onLookbookPreparationSequenceChanged: {
+    eventType: "google.cloud.firestore.document.v1.written",
+    document: "lookbookImportQueue/main",
+    timeoutSeconds: 540,
+    availableMemoryMb: null,
+  },
   onLookbookDeletionManualRetryQueued: {
     eventType: "google.cloud.firestore.document.v1.updated",
     document: "lookbookDeletionRequests/{requestID}",
@@ -210,6 +242,27 @@ const firestoreEndpoints = {
 } as const;
 
 const scheduleEndpoints = {
+  cleanupExpiredLookbookImportAssets: {
+    schedule: "0 * * * *",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 540,
+    availableMemoryMb: 256,
+    maxInstances: 1,
+  },
+  cleanupExpiredLookbookImportRecords: {
+    schedule: "0 3 * * *",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 540,
+    availableMemoryMb: 512,
+    maxInstances: 1,
+  },
+  reconcileLookbookQueueDelivery: {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    timeoutSeconds: 120,
+    availableMemoryMb: 256,
+    maxInstances: 1,
+  },
   finalizeExpiredAccountDeletions: {
     schedule: "0 * * * *",
     timeZone: "Asia/Seoul",
@@ -316,7 +369,7 @@ function runtimeNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-test("Firebase deployment export 이름 120개를 유지한다", () => {
+test("Firebase deployment export 이름 131개를 유지한다", () => {
   const expected = [
     ...callableNames,
     ...Object.keys(firestoreEndpoints),
@@ -327,8 +380,25 @@ test("Firebase deployment export 이름 120개를 유지한다", () => {
     "dispatchChatMediaProcessing",
     "runRoomOwnershipSuccessionTask",
   ].sort();
-  assert.equal(expected.length, 120);
+  assert.equal(expected.length, 131);
   assert.deepEqual(Object.keys(exportedFunctions).sort(), expected);
+});
+
+test("룩북 queue reconciliation은 5분 점검과 단일 인스턴스 전달 설정을 사용한다", () => {
+  const value = endpoint("reconcileLookbookQueueDelivery");
+  assert.equal(value.scheduleTrigger?.schedule, "every 5 minutes");
+  assert.equal(runtimeNumber(value.timeoutSeconds), 120);
+  assert.equal(runtimeNumber(value.maxInstances), 1);
+  const trigger = endpoint("onLookbookQueueBatchReady");
+  assert.equal(trigger.eventTrigger?.eventFilterPathPatterns?.document,
+    "lookbookImportBatches/{batchID}");
+  assert.equal(runtimeNumber(trigger.timeoutSeconds), 120);
+  assert.equal(runtimeNumber(trigger.maxInstances), 1);
+  const headChanged = endpoint("onLookbookQueueHeadChanged");
+  assert.equal(headChanged.eventTrigger?.eventFilters?.document,
+    "lookbookImportQueue/main");
+  assert.equal(runtimeNumber(headChanged.timeoutSeconds), 120);
+  assert.equal(runtimeNumber(headChanged.maxInstances), 1);
 });
 
 test("방장 자동 승계 task는 전달 실패만 짧게 복구하고 논리 재시도는 전용 job이 소유한다", () => {
@@ -427,7 +497,9 @@ test("Firestore trigger metadata를 유지한다", () => {
     assertCommonMetadata(name, value, "maxInstances" in expected ? expected.maxInstances : 10);
     assert.equal(value.eventTrigger?.eventType, expected.eventType, `${name} eventType`);
     assert.equal(
-      value.eventTrigger?.eventFilterPathPatterns?.document,
+      expected.document.includes("{") ?
+        value.eventTrigger?.eventFilterPathPatterns?.document :
+        value.eventTrigger?.eventFilters?.document,
       expected.document,
       `${name} document path`
     );

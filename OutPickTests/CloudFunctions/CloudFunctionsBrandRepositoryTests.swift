@@ -3,6 +3,29 @@ import Testing
 @testable import OutPick
 
 struct CloudFunctionsBrandRepositoryTests {
+    @Test func requestStoreFailurePreventsBrandCreationRequest() async throws {
+        let transport = CloudFunctionsTransportSpy()
+        let store = CloudFunctionsBrandStore(
+            transport: transport,
+            requestStore: UnavailableLookbookImportRequestStore(),
+            currentUserUIDProvider: { "user-1" }
+        )
+
+        do {
+            _ = try await store.createBrand(
+                name: "Brand",
+                englishName: nil,
+                isFeatured: false,
+                websiteURL: nil,
+                lookbookArchiveURL: "https://archive.example.com",
+                moodIDs: []
+            )
+            Issue.record("요청 기록 저장 실패 후 브랜드 생성 요청이 전송되면 안 됩니다.")
+        } catch {
+            #expect(transport.calls.isEmpty)
+        }
+    }
+
     @Test func coversBrandStoreAndSearchCallableContracts() async throws {
         let transport = CloudFunctionsTransportSpy()
         let brand = Self.brandDictionary
@@ -13,17 +36,23 @@ struct CloudFunctionsBrandRepositoryTests {
             "role": "admin"
         ]
         transport.responses = [
-            ["brandID": "brand-1"],
+            ["brandID": "brand-1", "discoveryJobID": "discovery-1", "batchID": "batch-1"],
             ["brand": brand],
             ["brandID": "brand-1"],
             managerReceipt,
             managerReceipt,
             ["brands": [brand]]
         ]
-        let store = CloudFunctionsBrandStore(transport: transport)
+        let requestStore = GRDBLookbookImportRequestStore(database: try TemporaryAppDatabase.make())
+        let store = CloudFunctionsBrandStore(
+            transport: transport,
+            requestStore: requestStore,
+            currentUserUIDProvider: { "user-1" },
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
         let search = CloudFunctionsBrandSearchRepository(transport: transport)
 
-        _ = try await store.createBrand(
+        let creationReceipt = try await store.createBrand(
             name: "Brand",
             englishName: nil,
             isFeatured: true,
@@ -62,6 +91,9 @@ struct CloudFunctionsBrandRepositoryTests {
             "addBrandManager", "removeBrandManager", "searchBrands"
         ])
         #expect(transport.calls[0].data["englishName"] == nil)
+        #expect(transport.calls[0].data["queueContractVersion"] as? Int == 1)
+        #expect(transport.calls[0].data["requestID"] as? String == creationReceipt.requestID)
+        #expect(transport.calls[0].data["requestCreatedAt"] as? Int64 == 1_800_000_000_000)
         #expect(transport.calls[0].data["lookbookArchiveURL"] as? String == "https://archive.example.com")
         #expect(transport.calls[0].data["moodIDs"] as? [String] == ["minimal"])
         #expect(transport.calls[1].data["englishName"] is NSNull)
@@ -72,6 +104,11 @@ struct CloudFunctionsBrandRepositoryTests {
         #expect(transport.calls[2].data["logoDetailPath"] == nil)
         #expect(removed.removed)
         #expect(brands.map(\.id.value) == ["brand-1"])
+        let storedRequests = try await requestStore.fetchUnsettled(ownerUID: "user-1", brandID: "brand-1")
+        let storedRequest = storedRequests.first
+        #expect(storedRequest?.requestID == creationReceipt.requestID)
+        #expect(storedRequest?.batchID == "batch-1")
+        #expect(storedRequest?.localState == .accepted)
     }
 
     private static var brandDictionary: [String: Any] {
