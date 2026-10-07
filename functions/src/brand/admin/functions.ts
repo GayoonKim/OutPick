@@ -13,7 +13,6 @@ import {
 import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
 import {
-  assertBrandCreationAccess,
   assertBrandWriteAccess,
   brandAdminCapabilities,
   findUserIDByEmail,
@@ -30,7 +29,13 @@ import {
   assertActiveStyleMoodIDs,
   requiredStyleMoodIDs,
 } from "../../shared/styleMoodAssignmentPolicy.js";
-import {initialSeasonDiscoveryJob} from "../../shared/seasonDiscoveryCreation.js";
+import {initialSeasonDiscoveryData} from "../../shared/seasonDiscoveryCreation.js";
+import {parseQueueRequestEnvelope, newQueueAdmissionTimeError} from "../../shared/lookbookQueue/contracts.js";
+import {QUEUE_POLICY} from "../../shared/lookbookQueue/contracts.js";
+import {queueBatchID, queueHash} from "../../shared/lookbookQueue/model.js";
+import {hasActivePlatformAdminData} from "../../shared/platformAuthorization.js";
+import {admitQueueRequestInTransaction} from "../../shared/lookbookQueue/admission.js";
+import {queueAdmissionError} from "../../shared/lookbookQueue/errors.js";
 
 type BrandManagerRole = "owner" | "admin";
 
@@ -221,10 +226,18 @@ export const createBrand = onCall(
       normalizedHTTPURL(lookbookArchiveURLInput, "lookbookArchiveURL") :
       null;
 
-    await assertBrandCreationAccess(uid);
-
-    const brandRef = db.collection("brands").doc();
+    let envelope;
+    try {
+      envelope = parseQueueRequestEnvelope(data);
+    } catch (error) {
+      return queueAdmissionError(error);
+    }
+    const requestKey = queueBatchID(uid, envelope.requestID);
+    const brandRef = db.collection("brands").doc(queueHash(["brand", requestKey]));
     const brandID = brandRef.id;
+    const payload = {name, englishName, isFeatured, moodIDs, websiteURL, lookbookArchiveURL};
+    const payloadDigest = queueHash({...envelope, payload});
+    const receiptRef = db.collection("brandCreationRequests").doc(requestKey);
     const nameIndexEntries = brandNameIndexEntries(
       normalizedName,
       normalizedEnglishName
@@ -233,71 +246,105 @@ export const createBrand = onCall(
       db.collection("brandNameIndex").doc(entry.key)
     );
 
-    let discoveryJobID: string | null = null;
-    await db.runTransaction(async (transaction) => {
-      const nameIndexSnaps = await Promise.all(
-        nameIndexRefs.map((ref) => transaction.get(ref))
-      );
-      if (nameIndexSnaps.some((snap) => snap.exists)) {
-        throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
-      }
-      await assertActiveStyleMoodIDs(transaction, moodIDs);
-
-      const initialDiscovery = lookbookArchiveURL === null ? null :
-        initialSeasonDiscoveryJob(
-          transaction, brandRef, uid, lookbookArchiveURL
+    try {
+      return await db.runTransaction(async (transaction) => {
+        // 재전송에도 현재 생성 권한을 검사한다. 권한 회수와 생성이 경합하면 재시도한다.
+        const adminSnapshot = await transaction.get(db.collection("platformAdmins").doc(uid));
+        if (!hasActivePlatformAdminData(adminSnapshot.data())) {
+          throw new HttpsError("permission-denied", "총 관리자 권한이 없습니다.");
+        }
+        const existing = (await transaction.get(receiptRef)).data();
+        if (existing) {
+          if (existing.requestedBy !== uid || existing.payloadDigest !== payloadDigest) {
+            throw new Error("REQUEST_ID_CONFLICT");
+          }
+          return existing.result;
+        }
+        const now = Date.now();
+        const timeError = newQueueAdmissionTimeError(envelope.requestCreatedAt, now);
+        if (timeError) throw new Error(timeError);
+        const nameIndexSnaps = await Promise.all(
+          nameIndexRefs.map((ref) => transaction.get(ref))
         );
-      discoveryJobID = initialDiscovery?.jobID ?? null;
+        if (nameIndexSnaps.some((snap) => snap.exists)) {
+          throw new HttpsError("already-exists", "이미 존재하는 브랜드명입니다.");
+        }
+        await assertActiveStyleMoodIDs(transaction, moodIDs);
 
-      transaction.set(brandRef, {
-        name,
-        normalizedName,
-        englishName,
-        normalizedEnglishName,
-        websiteURL,
-        lookbookArchiveURL,
-        logoPath: null,
-        logoThumbPath: null,
-        logoDetailPath: null,
-        logoOriginalPath: null,
-        isFeatured,
-        moodIDs,
-        discoveryStatus: initialDiscovery === null ? "idle" : "queued",
-        activeSeasonDiscoveryJobID: initialDiscovery?.jobID ?? null,
-        lastSeasonDiscoveryGeneration: initialDiscovery?.generation ?? 0,
-        publishedSeasonDiscoveryJobID: null,
-        publishedSeasonDiscoveryGeneration: null,
-        publishedSeasonDiscoverySnapshotHash: null,
-        publishedSeasonDiscoveryExpiresAt: null,
-        lastDiscoveryErrorMessage: null,
-        lastDiscoveryRequestedAt: initialDiscovery === null ?
-          null : FieldValue.serverTimestamp(),
-        lastDiscoveryCompletedAt: null,
-        likeCount: 0,
-        viewCount: 0,
-        popularScore: 0,
-        createdBy: uid,
-        updatedBy: uid,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+        const batch = lookbookArchiveURL === null ? null :
+          await admitQueueRequestInTransaction(db, transaction, uid, {
+            ...envelope, brandID, kind: "discoverSeasons", payload,
+          }, {
+            // 같은 transaction에서 위의 생성 권한을 이미 확인했다.
+            authorize: async () => undefined,
+            freezeTargets: async () => [{
+              targetID: "initialDiscovery", claimKey: lookbookArchiveURL,
+              collection: "seasonDiscoveryJobs",
+              jobData: initialSeasonDiscoveryData(brandID, uid, lookbookArchiveURL),
+            }],
+          }, now);
+        const discoveryJobID = batch === null ? null :
+          queueHash([batch.batchID, batch.items[0].itemID, "job"]);
 
-      nameIndexRefs.forEach((ref, index) => {
-        const entry = nameIndexEntries[index];
-        transaction.set(ref, {
-          brandID,
+        transaction.set(brandRef, {
           name,
           normalizedName,
           englishName,
           normalizedEnglishName,
-          source: entry.source,
+          websiteURL,
+          lookbookArchiveURL,
+          logoPath: null,
+          logoThumbPath: null,
+          logoDetailPath: null,
+          logoOriginalPath: null,
+          isFeatured,
+          moodIDs,
+          discoveryStatus: batch === null ? "idle" : "queued",
+          activeSeasonDiscoveryJobID: discoveryJobID,
+          lastSeasonDiscoveryGeneration: batch === null ? 0 : 1,
+          publishedSeasonDiscoveryJobID: null,
+          publishedSeasonDiscoveryGeneration: null,
+          publishedSeasonDiscoverySnapshotHash: null,
+          publishedSeasonDiscoveryExpiresAt: null,
+          lastDiscoveryErrorMessage: null,
+          lastDiscoveryRequestedAt: batch === null ?
+            null : FieldValue.serverTimestamp(),
+          lastDiscoveryCompletedAt: null,
+          likeCount: 0,
+          viewCount: 0,
+          popularScore: 0,
           createdBy: uid,
+          updatedBy: uid,
           createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
-      });
-    });
 
-    return {brandID, discoveryJobID};
+        nameIndexRefs.forEach((ref, index) => {
+          const entry = nameIndexEntries[index];
+          transaction.set(ref, {
+            brandID,
+            name,
+            normalizedName,
+            englishName,
+            normalizedEnglishName,
+            source: entry.source,
+            createdBy: uid,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+        const result = {brandID, discoveryJobID, requestID: envelope.requestID,
+          batchID: batch?.batchID ?? null};
+        transaction.create(receiptRef, {
+          requestedBy: uid, payloadDigest, requestCreatedAt: envelope.requestCreatedAt,
+          createdAt: now, result,
+          receiptExpiresAt: now + QUEUE_POLICY.receiptRetentionMs,
+          retentionNextAt: now + QUEUE_POLICY.receiptRetentionMs,
+        });
+        return result;
+      });
+    } catch (error) {
+      return queueAdmissionError(error);
+    }
   }
 );
 

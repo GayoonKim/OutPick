@@ -1,6 +1,39 @@
 {
   "indexes": [
     {
+      "collectionGroup": "writes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "brandID", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "writes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "executionID", "order": "ASCENDING"},
+        {"fieldPath": "epoch", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "writes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "targetSeasonPath", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "writes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "targetPath", "order": "ASCENDING"}
+      ]
+    },
+    {
       "collectionGroup": "Messages",
       "queryScope": "COLLECTION",
       "fields": [
@@ -1029,6 +1062,16 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "seasonImportFailures",
+      "fieldPath": "expiresAt",
+      "indexes": [{"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}]
+    },
+    {
+      "collectionGroup": "seasonImportFailureActions",
+      "fieldPath": "expiresAt",
+      "indexes": [{"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}]
+    },
     {
       "collectionGroup": "accountDeletionAuditLogs",
       "fieldPath": "expiresAt",

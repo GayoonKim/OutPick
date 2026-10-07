@@ -70,7 +70,22 @@ export function initialSeasonDiscoveryJob(
     brandRef.id, sourceArchiveURL
   );
   transaction.set(jobRef, {
-    brandID: brandRef.id,
+    ...initialSeasonDiscoveryData(brandRef.id, requestedBy, sourceArchiveURL),
+    createdAt: FieldValue.serverTimestamp(),
+    lastRequestedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return {jobID: jobRef.id, generation, fingerprint};
+}
+
+// 큐의 고정 입력으로도 쓸 수 있도록 서버 timestamp를 포함하지 않는다.
+export function initialSeasonDiscoveryData(
+  brandID: string, requestedBy: string, sourceArchiveURL: string
+) {
+  const generation = 1;
+  const fingerprint = seasonDiscoveryCreationFingerprint(brandID, sourceArchiveURL);
+  return {
+    brandID,
     generation,
     requestFingerprint: fingerprint,
     sourceArchiveURL,
@@ -93,11 +108,7 @@ export function initialSeasonDiscoveryJob(
     leaseOwner: null,
     leaseExpiresAt: null,
     expiresAt: null,
-    createdAt: FieldValue.serverTimestamp(),
-    lastRequestedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  return {jobID: jobRef.id, generation, fingerprint};
+  };
 }
 
 export function seasonDiscoveryCreationFingerprint(

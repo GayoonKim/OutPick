@@ -14,23 +14,10 @@ import {
 import {isAlreadyExistsError} from "../../core/errors.js";
 import {db} from "../../core/firebase.js";
 import {FUNCTIONS_REGION} from "../../core/runtime.js";
+import {hasActivePlatformAdminData} from "../../shared/platformAuthorization.js";
 import {
-  assertBrandWriteAccess,
-  assertOutPickAdmin,
-} from "../../shared/brandAuthorization.js";
-import {normalizedHTTPURL} from "../../shared/brandValidation.js";
-import {
-  seasonDiscoveryCreationFingerprint,
-  canonicalDiscoveryURL,
   SEASON_DISCOVERY_CONTRACT_REVISION,
-  SEASON_DISCOVERY_EXTRACTOR_VERSION,
-  SEASON_DISCOVERY_LIMITS,
-  SEASON_DISCOVERY_SCHEMA_VERSION,
 } from "../../shared/seasonDiscoveryCreation.js";
-import {
-  extractionFixRetryProjection,
-  isExtractionFixRetryEligible,
-} from "./extractionIssueContract.js";
 import {
   canRecordSeasonDiscoveryDispatch,
   deterministicSeasonDiscoveryTaskID,
@@ -39,114 +26,28 @@ import {
   seasonDiscoveryExpiresAt,
   type SeasonDiscoveryStatus,
 } from "./seasonDiscoveryContract.js";
+import {isBatchQueueJob} from "./queue/authorization.js";
+import {admitDiscoveryRequest} from "./queue/discovery-admission.js";
+import {seasonAdmissionError} from "./queue/season-admission.js";
 
 const LOCATION = "asia-northeast3";
 const DEFAULT_QUEUE = "lookbook-discovery-jobs";
 const ENDPOINT = "/tasks/discover-seasons";
 const MAX_ATTEMPTS = 3;
 const STALE_MILLIS = 15 * 60 * 1000;
-const LIMITS = SEASON_DISCOVERY_LIMITS;
 
-type RequestReason =
-  "brandCreated" | "manualRefresh" | "archiveURLChanged" | "extractorImproved";
-type JobReceipt = {
-  brandID: string;
-  jobID: string;
-  generation: number;
-  status: SeasonDiscoveryStatus;
-  coalesced: boolean;
-  sourceArchiveURL: string;
-};
 
 let client: CloudTasksClient | null = null;
 
 export const requestSeasonDiscovery = onCall(
   {region: FUNCTIONS_REGION},
-  async (request): Promise<JobReceipt> => {
+  async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(
-      requiredString(data, "brandID", 128), "brandID"
-    );
-    const reason = requestReason(data.requestReason);
-    await assertBrandWriteAccess(uid, brandID);
-
-    const brandRef = db.collection("brands").doc(brandID);
-    const newJobRef = brandRef.collection("seasonDiscoveryJobs").doc();
-    return db.runTransaction(async (transaction): Promise<JobReceipt> => {
-      const brandSnap = await transaction.get(brandRef);
-      if (!brandSnap.exists) {
-        throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
-      }
-      const brand = brandSnap.data() ?? {};
-      if (brand.deletionStatus && brand.deletionStatus !== "active") {
-        throw new HttpsError("failed-precondition", "비활성 브랜드입니다.");
-      }
-      const sourceValue = brand.lookbookArchiveURL;
-      if (typeof sourceValue !== "string" || !sourceValue.trim()) {
-        throw new HttpsError(
-          "failed-precondition", "룩북 목록 URL이 등록되어 있지 않습니다."
-        );
-      }
-      const sourceArchiveURL = normalizedHTTPURL(
-        sourceValue, "lookbookArchiveURL"
-      );
-      const fingerprint = requestFingerprint(brandID, sourceArchiveURL);
-      const activeJobID = typeof brand.activeSeasonDiscoveryJobID === "string" ?
-        brand.activeSeasonDiscoveryJobID : null;
-      const activeSnap = activeJobID ? await transaction.get(
-        brandRef.collection("seasonDiscoveryJobs").doc(activeJobID)
-      ) : null;
-      const active = activeSnap?.data();
-      if (activeSnap?.exists && active?.requestFingerprint === fingerprint &&
-          isActiveStatus(active.status)) {
-        transaction.update(activeSnap.ref, {
-          coalescedRequestCount: FieldValue.increment(1),
-          lastRequestedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-        return {
-          brandID, jobID: activeSnap.id,
-          generation: integer(active.generation, 1),
-          status: active.status as SeasonDiscoveryStatus,
-          coalesced: true, sourceArchiveURL,
-        };
-      }
-
-      const generation = integer(brand.lastSeasonDiscoveryGeneration, 0) + 1;
-      if (activeSnap?.exists && isActiveStatus(active?.status)) {
-        const now = new Date();
-        transaction.update(activeSnap.ref, {
-          status: "superseded",
-          phase: "completed",
-          recommendedAction: "none",
-          completedAt: FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromDate(
-            seasonDiscoveryExpiresAt("superseded", now) as Date
-          ),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
-      transaction.set(newJobRef, jobData({
-        brandID, generation, fingerprint, sourceArchiveURL,
-        requestedBy: uid, reason,
-      }));
-      transaction.update(brandRef, {
-        activeSeasonDiscoveryJobID: newJobRef.id,
-        lastSeasonDiscoveryGeneration: generation,
-        discoveryStatus: "queued",
-        publishedSeasonDiscoveryJobID: null,
-        publishedSeasonDiscoveryGeneration: null,
-        publishedSeasonDiscoverySnapshotHash: null,
-        publishedSeasonDiscoveryExpiresAt: null,
-        lastDiscoveryRequestedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return {
-        brandID, jobID: newJobRef.id, generation, status: "queued",
-        coalesced: false, sourceArchiveURL,
-      };
-    });
+    try {
+      return await admitDiscoveryRequest(db, uid, recordData(request.data), "request");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -157,14 +58,18 @@ export const cancelSeasonDiscovery = onCall(
     const data = recordData(request.data);
     const brandID = requiredDocumentID(requiredString(data, "brandID", 128), "brandID");
     const jobID = requiredDocumentID(requiredString(data, "jobID", 128), "jobID");
-    await assertBrandWriteAccess(uid, brandID);
     const brandRef = db.collection("brands").doc(brandID);
     const jobRef = brandRef
       .collection("seasonDiscoveryJobs").doc(jobID);
     await db.runTransaction(async (transaction) => {
-      const [brandSnap, snap] = await Promise.all([
+      const [brandSnap, snap, platformAdmin] = await Promise.all([
         transaction.get(brandRef), transaction.get(jobRef),
+        transaction.get(db.collection("platformAdmins").doc(uid)),
       ]);
+      if (!hasActivePlatformAdminData(platformAdmin.data())) {
+        throw new HttpsError("permission-denied", "플랫폼 관리자 권한이 필요합니다.");
+      }
+      if (!brandSnap.exists) throw new HttpsError("not-found", "브랜드를 찾을 수 없습니다.");
       if (!snap.exists) throw new HttpsError("not-found", "탐색 작업을 찾을 수 없습니다.");
       const status = snap.data()?.status as SeasonDiscoveryStatus;
       if (status === "running") {
@@ -193,43 +98,11 @@ export const retrySeasonDiscovery = onCall(
   {region: FUNCTIONS_REGION},
   async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(requiredString(data, "brandID", 128), "brandID");
-    const jobID = requiredDocumentID(requiredString(data, "jobID", 128), "jobID");
-    await assertBrandWriteAccess(uid, brandID);
-    const brandRef = db.collection("brands").doc(brandID);
-    const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(jobID);
-    const receipt = await db.runTransaction(async (transaction) => {
-      const [brandSnap, jobSnap] = await Promise.all([
-        transaction.get(brandRef), transaction.get(jobRef),
-      ]);
-      const brand = brandSnap.data();
-      const job = jobSnap.data();
-      if (!brandSnap.exists || !jobSnap.exists) {
-        throw new HttpsError("not-found", "탐색 작업을 찾을 수 없습니다.");
-      }
-      if (brand?.activeSeasonDiscoveryJobID !== jobID ||
-          job?.status !== "failed" || job?.retryable !== true) {
-        throw new HttpsError("failed-precondition", "같은 작업으로 재시도할 수 없습니다.");
-      }
-      const dispatchGeneration = integer(job.dispatchGeneration, 0) + 1;
-      transaction.update(jobRef, {
-        status: "queued", phase: "dispatching", dispatchGeneration,
-        attemptCount: 0,
-        errorCode: null, errorMessage: null, expiresAt: null,
-        leaseOwner: null, leaseExpiresAt: null,
-        recommendedAction: "none",
-        lastRequestedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      transaction.update(brandRef, {
-        discoveryStatus: "queued",
-        lastDiscoveryRequestedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return {brandID, jobID, dispatchGeneration, status: "queued"};
-    });
-    return receipt;
+    try {
+      return await admitDiscoveryRequest(db, uid, recordData(request.data), "retry");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -246,19 +119,21 @@ export const resolveSeasonDiscoveryCandidate = onCall(
     const decision = reviewDecision(data.decision);
     const targetSeasonID = decision === "connectExistingSeason" ?
       requiredDocumentID(requiredString(data, "targetSeasonID", 128), "targetSeasonID") : null;
-    await assertBrandWriteAccess(uid, brandID);
-
     const brandRef = db.collection("brands").doc(brandID);
     const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(jobID);
     const candidateRef = jobRef.collection("candidates").doc(candidateID);
     const reviewRef = jobRef.collection("reviews").doc();
     const outcome = await db.runTransaction(async (transaction) => {
-      const [brandSnap, jobSnap, candidateSnap, candidatesSnap] = await Promise.all([
+      const [brandSnap, jobSnap, candidateSnap, candidatesSnap, platformAdmin] = await Promise.all([
         transaction.get(brandRef),
         transaction.get(jobRef),
         transaction.get(candidateRef),
         transaction.get(jobRef.collection("candidates")),
+        transaction.get(db.collection("platformAdmins").doc(uid)),
       ]);
+      if (!hasActivePlatformAdminData(platformAdmin.data())) {
+        throw new HttpsError("permission-denied", "플랫폼 관리자 권한이 필요합니다.");
+      }
       const brand = brandSnap.data();
       const job = jobSnap.data();
       const candidate = candidateSnap.data();
@@ -350,115 +225,13 @@ export const resolveSeasonDiscoveryCandidate = onCall(
 
 export const retrySeasonDiscoveryAfterExtractionFix = onCall(
   {region: FUNCTIONS_REGION},
-  async (request): Promise<JobReceipt> => {
+  async (request) => {
     const uid = requiredAuthUID(request.auth?.uid);
-    const data = recordData(request.data);
-    const brandID = requiredDocumentID(requiredString(data, "brandID", 128), "brandID");
-    const jobID = requiredDocumentID(requiredString(data, "jobID", 128), "jobID");
-    const generation = integerInput(data.generation, "generation");
-    const snapshotHash = requiredString(data, "candidateSnapshotHash", 128);
-    await assertOutPickAdmin(uid);
-
-    const brandRef = db.collection("brands").doc(brandID);
-    const jobRef = brandRef.collection("seasonDiscoveryJobs").doc(jobID);
-    const newJobRef = brandRef.collection("seasonDiscoveryJobs").doc();
-    return db.runTransaction(async (transaction): Promise<JobReceipt> => {
-      const [brandSnap, jobSnap, candidatesSnap] = await Promise.all([
-        transaction.get(brandRef),
-        transaction.get(jobRef),
-        transaction.get(jobRef.collection("candidates")),
-      ]);
-      const brand = brandSnap.data();
-      const job = jobSnap.data();
-      if (!brandSnap.exists || !jobSnap.exists) {
-        throw new HttpsError("not-found", "다시 분석할 탐색 결과를 찾을 수 없습니다.");
-      }
-      if (typeof job?.resolvedByJobID === "string") {
-        const resolvedSnap = await transaction.get(
-          brandRef.collection("seasonDiscoveryJobs").doc(job.resolvedByJobID)
-        );
-        const resolved = resolvedSnap.data();
-        if (resolvedSnap.exists) {
-          return {
-            brandID,
-            jobID: resolvedSnap.id,
-            generation: integer(resolved?.generation, generation + 1),
-            status: (resolved?.status ?? "queued") as SeasonDiscoveryStatus,
-            coalesced: true,
-            sourceArchiveURL: String(resolved?.sourceArchiveURL ?? job?.sourceArchiveURL ?? ""),
-          };
-        }
-      }
-      const sourceValue = typeof brand?.lookbookArchiveURL === "string" ?
-        brand.lookbookArchiveURL : "";
-      const sourceArchiveURL = normalizedHTTPURL(sourceValue, "lookbookArchiveURL");
-      const originalSourceURL = typeof job?.sourceArchiveURL === "string" ?
-        job.sourceArchiveURL : "";
-      if ((brand?.deletionStatus && brand.deletionStatus !== "active") ||
-          typeof brand?.activeSeasonDiscoveryJobID === "string" ||
-          brand?.publishedSeasonDiscoveryJobID !== jobID ||
-          job?.status !== "correctionRequired" ||
-          integer(job?.generation, -1) !== generation ||
-          job?.candidateSnapshotHash !== snapshotHash ||
-          canonicalDiscoveryURL(sourceArchiveURL) !== canonicalDiscoveryURL(originalSourceURL) ||
-          !hasVerifiedRetryRuntime(job)) {
-        throw new HttpsError(
-          "failed-precondition",
-          "개선된 추출 방식이 준비된 최신 결과만 다시 가져올 수 있습니다."
-        );
-      }
-
-      const nextGeneration = integer(brand.lastSeasonDiscoveryGeneration, 0) + 1;
-      const fingerprint = requestFingerprint(brandID, sourceArchiveURL);
-      const now = FieldValue.serverTimestamp();
-      const candidateExpiresAt = admin.firestore.Timestamp.fromMillis(
-        Date.now() + 30 * 24 * 60 * 60 * 1000
-      );
-      const jobExpiresAt = admin.firestore.Timestamp.fromMillis(
-        Date.now() + 60 * 24 * 60 * 60 * 1000
-      );
-      transaction.set(newJobRef, jobData({
-        brandID,
-        generation: nextGeneration,
-        fingerprint,
-        sourceArchiveURL,
-        requestedBy: uid,
-        reason: "extractorImproved",
-      }, extractionFixRetryProjection(job, "seasonDiscovery")));
-      transaction.update(jobRef, {
-        status: "superseded",
-        phase: "completed",
-        errorCode: "reanalysis_started",
-        recommendedAction: "none",
-        resolvedByJobID: newJobRef.id,
-        resolvedAt: now,
-        completedAt: now,
-        expiresAt: jobExpiresAt,
-        updatedAt: now,
-      });
-      candidatesSnap.docs.forEach((candidate) => {
-        transaction.update(candidate.ref, {expiresAt: candidateExpiresAt});
-      });
-      transaction.update(brandRef, {
-        activeSeasonDiscoveryJobID: newJobRef.id,
-        lastSeasonDiscoveryGeneration: nextGeneration,
-        discoveryStatus: "queued",
-        publishedSeasonDiscoveryJobID: null,
-        publishedSeasonDiscoveryGeneration: null,
-        publishedSeasonDiscoverySnapshotHash: null,
-        publishedSeasonDiscoveryExpiresAt: null,
-        lastDiscoveryRequestedAt: now,
-        updatedAt: now,
-      });
-      return {
-        brandID,
-        jobID: newJobRef.id,
-        generation: nextGeneration,
-        status: "queued",
-        coalesced: false,
-        sourceArchiveURL,
-      };
-    });
+    try {
+      return await admitDiscoveryRequest(db, uid, recordData(request.data), "afterFix");
+    } catch (error) {
+      return seasonAdmissionError(error);
+    }
   }
 );
 
@@ -473,7 +246,8 @@ export const onSeasonDiscoveryQueued = onDocumentWritten(
     const before = event.data?.before.data();
     const afterSnap = event.data?.after;
     const after = afterSnap?.data();
-    if (!afterSnap?.exists || after?.status !== "queued") return;
+    if (!afterSnap?.exists || after?.status !== "queued" ||
+        isBatchQueueJob(after)) return;
     if (before?.status === "queued" &&
         integer(before.dispatchGeneration, 0) === integer(after.dispatchGeneration, 0)) return;
     const brandID = String(event.params.brandID ?? "");
@@ -525,11 +299,13 @@ export const reconcileSeasonDiscoveryJobs = onSchedule(
     const cutoff = Date.now() - STALE_MILLIS;
     for (const document of snapshot.docs) {
       const data = document.data();
-      if (!isActiveStatus(data.status) || timestampMillis(data.updatedAt) > cutoff) continue;
+      if (isBatchQueueJob(data) || !isActiveStatus(data.status) ||
+          timestampMillis(data.updatedAt) > cutoff) continue;
       await db.runTransaction(async (transaction) => {
         const fresh = await transaction.get(document.ref);
         const job = fresh.data();
-        if (!fresh.exists || !isActiveStatus(job?.status) ||
+        if (!fresh.exists || !job || isBatchQueueJob(job) ||
+            !isActiveStatus(job?.status) ||
             timestampMillis(job?.updatedAt) > cutoff) return;
         const brandRef = document.ref.parent.parent;
         if (!brandRef) return;
@@ -570,53 +346,6 @@ export const reconcileSeasonDiscoveryJobs = onSchedule(
   }
 );
 
-function jobData(input: {
-  brandID: string; generation: number; fingerprint: string;
-  sourceArchiveURL: string; requestedBy: string; reason: RequestReason;
-}, additional: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    brandID: input.brandID,
-    generation: input.generation,
-    requestFingerprint: input.fingerprint,
-    sourceArchiveURL: input.sourceArchiveURL,
-    sourceArchiveURLFingerprint: input.fingerprint,
-    schemaVersion: SEASON_DISCOVERY_SCHEMA_VERSION,
-    extractorVersion: SEASON_DISCOVERY_EXTRACTOR_VERSION,
-    extractionContractRevision: SEASON_DISCOVERY_CONTRACT_REVISION,
-    adapterKey: null,
-    adapterVersion: null,
-    limits: LIMITS,
-    status: "queued",
-    phase: "dispatching",
-    dispatchGeneration: 0,
-    attemptCount: 0,
-    requestedBy: input.requestedBy,
-    requestReason: input.reason,
-    coalescedRequestCount: 0,
-    recommendedAction: "none",
-    resolvedByJobID: null,
-    leaseOwner: null,
-    leaseExpiresAt: null,
-    expiresAt: null,
-    createdAt: FieldValue.serverTimestamp(),
-    lastRequestedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-    ...additional,
-  };
-}
-
-function hasVerifiedRetryRuntime(job: Record<string, unknown>): boolean {
-  return isExtractionFixRetryEligible({
-    issueStatus: job.extractionIssueStatus,
-    blockedRuntimeVersion: job.blockedRuntimeVersion,
-    retryAvailableRuntimeVersion: job.retryAvailableRuntimeVersion,
-    stage: "seasonDiscovery",
-  });
-}
-
-function requestFingerprint(brandID: string, sourceArchiveURL: string): string {
-  return seasonDiscoveryCreationFingerprint(brandID, sourceArchiveURL);
-}
 
 async function enqueueTask(
   brandID: string,
@@ -695,10 +424,6 @@ function terminalize(
   });
 }
 
-function requestReason(value: unknown): RequestReason {
-  if (value === "manualRefresh" || value === "archiveURLChanged") return value;
-  throw new HttpsError("invalid-argument", "requestReason 값이 올바르지 않습니다.");
-}
 function reviewDecision(
   value: unknown
 ): "connectExistingSeason" | "keepAsNew" | "reject" {
