@@ -20,11 +20,15 @@ struct CloudFunctionsSeasonImportJobRequestingRepository: SeasonImportJobRequest
         discoveryJobID: String,
         generation: Int,
         candidateIDs: [String],
-        candidateSnapshotHash: String
-    ) async throws -> SeasonImportBatchRequestResult {
+        candidateSnapshotHash: String,
+        envelope: LookbookImportQueueContract.RequestEnvelope
+    ) async throws -> LookbookImportQueueReceipt {
         let response = try await transport.call(
             "requestSeasonCandidateImportJobs",
             data: [
+                "queueContractVersion": envelope.queueContractVersion,
+                "requestID": envelope.requestID,
+                "requestCreatedAt": envelope.requestCreatedAt,
                 "brandID": brandID.value,
                 "discoveryJobID": discoveryJobID,
                 "generation": generation,
@@ -32,6 +36,11 @@ struct CloudFunctionsSeasonImportJobRequestingRepository: SeasonImportJobRequest
                 "candidateSnapshotHash": candidateSnapshotHash
             ]
         )
-        return try SeasonImportCloudFunctionsMapper.batchRequestResult(response)
+        return try SeasonImportCloudFunctionsMapper.queueReceipt(response)
+    }
+
+    func getSeasonImportBatch(requestID: String) async throws -> LookbookImportQueueReceipt {
+        let response = try await transport.call("getSeasonImportBatch", data: ["requestID": requestID])
+        return try SeasonImportCloudFunctionsMapper.queueReceipt(response)
     }
 }

@@ -1,6 +1,42 @@
 import Foundation
 
 enum SeasonImportCloudFunctionsMapper {
+    static func queueReceipt(_ dictionary: [String: Any]) throws -> LookbookImportQueueReceipt {
+        let decoder = CloudFunctionResponseDecoder(dictionary: dictionary)
+        guard let state = LookbookImportQueueContract.BatchState(rawValue: try decoder.string("receiptState")),
+              let contractVersion = decoder.optionalInt("contractVersion"),
+              let stateRevision = decoder.optionalInt("stateRevision") else {
+            throw CloudFunctionsClientError.invalidResponse
+        }
+        let items = try decoder.dictionaries("items").map { item -> LookbookImportQueueReceipt.Item in
+            let itemDecoder = CloudFunctionResponseDecoder(dictionary: item)
+            let admissionStatus = try itemDecoder.string("admissionStatus")
+            guard ["pending", "created", "duplicate", "failed", "skipped"].contains(admissionStatus) else {
+                throw CloudFunctionsClientError.invalidResponse
+            }
+            return LookbookImportQueueReceipt.Item(
+                itemID: try itemDecoder.string("itemID"),
+                targetID: try itemDecoder.string("targetID"),
+                ordinal: try itemDecoder.int("ordinal"),
+                admissionStatus: admissionStatus,
+                processingStatus: itemDecoder.optionalString("processingStatus"),
+                jobID: itemDecoder.optionalString("jobID"),
+                executionID: itemDecoder.optionalString("executionID"),
+                errorCode: itemDecoder.optionalString("errorCode")
+            )
+        }
+        return LookbookImportQueueReceipt(
+            contractVersion: contractVersion,
+            requestID: try decoder.string("requestID"),
+            batchID: try decoder.string("batchID"),
+            brandID: try decoder.string("brandID"),
+            kind: try decoder.string("kind"),
+            state: state,
+            stateRevision: Int64(stateRevision),
+            items: items
+        )
+    }
+
     static func requestReceipt(
         _ dictionary: [String: Any]
     ) throws -> SeasonImportRequestReceipt {

@@ -8,16 +8,22 @@
 import SwiftUI
 
 struct CreateBrandCandidateSelectionView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     private enum ImportProgressPhase: Equatable {
         case selecting
         case extracting
         case completed
+        case needsReconcile
     }
 
-    private enum CandidateImportStatus {
+    private enum CandidateImportStatus: Equatable {
         case processing
         case succeeded
         case failed
+        case reviewRequired
+        case duplicate
+        case recoveryRequired
     }
 
     let createdBrand: CreateBrandViewModel.CreatedBrand
@@ -32,6 +38,7 @@ struct CreateBrandCandidateSelectionView: View {
     @State private var candidates: [SeasonCandidate] = []
     @State private var importProgressPhase: ImportProgressPhase = .selecting
     @State private var extractionCandidateIDs: [String] = []
+    @State private var extractionRequestID: String?
     @State private var extractionTotalCount: Int = 0
     @State private var extractionCompletedCount: Int = 0
     @State private var extractionFailedCount: Int = 0
@@ -39,6 +46,7 @@ struct CreateBrandCandidateSelectionView: View {
     @State private var failedToStartCandidateIDs: Set<String> = []
     @State private var retryingCandidateIDs: Set<String> = []
     @State private var progressPollingTask: Task<Void, Never>?
+    @State private var progressPollingRequestID: String?
     @State private var submissionTask: Task<Void, Never>?
     @State private var isLoading: Bool = false
     @State private var isSubmitting: Bool = false
@@ -54,7 +62,7 @@ struct CreateBrandCandidateSelectionView: View {
                         headerSection
                         candidateListSection
                         submitButton
-                    case .extracting, .completed:
+                    case .extracting, .completed, .needsReconcile:
                         extractionProgressSection
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
@@ -74,12 +82,21 @@ struct CreateBrandCandidateSelectionView: View {
         }
         .onDisappear {
             progressPollingTask?.cancel()
+            progressPollingRequestID = nil
         }
         .onAppear {
             notifyToolbarCloseVisibility()
         }
         .onChange(of: importProgressPhase) { _ in
             notifyToolbarCloseVisibility()
+        }
+        .onChange(of: scenePhase) { phase in
+            guard let requestID = extractionRequestID else { return }
+            if phase == .active {
+                startImportProgressPolling(requestID: requestID)
+            } else {
+                progressPollingTask?.cancel()
+            }
         }
     }
 
@@ -339,11 +356,23 @@ struct CreateBrandCandidateSelectionView: View {
                     ProgressView()
                         .tint(OutPickTheme.SwiftUIColor.accent)
 
-                    Text("준비 완료 \(extractionCompletedCount)/\(extractionTotalCount)")
+                    Text("완료 \(extractionCompletedCount)/\(extractionTotalCount) · 검토 필요 \(reviewRequiredCandidates.count) · 실패 \(extractionFailedCount)")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                         .multilineTextAlignment(.center)
 
+                    progressCloseActionSection
+                } else if importProgressPhase == .needsReconcile {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.title2)
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                    Text("접수 결과를 확인하고 있습니다.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                    Button("접수 상태 다시 확인") {
+                        reconcileCurrentRequest()
+                    }
+                    .disabled(isSubmitting)
                     progressCloseActionSection
                 } else {
                     resultSummarySection
@@ -384,6 +413,16 @@ struct CreateBrandCandidateSelectionView: View {
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .multilineTextAlignment(.center)
             }
+            if reviewRequiredCandidates.isEmpty == false {
+                Text("검토가 필요한 시즌 \(reviewRequiredCandidates.count)개는 성공으로 처리되지 않았습니다.")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+            }
+            if recoveryRequiredCandidates.isEmpty == false {
+                Text("\(recoveryRequiredCandidates.count)개 시즌은 서버 복구 확인이 필요합니다.")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+            }
         }
     }
 
@@ -411,6 +450,15 @@ struct CreateBrandCandidateSelectionView: View {
                     candidates: processingCandidates,
                     status: .processing
                 )
+            }
+            if reviewRequiredCandidates.isEmpty == false {
+                resultGroup(title: "검토 필요", candidates: reviewRequiredCandidates, status: .reviewRequired)
+            }
+            if duplicateCandidates.isEmpty == false {
+                resultGroup(title: "기존 작업과 연결", candidates: duplicateCandidates, status: .duplicate)
+            }
+            if recoveryRequiredCandidates.isEmpty == false {
+                resultGroup(title: "복구 확인 필요", candidates: recoveryRequiredCandidates, status: .recoveryRequired)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -534,6 +582,8 @@ struct CreateBrandCandidateSelectionView: View {
             return "시즌을 불러오는 중입니다"
         case .completed:
             return "시즌 불러오기 결과"
+        case .needsReconcile:
+            return "접수 상태 확인이 필요합니다"
         }
     }
 
@@ -545,6 +595,8 @@ struct CreateBrandCandidateSelectionView: View {
             return "선택한 시즌의 사진을 가져오고 있습니다. 닫은 뒤에는 현황에서 계속 확인할 수 있습니다."
         case .completed:
             return "시즌 불러오기 요청 결과를 확인하세요."
+        case .needsReconcile:
+            return "같은 요청 ID를 보존했습니다. 상태 확인을 다시 시도하면 새 중복 요청을 만들지 않습니다."
         }
     }
 
@@ -593,6 +645,7 @@ struct CreateBrandCandidateSelectionView: View {
             selectedCandidateIDs = selectedCandidateIDs.intersection(
                 Set(candidates.map(\.id))
             )
+            await restoreUnsettledRequests()
             if candidates.isEmpty {
                 message = "지금 바로 가져올 수 있는 시즌이 없습니다."
             }
@@ -613,96 +666,212 @@ struct CreateBrandCandidateSelectionView: View {
         let selectedCandidates = candidates
             .filter { selectedCandidateIDs.contains($0.id) }
             .sorted { $0.sortIndex < $1.sortIndex }
-        let candidateIDs = selectedCandidates.map(\.id)
-
         isSubmitting = true
         message = nil
-        beginImageExtractionProgress(candidateIDs: candidateIDs)
-
-        submissionTask?.cancel()
-        submissionTask = Task {
-            do {
-                let result = try await startSeasonImportExtractionUseCase.execute(
-                    brandID: createdBrand.id,
-                    candidates: selectedCandidates
-                )
-                let progress = try await startSeasonImportExtractionUseCase.loadProgress(
-                    brandID: createdBrand.id,
-                    candidateIDs: candidateIDs
-                )
-                await MainActor.run {
-                    guard extractionCandidateIDs == candidateIDs else { return }
-                    isSubmitting = false
-                    failedToStartCandidateIDs = Set(
-                        result.failedCandidates.map(\.candidateID)
-                    )
-                    applyImageExtractionProgress(progress)
-                    finishImageExtractionIfPossible()
-                }
-            } catch {
-                let progress = try? await startSeasonImportExtractionUseCase.loadProgress(
-                    brandID: createdBrand.id,
-                    candidateIDs: candidateIDs
-                )
-                await MainActor.run {
-                    guard extractionCandidateIDs == candidateIDs else { return }
-                    isSubmitting = false
-
-                    if let progress, progress.matchedJobCount > 0 {
-                        applyImageExtractionProgress(progress)
-                        message = "준비 상태를 다시 확인하고 있습니다."
-                        finishImageExtractionIfPossible()
-                        return
-                    }
-
-                    progressPollingTask?.cancel()
-                    progressPollingTask = nil
-                    importProgressPhase = .selecting
-                    extractionCandidateIDs = []
-                    extractionTotalCount = 0
-                    extractionCompletedCount = 0
-                    extractionFailedCount = 0
-                    extractionProgressItems = []
-                    failedToStartCandidateIDs = []
-                    retryingCandidateIDs = []
-                    message = "선택한 시즌을 준비하지 못했습니다."
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func beginImageExtractionProgress(candidateIDs: [String]) {
-        extractionCandidateIDs = candidateIDs
-        extractionTotalCount = candidateIDs.count
+        extractionCandidateIDs = selectedCandidates.map(\.id)
+        extractionTotalCount = selectedCandidates.count
         extractionCompletedCount = 0
         extractionFailedCount = 0
         extractionProgressItems = []
         failedToStartCandidateIDs = []
         retryingCandidateIDs = []
         importProgressPhase = .extracting
-        startImportProgressPolling(candidateIDs: candidateIDs)
+
+        submissionTask?.cancel()
+        submissionTask = Task {
+            do {
+                let receipt = try await startSeasonImportExtractionUseCase.execute(
+                    brandID: createdBrand.id,
+                    candidates: selectedCandidates
+                )
+                let progress = try await startSeasonImportExtractionUseCase.loadProgress(
+                    requestID: receipt.requestID
+                )
+                await MainActor.run {
+                    guard extractionCandidateIDs == selectedCandidates.map(\.id) else { return }
+                    isSubmitting = false
+                    extractionRequestID = receipt.requestID
+                    applyImageExtractionProgress(progress)
+                    finishImageExtractionIfPossible()
+                    if !progress.isFinished { startImportProgressPolling(requestID: receipt.requestID) }
+                }
+            } catch {
+                let recoveredReceipts = (try? await startSeasonImportExtractionUseCase
+                    .reconcileUnsettledRequests(brandID: createdBrand.id)) ?? []
+                let recovered = recoveredReceipts.first {
+                    $0.items.map(\.targetID) == selectedCandidates.map(\.id)
+                }
+                var pendingRequestID = recovered?.requestID
+                if pendingRequestID == nil {
+                    pendingRequestID = try? await startSeasonImportExtractionUseCase.unsettledRequestID(
+                        brandID: createdBrand.id,
+                        candidates: selectedCandidates
+                    )
+                }
+                var progress: SeasonImportExtractionProgress?
+                if let recovered {
+                    progress = try? await startSeasonImportExtractionUseCase
+                        .loadProgress(requestID: recovered.requestID)
+                }
+                await MainActor.run {
+                    guard extractionCandidateIDs == selectedCandidates.map(\.id) else { return }
+                    isSubmitting = false
+
+                    if let progress {
+                        extractionRequestID = recovered?.requestID ?? pendingRequestID
+                        applyImageExtractionProgress(progress)
+                        message = "준비 상태를 다시 확인하고 있습니다."
+                        finishImageExtractionIfPossible()
+                        if let requestID = extractionRequestID, !progress.isFinished {
+                            startImportProgressPolling(requestID: requestID)
+                        }
+                        return
+                    }
+
+                    guard let pendingRequestID else {
+                        progressPollingTask?.cancel()
+                        progressPollingTask = nil
+                        extractionRequestID = nil
+                        importProgressPhase = .selecting
+                        message = "요청을 기기에 저장하지 못해 서버에 보내지 않았습니다. 다시 시도해 주세요."
+                        return
+                    }
+
+                    progressPollingTask?.cancel()
+                    progressPollingTask = nil
+                    extractionRequestID = pendingRequestID
+                    importProgressPhase = .needsReconcile
+                    message = "요청 결과가 아직 확인되지 않았습니다. 다시 확인하거나 현황 화면에서 이어서 확인할 수 있습니다."
+                    startImportProgressPolling(requestID: pendingRequestID)
+                }
+            }
+        }
     }
 
-    private func startImportProgressPolling(candidateIDs: [String]) {
-        progressPollingTask?.cancel()
-        progressPollingTask = Task {
-            while !Task.isCancelled {
-                do {
-                    let progress = try await startSeasonImportExtractionUseCase.loadProgress(
-                        brandID: createdBrand.id,
-                        candidateIDs: candidateIDs
-                    )
-                    await MainActor.run {
-                        guard extractionCandidateIDs == candidateIDs else { return }
-                        applyImageExtractionProgress(progress)
-                        finishImageExtractionIfPossible()
+    @MainActor
+    private func applyRestoredReceipt(
+        _ receipt: LookbookImportQueueReceipt,
+        progress: SeasonImportExtractionProgress
+    ) {
+        extractionRequestID = receipt.requestID
+        extractionCandidateIDs = receipt.candidateIDs
+        selectedCandidateIDs = Set(receipt.candidateIDs)
+        extractionTotalCount = progress.totalCount
+        failedToStartCandidateIDs = []
+        retryingCandidateIDs = []
+        applyImageExtractionProgress(progress)
+        importProgressPhase = progress.isFinished ? .completed : .extracting
+        finishImageExtractionIfPossible()
+        if !progress.isFinished { startImportProgressPolling(requestID: receipt.requestID) }
+    }
+
+    @MainActor
+    private func restoreUnsettledRequests() async {
+        let receipts = (try? await startSeasonImportExtractionUseCase
+            .reconcileUnsettledRequests(brandID: createdBrand.id)) ?? []
+        guard let receipt = receipts.first else {
+            guard let requestID = try? await startSeasonImportExtractionUseCase
+                .latestUnsettledRequestID(brandID: createdBrand.id) else { return }
+            extractionRequestID = requestID
+            importProgressPhase = .needsReconcile
+            message = "이전 시즌 요청의 접수 결과를 확인하고 있습니다."
+            startImportProgressPolling(requestID: requestID)
+            return
+        }
+        guard let progress = try? await startSeasonImportExtractionUseCase
+            .loadProgress(requestID: receipt.requestID) else {
+            extractionRequestID = receipt.requestID
+            importProgressPhase = .needsReconcile
+            message = "이전 시즌 요청 상태를 다시 확인해 주세요."
+            return
+        }
+        applyRestoredReceipt(receipt, progress: progress)
+    }
+
+    private func reconcileCurrentRequest() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        Task {
+            let receipts = (try? await startSeasonImportExtractionUseCase
+                .reconcileUnsettledRequests(brandID: createdBrand.id)) ?? []
+            guard let receipt = receipts.first,
+                  let progress = try? await startSeasonImportExtractionUseCase
+                    .loadProgress(requestID: receipt.requestID) else {
+                let pendingRequestID = try? await startSeasonImportExtractionUseCase
+                    .latestUnsettledRequestID(brandID: createdBrand.id)
+                await MainActor.run {
+                    isSubmitting = false
+                    if let pendingRequestID {
+                        extractionRequestID = pendingRequestID
+                        startImportProgressPolling(requestID: pendingRequestID)
                     }
+                    message = "아직 접수 결과를 확인할 수 없습니다. 잠시 후 다시 확인해 주세요."
+                }
+                return
+            }
+            await MainActor.run {
+                isSubmitting = false
+                applyRestoredReceipt(receipt, progress: progress)
+            }
+        }
+    }
+
+    private func startImportProgressPolling(requestID: String) {
+        guard scenePhase == .active else { return }
+        guard progressPollingTask == nil else {
+            if progressPollingRequestID != requestID {
+                progressPollingRequestID = requestID
+                progressPollingTask?.cancel()
+            }
+            return
+        }
+        progressPollingRequestID = requestID
+        progressPollingTask = Task { @MainActor in
+            defer {
+                progressPollingTask = nil
+                if scenePhase == .active,
+                   importProgressPhase != .completed,
+                   let nextRequestID = progressPollingRequestID {
+                    startImportProgressPolling(requestID: nextRequestID)
+                }
+            }
+            var consecutiveErrors = 0
+            var waitingState = false
+            while !Task.isCancelled && scenePhase == .active {
+                do {
+                    let progress = try await startSeasonImportExtractionUseCase.loadProgress(requestID: requestID)
+                    consecutiveErrors = 0
+                    waitingState = progress.batchState == .preparing || progress.batchState == .queued || progress.batchState == .retryWaiting
+                    guard extractionRequestID == requestID else { return }
+                    applyImageExtractionProgress(progress)
+                    finishImageExtractionIfPossible()
                 } catch {
-                    // 한국어 주석: 진행률 조회 실패는 일시적일 수 있어 다음 polling 주기에서 다시 확인합니다.
+                    if importProgressPhase == .needsReconcile {
+                        let receipts = (try? await startSeasonImportExtractionUseCase
+                            .reconcileUnsettledRequests(brandID: createdBrand.id)) ?? []
+                        if let receipt = receipts.first(where: { $0.requestID == requestID }),
+                           let progress = try? await startSeasonImportExtractionUseCase
+                            .loadProgress(requestID: requestID) {
+                            guard extractionRequestID == requestID else { return }
+                            extractionCandidateIDs = receipt.candidateIDs
+                            extractionTotalCount = progress.totalCount
+                            importProgressPhase = .extracting
+                            applyImageExtractionProgress(progress)
+                            finishImageExtractionIfPossible()
+                        }
+                    }
+                    consecutiveErrors = min(consecutiveErrors + 1, 4)
                 }
 
-                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard !Task.isCancelled, scenePhase == .active else { return }
+
+                let delaySeconds: UInt64
+                if consecutiveErrors > 0 {
+                    delaySeconds = [10, 20, 40, 60][consecutiveErrors - 1]
+                } else {
+                    delaySeconds = waitingState ? 10 : 3
+                }
+                try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
             }
         }
     }
@@ -720,12 +889,20 @@ struct CreateBrandCandidateSelectionView: View {
     @MainActor
     private func finishImageExtractionIfPossible() {
         guard extractionTotalCount > 0 else { return }
-        guard extractionCompletedCount >= extractionTotalCount else { return }
+        guard extractionProgressItems.count >= extractionTotalCount,
+              extractionProgressItems.allSatisfy({ $0.status.isTerminal }) ||
+                extractionProgressItems.contains(where: { $0.status == .recoveryRequired }) else { return }
 
         progressPollingTask?.cancel()
-        progressPollingTask = nil
+        progressPollingRequestID = nil
         importProgressPhase = .completed
-        message = extractionFailedCount > 0 ? "실패한 시즌은 다시 시도할 수 있습니다." : nil
+        if extractionProgressItems.contains(where: { $0.status == .recoveryRequired }) {
+            message = "일부 시즌은 서버 복구 확인이 필요합니다. 완료로 간주하지 않았습니다."
+        } else if reviewRequiredCandidates.isEmpty == false {
+            message = "검토가 필요한 시즌은 성공으로 처리하지 않았습니다."
+        } else {
+            message = extractionFailedCount > 0 ? "실패한 시즌은 다시 시도할 수 있습니다." : nil
+        }
     }
 
     private func retryCandidates(_ candidatesToRetry: [SeasonCandidate]) {
@@ -748,27 +925,34 @@ struct CreateBrandCandidateSelectionView: View {
             }
 
             do {
-                let result = try await startSeasonImportExtractionUseCase.execute(
+                let receipt = try await startSeasonImportExtractionUseCase.execute(
                     brandID: createdBrand.id,
                     candidates: retryCandidates
                 )
                 let progress = try await startSeasonImportExtractionUseCase.loadProgress(
-                    brandID: createdBrand.id,
-                    candidateIDs: extractionCandidateIDs
+                    requestID: receipt.requestID
                 )
                 await MainActor.run {
-                    failedToStartCandidateIDs.formUnion(
-                        result.failedCandidates.map(\.candidateID)
-                    )
+                    extractionRequestID = receipt.requestID
+                    extractionCandidateIDs = retryCandidates.map(\.id)
                     applyImageExtractionProgress(progress)
-                    if importProgressPhase == .completed {
-                        startImportProgressPolling(candidateIDs: extractionCandidateIDs)
-                    }
+                    importProgressPhase = progress.isFinished ? .completed : .extracting
+                    if !progress.isFinished { startImportProgressPolling(requestID: receipt.requestID) }
                 }
             } catch {
+                let pendingRequestID = try? await startSeasonImportExtractionUseCase
+                    .unsettledRequestID(brandID: createdBrand.id, candidates: retryCandidates)
                 await MainActor.run {
-                    failedToStartCandidateIDs.formUnion(retryCandidateIDs)
-                    message = "선택한 시즌을 다시 요청하지 못했습니다."
+                    extractionCandidateIDs = retryCandidateIDs
+                    if let pendingRequestID {
+                        extractionRequestID = pendingRequestID
+                        importProgressPhase = .needsReconcile
+                        message = "재시도 접수 결과를 확인하고 있습니다."
+                        startImportProgressPolling(requestID: pendingRequestID)
+                    } else {
+                        failedToStartCandidateIDs.formUnion(retryCandidateIDs)
+                        message = "요청을 기기에 저장하지 못해 서버에 보내지 않았습니다."
+                    }
                 }
             }
         }
@@ -798,6 +982,18 @@ struct CreateBrandCandidateSelectionView: View {
         }
     }
 
+    private var reviewRequiredCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter { candidateImportStatus(candidateID: $0.id) == .reviewRequired }
+    }
+
+    private var duplicateCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter { candidateImportStatus(candidateID: $0.id) == .duplicate }
+    }
+
+    private var recoveryRequiredCandidates: [SeasonCandidate] {
+        selectedImportCandidates.filter { candidateImportStatus(candidateID: $0.id) == .recoveryRequired }
+    }
+
     private func candidateImportStatus(candidateID: String) -> CandidateImportStatus {
         if failedToStartCandidateIDs.contains(candidateID) {
             return .failed
@@ -814,12 +1010,22 @@ struct CreateBrandCandidateSelectionView: View {
         }
 
         switch item.status {
+        case .queued, .retryWaiting:
+            return .processing
         case .processing:
             return .processing
         case .succeeded:
             return .succeeded
         case .failed:
             return .failed
+        case .awaitingReview:
+            return .reviewRequired
+        case .skipped:
+            return .failed
+        case .duplicate:
+            return .duplicate
+        case .recoveryRequired:
+            return .recoveryRequired
         }
     }
 
@@ -831,6 +1037,12 @@ struct CreateBrandCandidateSelectionView: View {
             return "checkmark.circle.fill"
         case .failed:
             return "exclamationmark.triangle.fill"
+        case .reviewRequired:
+            return "eye.fill"
+        case .duplicate:
+            return "arrow.triangle.branch"
+        case .recoveryRequired:
+            return "exclamationmark.arrow.triangle.2.circlepath"
         }
     }
 
@@ -842,6 +1054,10 @@ struct CreateBrandCandidateSelectionView: View {
             return OutPickTheme.SwiftUIColor.success
         case .failed:
             return OutPickTheme.SwiftUIColor.warning
+        case .reviewRequired, .recoveryRequired:
+            return OutPickTheme.SwiftUIColor.warning
+        case .duplicate:
+            return OutPickTheme.SwiftUIColor.textSecondary
         }
     }
 }

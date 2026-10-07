@@ -7,9 +7,23 @@
 
 import Foundation
 
-struct BrandCreationReceipt: Equatable {
+struct BrandCreationReceipt: Codable, Equatable {
     let brandID: String
     let discoveryJobID: String?
+    let requestID: String?
+    let batchID: String?
+
+    init(
+        brandID: String,
+        discoveryJobID: String?,
+        requestID: String? = nil,
+        batchID: String? = nil
+    ) {
+        self.brandID = brandID
+        self.discoveryJobID = discoveryJobID
+        self.requestID = requestID
+        self.batchID = batchID
+    }
 }
 
 /// 브랜드 문서를 저장하는 저장소 추상화입니다.

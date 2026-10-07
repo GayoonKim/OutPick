@@ -23,6 +23,7 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
     static func makeProvider() -> LookbookRepositoryProvider {
         let fixture = LookbookUITestFixtureStore()
         return LookbookRepositoryProvider(
+            importRequestStore: UnavailableLookbookImportRequestStore(),
             brandRepository: fixture,
             brandSearchRepository: fixture,
             brandRequestRepository: fixture,
@@ -438,8 +439,13 @@ private final class LookbookUITestFixtureStore:
         discoveryJobID: String,
         generation: Int,
         candidateIDs: [String],
-        candidateSnapshotHash: String
-    ) async throws -> SeasonImportBatchRequestResult { throw FixtureError.unsupported }
+        candidateSnapshotHash: String,
+        envelope: LookbookImportQueueContract.RequestEnvelope
+    ) async throws -> LookbookImportQueueReceipt { throw FixtureError.unsupported }
+
+    func getSeasonImportBatch(requestID: String) async throws -> LookbookImportQueueReceipt {
+        throw FixtureError.unsupported
+    }
 
     func requestAssetRetry(
         brandID: BrandID,

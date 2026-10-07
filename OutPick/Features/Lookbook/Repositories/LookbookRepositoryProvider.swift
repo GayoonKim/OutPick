@@ -13,30 +13,56 @@ final class LookbookRepositoryProvider {
 
     static func live(
         transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(),
-        userBlockRepository: (any UserBlockRepositoryProtocol)? = nil
+        userBlockRepository: (any UserBlockRepositoryProtocol)? = nil,
+        importRequestStore: any LookbookImportRequestStoringRepositoryProtocol = UnavailableLookbookImportRequestStore(),
+        currentUserUIDProvider: @escaping () -> String = { LoginManagerCurrentUserProvider().canonicalUserID }
     ) -> LookbookRepositoryProvider {
         LookbookRepositoryProvider(
+            importRequestStore: importRequestStore,
+            currentUserUIDProvider: currentUserUIDProvider,
             brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
             brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: transport),
             lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
             brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
-            brandStore: CloudFunctionsBrandStore(transport: transport),
+            brandStore: CloudFunctionsBrandStore(
+                transport: transport,
+                requestStore: importRequestStore,
+                currentUserUIDProvider: currentUserUIDProvider
+            ),
             styleMoodAdminRepository:
                 CloudFunctionsStyleMoodAdminRepository(transport: transport),
             seasonMoodAdminRepository:
                 CloudFunctionsSeasonMoodAdminRepository(transport: transport),
             seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
-            seasonImportRepository: CloudFunctionsSeasonImportRepository(transport: transport),
+            seasonImportRepository: CloudFunctionsSeasonImportRepository(
+                transport: transport,
+                requestStore: importRequestStore,
+                currentUserUIDProvider: currentUserUIDProvider
+            ),
             seasonImportJobRequestingRepository: CloudFunctionsSeasonImportJobRequestingRepository(
                 transport: transport
             ),
-            seasonAssetRetryRepository: CloudFunctionsSeasonAssetRetryRepository(transport: transport),
+            seasonAssetRetryRepository: CloudFunctionsSeasonAssetRetryRepository(
+                transport: transport,
+                requestStore: importRequestStore,
+                currentUserUIDProvider: currentUserUIDProvider
+            ),
             lookbookExtractionReviewRepository:
-                CloudFunctionsLookbookExtractionReviewRepository(transport: transport),
+                CloudFunctionsLookbookExtractionReviewRepository(
+                    transport: transport,
+                    requestStore: importRequestStore,
+                    currentUserUIDProvider: currentUserUIDProvider
+                ),
             lookbookSeasonRepairRepository:
-                CloudFunctionsLookbookSeasonRepairRepository(transport: transport),
+                CloudFunctionsLookbookSeasonRepairRepository(
+                    transport: transport,
+                    requestStore: importRequestStore,
+                    currentUserUIDProvider: currentUserUIDProvider
+                ),
             seasonCandidateDiscoveryRepository: CloudFunctionsSeasonCandidateDiscoveryRepository(
-                transport: transport
+                transport: transport,
+                requestStore: importRequestStore,
+                currentUserUIDProvider: currentUserUIDProvider
             ),
             postEngagementRepository: CloudFunctionsPostEngagementRepository(transport: transport),
             commentWritingRepository: CloudFunctionsCommentWritingRepository(transport: transport),
@@ -79,6 +105,8 @@ final class LookbookRepositoryProvider {
     let commentEngagementRepository: CommentEngagementRepositoryProtocol
     let commentSafetyRepository: CommentSafetyRepositoryProtocol
     let userBlockRepository: UserBlockRepositoryProtocol
+    let importRequestStore: any LookbookImportRequestStoringRepositoryProtocol
+    let currentUserUIDProvider: () -> String
 
     let replacementRepository: ReplacementRepositoryProtocol
 
@@ -97,6 +125,8 @@ final class LookbookRepositoryProvider {
     let imageCachePipeline: ImageCachePipeline
 
     init(
+        importRequestStore: any LookbookImportRequestStoringRepositoryProtocol = UnavailableLookbookImportRequestStore(),
+        currentUserUIDProvider: @escaping () -> String = { LoginManagerCurrentUserProvider().canonicalUserID },
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
         brandSearchRepository: BrandSearchRepositoryProtocol = CloudFunctionsBrandSearchRepository(),
         brandRequestRepository: BrandRequestRepositoryProtocol = CloudFunctionsBrandRequestRepository(),
@@ -146,6 +176,8 @@ final class LookbookRepositoryProvider {
         storageService: StorageServiceProtocol = LookbookStorageService(),
         thumbnailer: ImageThumbnailing = ImageIOThumbnailer()
     ) {
+        self.importRequestStore = importRequestStore
+        self.currentUserUIDProvider = currentUserUIDProvider
         self.storageService = storageService
         self.thumbnailer = thumbnailer
         let resolvedImageCachePipeline = imageCachePipeline ?? ImageCachePipeline(

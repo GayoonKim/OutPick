@@ -113,7 +113,9 @@ enum AppCompositionRoot {
         )
         let lookbookProvider = LookbookRepositoryProvider.live(
             transport: cloudFunctionsTransport,
-            userBlockRepository: userBlockRepository
+            userBlockRepository: userBlockRepository,
+            importRequestStore: GRDBLookbookImportRequestStore(database: appDatabase),
+            currentUserUIDProvider: { currentUserProvider.canonicalUserID }
         )
         let realtimeSocketService = RealtimeSocketService(
             gapRecoveryLoader: FirebaseChatRealtimeGapRecoveryLoader(db: db),

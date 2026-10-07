@@ -575,7 +575,8 @@ final class LookbookContainer {
             ),
             startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                 importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
-                seasonImportJobRepository: provider.seasonImportJobRepository
+                requestStore: provider.importRequestStore,
+                ownerUIDProvider: provider.currentUserUIDProvider
             ),
             discoveryErrorMessage: nil,
             emptySelectionButtonTitle: "닫기",
@@ -615,9 +616,14 @@ final class LookbookContainer {
                 brandID: brand.id,
                 useCase: ManageSeasonImportJobsUseCase(
                     jobRepository: provider.seasonImportJobRepository,
-                    retryRepository: provider.seasonAssetRetryRepository
+                retryRepository: provider.seasonAssetRetryRepository
                 ),
-                discoveryRepository: provider.seasonCandidateDiscoveryRepository
+                discoveryRepository: provider.seasonCandidateDiscoveryRepository,
+                queueUseCase: StartSeasonImportExtractionUseCase(
+                    importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
+                    requestStore: provider.importRequestStore,
+                    ownerUIDProvider: provider.currentUserUIDProvider
+                )
             ),
             brand: brand,
             showsNavigationChrome: showsNavigationChrome,

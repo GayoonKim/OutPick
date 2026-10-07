@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SeasonImportManagementView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: SeasonImportManagementViewModel
     private let brand: Brand
@@ -59,6 +60,7 @@ struct SeasonImportManagementView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 discoveryCard
+                queueReceiptsCard
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("시즌 이미지 가져오기 현황")
@@ -100,6 +102,9 @@ struct SeasonImportManagementView: View {
         .task {
             await viewModel.monitor()
         }
+        .onChange(of: scenePhase) { phase in
+            viewModel.setScreenActive(phase == .active)
+        }
         .appToast(message: viewModel.presentedErrorMessage) {
             viewModel.clearError()
         }
@@ -138,6 +143,51 @@ struct SeasonImportManagementView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var queueReceiptsCard: some View {
+        if viewModel.queueReceipts.isEmpty == false {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("요청 대기열 현황")
+                    .font(.headline)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+                ForEach(viewModel.queueReceipts, id: \.requestID) { receipt in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(queueStateTitle(receipt.state))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(receipt.state == .recoveryRequired ? OutPickTheme.SwiftUIColor.warning : OutPickTheme.SwiftUIColor.textPrimary)
+                        Text("성공 \(receipt.succeededCount) · 검토 필요 \(receipt.reviewRequiredCount) · 실패 \(receipt.failedCount) · 진행/대기 \(receipt.inProgressCount)")
+                            .font(.footnote)
+                            .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                        if receipt.state == .recoveryRequired || receipt.recoveryRequiredCount > 0 {
+                            Text("실행 종료 확인 전까지 다음 요청이 대기합니다. 완료로 간주하지 않습니다.")
+                                .font(.caption)
+                                .foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(OutPickTheme.SwiftUIColor.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+            .padding(16)
+            .background(OutPickTheme.SwiftUIColor.surfaceBase)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func queueStateTitle(_ state: LookbookImportQueueContract.BatchState) -> String {
+        switch state {
+        case .preparing: return "접수 준비 중"
+        case .queued: return "대기 중"
+        case .active: return "처리 중"
+        case .draining: return "작업 정리 중"
+        case .retryWaiting: return "재시도 중"
+        case .recoveryRequired: return "복구 확인 필요"
+        case .released: return "요청 처리 완료"
+        }
     }
 
     @ViewBuilder

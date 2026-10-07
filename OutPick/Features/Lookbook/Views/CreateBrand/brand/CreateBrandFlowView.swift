@@ -198,7 +198,8 @@ private extension CreateBrandFlowView {
                 ),
                 startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
                     importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
-                    seasonImportJobRepository: provider.seasonImportJobRepository
+                    requestStore: provider.importRequestStore,
+                    ownerUIDProvider: provider.currentUserUIDProvider
                 ),
                 discoveryErrorMessage: discoveryErrorMessage,
                 emptySelectionButtonTitle: "브랜드 등록 마치기",

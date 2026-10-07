@@ -33,6 +33,7 @@ final class AppDatabase {
 
     func deleteAllUserSessionData() async throws {
         try await dbPool.write { db in
+            try db.execute(sql: "DELETE FROM lookbookImportRequest")
             try db.execute(sql: "DELETE FROM chatSearchSession")
             try db.execute(sql: "DELETE FROM RoomProfileDisplayCache")
             try db.execute(sql: "DELETE FROM LocalChatUser")
