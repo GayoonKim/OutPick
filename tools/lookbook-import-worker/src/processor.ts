@@ -5,6 +5,33 @@ import type {Firestore} from "firebase-admin/firestore";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import type {Storage} from "firebase-admin/storage";
 import sharp from "sharp";
+import {measured, recordBytes, recordJobOutcome} from "./performance/metrics.js";
+import {inStage, type PipelineRuntime} from "./pipeline/resources.js";
+import {mapScheduled} from "./pipeline/scheduling.js";
+import {storeImageVariants} from "./pipeline/asset-pipeline.js";
+import {
+  type SourceBufferScope, usingSourceBytes, withSourceBufferScope,
+} from "./pipeline/source-buffer-store.js";
+import {isQueueOwnedJob} from "./queue/ownership.js";
+import {
+  readOwnedBatch, type BatchOwnership, type BatchRunContext,
+} from "./queue/coordinator.js";
+import {browserImageGate} from "./queue/browser-gate.js";
+import {assetWritePaths} from "./queue/asset-paths.js";
+import {
+  beginAssetWrite, finishAssetWrite, publishAssetWrite,
+  type AssetObjectMetadata, type QueueAssetWrite,
+} from "./queue/asset-publication.js";
+import {
+  processImportSeasonsBatch,
+  type QueueBatchResult,
+  type QueueImportResult,
+} from "./queue/batch-runner.js";
+import {activateQueueItem} from "./queue/activation.js";
+import {prepareSeasonRestart} from "./queue/restart.js";
+import {assertJobWriteOwnership, updateOwnedJob, updateOwnedTarget} from "./queue/job-write.js";
+import type {DevelopmentRetryFault, RetryFaultContext} from "./queue/development-retry-fault.js";
+import {processSeasonDiscoveryTaskRequest} from "./season-discovery-processor.js";
 
 import {
   isRetryableImportError,
@@ -120,6 +147,12 @@ type ParsedExtractionResult = {
 
 type ImportJobData = {
   brandID?: unknown;
+  queueContractVersion?: unknown;
+  queueBatchID?: unknown;
+  queueExecutionID?: unknown;
+  queueActiveRunID?: unknown;
+  dispatchMode?: unknown;
+  queueActivationRequired?: unknown;
   jobType?: unknown;
   status?: unknown;
   sourceURL?: unknown;
@@ -221,6 +254,7 @@ type ClaimedJob = JobTarget & {
   dispatchGeneration: number;
   repairGeneration: number;
   repairTargetSeasonID: string | null;
+  queueExecution?: QueueJobExecution;
 };
 
 type JobResult = JobTarget & {
@@ -283,6 +317,17 @@ type ProcessorDependencies = {
   firestore: Firestore;
   storage: Storage;
   assetSyncConcurrency: number;
+  pipeline?: PipelineRuntime;
+  sourceBuffers?: SourceBufferScope;
+  developmentRetryFault?: DevelopmentRetryFault;
+  retryFaultContext?: RetryFaultContext;
+};
+
+type QueueJobExecution = {
+  ownership: BatchOwnership;
+  ordinal: number;
+  executionID: string;
+  kind: string;
 };
 
 type TaskRetryPolicy = {
@@ -426,6 +471,114 @@ export async function processImportJobTaskRequest(
   };
 }
 
+// 선택한 batch kind와 item execution을 각 기존 도메인 processor에 연결한다.
+export function queueOutcomeForSeasonDiscovery(
+  status: string,
+): QueueImportResult | null {
+  switch (status) {
+  case "succeeded":
+  case "awaitingReview":
+  case "correctionRequired":
+  case "failed":
+  case "cancelled":
+    return {status};
+  default:
+    return null;
+  }
+}
+
+export async function processImportBatchTaskRequest(
+  dependencies: ProcessorDependencies,
+  request: unknown,
+  owner: string,
+  bootID: string,
+  admissionSignal: AbortSignal,
+  runContext?: BatchRunContext,
+): Promise<QueueBatchResult> {
+  const readRestartMetadata = async (path: string) => {
+    try {
+      const [metadata] = await dependencies.storage.bucket().file(path).getMetadata();
+      return {generation: String(metadata.generation), size: Number(metadata.size)};
+    } catch (error) {
+      if ((error as {code?: unknown}).code === 404) return null;
+      throw error;
+    }
+  };
+  return processImportSeasonsBatch(
+    dependencies.firestore,
+    request,
+    owner,
+    bootID,
+    admissionSignal,
+    async ({brandID, batchKind, item, ownership, attempt, attemptLimit,
+      mode, input, pipeline}) => {
+      const target = {brandID, jobID: String(item.jobID)};
+      const queueExecution = {ownership, ordinal: item.ordinal,
+        executionID: String(item.executionID), kind: batchKind};
+      await activateQueueItem({
+        firestore: dependencies.firestore, brandID, jobID: target.jobID,
+        executionID: queueExecution.executionID, ordinal: item.ordinal,
+        ownership, batchKind, mode, continuationInput: input,
+      });
+      if (input?.restartFromParsing === true || input?.failureRetry === true && attempt === 1) {
+        const execution = (await dependencies.firestore.doc(`brands/${brandID}/importJobs/${target.jobID}/executions/${queueExecution.executionID}`).get()).data();
+        if (execution?.restartPreparedAttempt !== attempt) {
+          await prepareSeasonRestart({firestore: dependencies.firestore, ownership,
+            ordinal: item.ordinal, jobID: target.jobID,
+            executionID: queueExecution.executionID,
+            readMetadata: readRestartMetadata,
+          });
+        }
+      }
+      if (batchKind === "discoverSeasons") {
+        const root = (await dependencies.firestore.doc(
+          `brands/${brandID}/seasonDiscoveryJobs/${target.jobID}`).get()).data();
+        if (!root) throw new Error("QUEUE_DISCOVERY_JOB_NOT_FOUND");
+        const result = await processSeasonDiscoveryTaskRequest({
+          firestore: dependencies.firestore, storage: dependencies.storage,
+        }, {
+          brandID, jobID: target.jobID,
+          generation: root.generation,
+          dispatchGeneration: root.dispatchGeneration,
+          extractorVersion: root.extractorVersion,
+          extractionContractRevision: root.extractionContractRevision,
+          maxAttempts: attemptLimit,
+        }, attempt - 1, queueExecution);
+        const outcome = queueOutcomeForSeasonDiscovery(result.status);
+        if (outcome) return outcome;
+        throw new Error(`QUEUE_DISCOVERY_NOT_TERMINAL:${result.status}`);
+      }
+      const root = (await importJobRef(dependencies.firestore, target).get()).data();
+      const retryFaultContext = {ownership, brandID, jobID: target.jobID,
+        executionID: queueExecution.executionID, ordinal: item.ordinal, attempt};
+      await dependencies.developmentRetryFault?.beforeDownload(retryFaultContext);
+      const result = await processJob(
+        {...dependencies, pipeline, retryFaultContext},
+        target,
+        `worker_${randomUUID()}`,
+        {retryCount: attempt - 1, maxAttempts: attemptLimit},
+        {
+          dispatchGeneration: integerField(root?.dispatchGeneration, 0),
+          reviewGeneration: mode === "reviewApproval" && input?.restartFromParsing !== true ?
+            optionalNonNegativeInteger(input?.reviewGeneration, "reviewGeneration") : null,
+          reviewSnapshotHash: mode === "reviewApproval" && input?.restartFromParsing !== true ?
+            optionalStringField(input?.reviewSnapshotHash) : null,
+          queueExecution,
+        },
+      );
+      if (result.status === "partialFailed") {
+        throw new RetryableImportError("시즌 이미지 저장을 완료하지 못했습니다.");
+      }
+      if (result.status === "succeeded" ||
+          result.status === "failed" || result.status === "awaitingReview" ||
+          result.status === "cancelled") {
+        return {status: result.status};
+      }
+      throw new Error(`QUEUE_JOB_NOT_TERMINAL:${result.status}`);
+    }, Date.now, undefined, runContext, readRestartMetadata,
+  );
+}
+
 async function resolveJobTargets(
   db: Firestore,
   request: WakeRequest,
@@ -482,6 +635,18 @@ async function resolveJobTargets(
 }
 
 async function processJob(
+  ...args: Parameters<typeof processJobCore>
+): Promise<JobResult> {
+  const [dependencies, ...rest] = args;
+  const run = (scope?: SourceBufferScope) => measured("job", () =>
+    processJobCore(scope ? {...dependencies, sourceBuffers: scope} : dependencies, ...rest));
+  const store = dependencies.pipeline?.sourceBuffers;
+  const result = store ? await withSourceBufferScope(store, run) : await run();
+  recordJobOutcome(result.status);
+  return result;
+}
+
+async function processJobCore(
   dependencies: ProcessorDependencies,
   target: JobTarget,
   workerID: string,
@@ -490,6 +655,7 @@ async function processJob(
     dispatchGeneration: number;
     reviewGeneration: number | null;
     reviewSnapshotHash: string | null;
+    queueExecution?: QueueJobExecution;
   },
 ): Promise<JobResult> {
   const db = dependencies.firestore;
@@ -521,6 +687,9 @@ async function processJob(
     dispatchGeneration: claim.dispatchGeneration,
     repairGeneration: claim.repairGeneration,
     repairTargetSeasonID: claim.repairTargetSeasonID,
+    ...(dispatchContract?.queueExecution ? {
+      queueExecution: dispatchContract.queueExecution,
+    } : {}),
   };
   const logContext: LogContext = {
     brandID: claimedJob.brandID,
@@ -538,7 +707,7 @@ async function processJob(
   await logJobStarted(jobRef, logContext, retryPolicy);
 
   const leaseTimer = setInterval(() => {
-    void refreshLease(jobRef, workerID).catch((error: unknown) => {
+    void refreshLease(jobRef, workerID, claimedJob.queueExecution).catch((error: unknown) => {
       console.warn("[lookbook-import-worker] lease refresh failed", error);
     });
   }, LEASE_REFRESH_MS);
@@ -559,7 +728,7 @@ async function processJob(
 
     if (claimedJob.resumeFrom === "parsing") {
       const parseStartedAt = Date.now();
-      const parseResult = await ensureParsed(db, jobRef, claimedJob);
+      const parseResult = await ensureParsed(db, jobRef, claimedJob, dependencies.pipeline, dependencies.sourceBuffers);
       logPhaseCompleted(logContext, "parsing", elapsedMs(parseStartedAt), {
         fallbackUsed: parseResult.ok ? parseResult.fallbackUsed : false,
       });
@@ -576,7 +745,7 @@ async function processJob(
           claimedJob,
           parseResult.retainedEvidence,
         );
-        return await failJob(jobRef, target, parseResult.errorMessage, failurePatch({
+        return await failJob(jobRef, claimedJob, parseResult.errorMessage, failurePatch({
           parseStatus: "failed",
         }));
       }
@@ -622,7 +791,7 @@ async function processJob(
     ) {
       return await failJob(
         jobRef,
-        target,
+        claimedJob,
         "승인된 review snapshot 정보가 없습니다.",
         failurePatch({contentStatus: "failed"}),
       );
@@ -640,7 +809,7 @@ async function processJob(
       },
     );
     if (!materializeResult.ok) {
-      return await failJob(jobRef, target, materializeResult.errorMessage, failurePatch({
+      return await failJob(jobRef, claimedJob, materializeResult.errorMessage, failurePatch({
         contentStatus: "failed",
       }));
     }
@@ -652,6 +821,7 @@ async function processJob(
       claimedJob,
       materializeResult.seasonID,
       logContext,
+      claimedJob.queueExecution,
     );
     logPhaseCompleted(logContext, "syncingAssets", elapsedMs(assetSyncStartedAt), {
       seasonID: materializeResult.seasonID,
@@ -661,7 +831,7 @@ async function processJob(
     });
 
     const finalStatus = completedLifecycle(assetResult.status);
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claimedJob.queueExecution, {
       status: finalStatus,
       phase: "completed",
       assetSyncStatus: assetResult.status,
@@ -723,17 +893,17 @@ async function processJob(
           claimedJob,
           retainedEvidence,
         );
-        return failJob(jobRef, target, error.message, failurePatch({
+        return failJob(jobRef, claimedJob, error.message, failurePatch({
           parseStatus: "failed",
           errorCode: "retryExhausted",
         }));
       }
-      await releaseJobForTaskRetry(jobRef, error.message);
+      await releaseJobForTaskRetry(jobRef, error.message, claimedJob.queueExecution);
       throw error;
     }
     return await failJob(
       jobRef,
-      target,
+      claimedJob,
       errorMessage(error),
       failurePatch({}),
     );
@@ -750,6 +920,7 @@ async function claimJob(
     dispatchGeneration: number;
     reviewGeneration: number | null;
     reviewSnapshotHash: string | null;
+    queueExecution?: QueueJobExecution;
   },
 ): Promise<
   | {
@@ -783,6 +954,37 @@ async function claimJob(
     }
     if (stringField(data.brandID, "brandID") !== target.brandID) {
       throw new Error("job 문서의 brandID가 요청 brandID와 다릅니다.");
+    }
+    const queueExecution = dispatchContract?.queueExecution;
+    if (isQueueOwnedJob(data) && !queueExecution) {
+      return {claimed: false, reason: "queueExecutionRequired"};
+    }
+    if (!isQueueOwnedJob(data) && queueExecution) {
+      return {claimed: false, reason: "queueJobMismatch"};
+    }
+    if (queueExecution) {
+      const batch = await readOwnedBatch(db, transaction,
+        queueExecution.ownership);
+      const item = Array.isArray(batch.items) ?
+        batch.items[queueExecution.ordinal] as Record<string, unknown> | undefined :
+        undefined;
+      const executionRef = jobRef.collection("executions")
+        .doc(queueExecution.executionID);
+      const execution = (await transaction.get(executionRef)).data();
+      if (batch.brandID !== target.brandID ||
+          batch.kind !== queueExecution.kind ||
+          !["importSeasons", "assetRetry", "reviewApproval",
+            "manualRetry", "repair"].includes(String(batch.kind)) ||
+          item?.admissionStatus !== "created" || item.jobID !== target.jobID ||
+          item.executionID !== queueExecution.executionID ||
+          data.queueBatchID !== queueExecution.ownership.batchID ||
+          data.queueExecutionID !== queueExecution.executionID ||
+          data.queueActiveRunID !== queueExecution.ownership.runID ||
+          data.dispatchMode !== "batchQueue" ||
+          execution?.status !== "active" ||
+          execution.activeRunID !== queueExecution.ownership.runID) {
+        return {claimed: false, reason: "queueOwnershipMismatch"};
+      }
     }
     if (!isClaimable(data)) {
       return {
@@ -860,7 +1062,7 @@ async function processAssetRetryJob(
     });
   }
 
-  await jobRef.update({
+  await updateOwnedJob(jobRef, claim.queueExecution, {
     parseStatus: "skipped",
     contentStatus: "skipped",
     phase: "syncingAssets",
@@ -873,6 +1075,7 @@ async function processAssetRetryJob(
     claim,
     claim.targetSeasonID,
     logContext,
+    claim.queueExecution,
   );
   logPhaseCompleted(logContext, "syncingAssets", elapsedMs(assetSyncStartedAt), {
     seasonID: claim.targetSeasonID,
@@ -891,12 +1094,15 @@ async function processAssetRetryJob(
     completedAt: FieldValue.serverTimestamp(),
     errorMessage: assetResult.errorMessage ?? null,
     assetSyncErrorMessage: assetResult.errorMessage ?? null,
+    assetRetryStatus: finalStatus === "succeeded" ? "succeeded" : "failed",
+    assetRetryCompletedAt: FieldValue.serverTimestamp(),
+    assetRetryErrorMessage: assetResult.errorMessage ?? null,
     leaseOwner: null,
     leaseExpiresAt: null,
     updatedAt: FieldValue.serverTimestamp(),
   };
   await Promise.all([
-    jobRef.update(finalPatch),
+    updateOwnedJob(jobRef, claim.queueExecution, finalPatch),
     importJobRef(dependencies.firestore, {
       brandID: claim.brandID,
       jobID: claim.sourceImportJobID,
@@ -959,6 +1165,15 @@ async function processAssetFailureRetryTask(
         processed: false,
         status: "skipped",
         reason: "staleAssetRetryRequest",
+      };
+    }
+    if (isQueueOwnedJob(sourceJob)) {
+      return {
+        brandID,
+        jobID: sourceJobID,
+        processed: false,
+        status: "skipped",
+        reason: "queueExecutionRequired",
       };
     }
 
@@ -1099,6 +1314,8 @@ async function ensureParsed(
   db: Firestore,
   jobRef: FirebaseFirestore.DocumentReference,
   claim: ClaimedJob,
+  pipeline?: PipelineRuntime,
+  sourceBuffers?: SourceBufferScope,
 ): Promise<
   | ParsedExtractionResult
   | {
@@ -1137,7 +1354,7 @@ async function ensureParsed(
       candidateKey: (candidate) => extractionCandidateKey(candidate.sourceURL),
       versions: cachedVersions,
     });
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       parseStatus: "succeeded",
       imageCandidateEvidence: cachedExtraction.candidateEvidence.slice(
         0,
@@ -1172,7 +1389,7 @@ async function ensureParsed(
     };
   }
 
-  await jobRef.update({
+  await updateOwnedJob(jobRef, claim.queueExecution, {
     phase: "parsing",
     parseStatus: "running",
     updatedAt: FieldValue.serverTimestamp(),
@@ -1202,6 +1419,7 @@ async function ensureParsed(
         claim.sourceURL,
         staticExtraction,
         fallbackReason,
+        pipeline?.signal,
       );
     const sourceExtraction = fallbackExtraction.extraction;
     if (sourceExtraction.candidates.length === 0) {
@@ -1210,6 +1428,12 @@ async function ensureParsed(
     const contentHashDedupe = await resolveContentHashDedupe({
       candidates: sourceExtraction.candidates,
       concurrency: 4,
+      pipeline,
+      onHashedBytes: (candidate, bytes) => {
+        if (Buffer.isBuffer(bytes)) {
+          sourceBuffers?.retain(canonicalCandidateURL(candidate.sourceURL), claim.sourceURL, bytes);
+        }
+      },
       loadBytes: async (candidate) => {
         try {
           return await fetchRemoteImageBytes(
@@ -1221,6 +1445,9 @@ async function ensureParsed(
         }
       },
     });
+    sourceBuffers?.retainOnly(new Set(contentHashDedupe.candidates.map(
+      (candidate) => canonicalCandidateURL(candidate.sourceURL),
+    )), claim.sourceURL);
     const quality = evaluateExtractionQuality({
       candidateCount: contentHashDedupe.candidates.length,
       rawCandidateCount: sourceExtraction.rawCandidateCount,
@@ -1255,7 +1482,7 @@ async function ensureParsed(
       quality,
     };
 
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       parseStatus: "succeeded",
       imageCandidateCount: extraction.candidates.length,
       imageCandidates: extraction.candidates.slice(0, MAX_IMAGE_CANDIDATES_TO_STORE),
@@ -1387,7 +1614,7 @@ async function retainExtractionEvidenceSafely(
       jobID: claim.jobID,
       error: errorMessage(error),
     });
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       evidenceRetentionStatus: "failed",
       evidenceRetentionErrorMessage: "구조 evidence 저장에 실패했습니다.",
       updatedAt: FieldValue.serverTimestamp(),
@@ -1411,7 +1638,7 @@ async function pauseForReviewIfNeeded(
     quality: review.quality,
     trustEligible: review.trustEligible,
   }) === "materialize") {
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       trustBaselineMatched: trusted,
       resumeFrom: "materializing",
       updatedAt: FieldValue.serverTimestamp(),
@@ -1425,7 +1652,7 @@ async function pauseForReviewIfNeeded(
   const generation = data?.reviewStatus === "reanalyzing" ?
     currentGeneration :
     currentGeneration + 1;
-  await jobRef.update({
+  await updateOwnedJob(jobRef, claim.queueExecution, {
     status: "awaitingReview",
     phase: "reviewing",
     reviewStatus: "pending",
@@ -1574,7 +1801,7 @@ async function prepareSeasonRepairPreview(
     updatedAt: now,
   });
   if (disposition === "noChanges") {
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       status: "succeeded",
       phase: "completed",
       parseStatus: "succeeded",
@@ -1602,7 +1829,7 @@ async function prepareSeasonRepairPreview(
       reason: "repairNoChanges",
     };
   }
-  await jobRef.update({
+  await updateOwnedJob(jobRef, claim.queueExecution, {
     status: "awaitingReview",
     phase: "reviewing",
     reviewStatus: "repairPreviewReady",
@@ -1641,14 +1868,14 @@ async function ensureMaterialized(
   const existingSeasonID = optionalStringField(data?.targetSeasonID);
   const existingPostIDs = stringArray(data?.createdPostIDs);
   if (existingSeasonID !== null && existingPostIDs.length > 0) {
-    await jobRef.update({
+    await updateOwnedJob(jobRef, claim.queueExecution, {
       contentStatus: "succeeded",
       updatedAt: FieldValue.serverTimestamp(),
     });
     return {ok: true, seasonID: existingSeasonID, postCount: existingPostIDs.length};
   }
 
-  await jobRef.update({
+  await updateOwnedJob(jobRef, claim.queueExecution, {
     phase: "materializing",
     contentStatus: "running",
     contentErrorMessage: null,
@@ -1687,82 +1914,95 @@ async function ensureMaterialized(
     const createdPostIDs = imageCandidates.map((_, index) => deterministicPostID(index));
     const assetTotalCount = imageCandidates.length + (metadata.coverRemoteURL !== null ? 1 : 0);
     const now = Date.now();
-    const batch = db.batch();
-
-    batch.set(seasonRef, {
-      displayTitle: metadata.displayTitle,
-      sourceTitle: metadata.sourceTitle,
-      year: metadata.year,
-      term: metadata.term,
-      coverPath: null,
-      coverRemoteURL: metadata.coverRemoteURL,
-      description: "",
-      tagIDs: [],
-      moodIDs: [],
-      status: "published",
-      assetSyncStatus: "pending",
-      metadataStatus: metadata.metadataStatus,
-      metadataConfidence: metadata.metadataConfidence,
-      sourceURL: claim.sourceURL,
-      sourceImportJobID: claim.jobID,
-      sourceSortIndex: metadata.sourceSortIndex,
-      postCount: imageCandidates.length,
-      likeCount: 0,
-      createdAt: Timestamp.fromMillis(now),
-      updatedAt: Timestamp.fromMillis(now),
-    }, {merge: true});
-
-    imageCandidates.forEach((candidate, index) => {
-      batch.set(seasonRef.collection("posts").doc(createdPostIDs[index]), {
-        brandID: claim.brandID,
-        seasonID,
-        authorID: null,
-        orderIndex: index,
+    const writeContent = (batch: {
+      set(ref: FirebaseFirestore.DocumentReference, value: FirebaseFirestore.DocumentData,
+        options: FirebaseFirestore.SetOptions): unknown;
+      update(ref: FirebaseFirestore.DocumentReference, value: FirebaseFirestore.DocumentData): unknown;
+    }) => {
+      batch.set(seasonRef, {
+        displayTitle: metadata.displayTitle,
+        sourceTitle: metadata.sourceTitle,
+        year: metadata.year,
+        term: metadata.term,
+        coverPath: null,
+        coverRemoteURL: metadata.coverRemoteURL,
+        description: "",
+        tagIDs: [],
+        moodIDs: [],
         status: "published",
         assetSyncStatus: "pending",
+        metadataStatus: metadata.metadataStatus,
+        metadataConfidence: metadata.metadataConfidence,
+        sourceURL: claim.sourceURL,
         sourceImportJobID: claim.jobID,
-        media: [{
-          type: "image",
-          remoteURL: candidate.sourceURL,
-          thumbPath: null,
-          detailPath: null,
-          sourcePageURL: claim.sourceURL,
-        }],
-        caption: normalizedCaption(candidate.alt),
-        tagIDs: [],
-        metrics: {
-          likeCount: 0,
-          commentCount: 0,
-          replacementCount: 0,
-          saveCount: 0,
-          viewCount: 0,
-        },
-        createdAt: Timestamp.fromMillis(now - index),
-        updatedAt: Timestamp.fromMillis(now - index),
+        sourceSortIndex: metadata.sourceSortIndex,
+        postCount: imageCandidates.length,
+        likeCount: 0,
+        createdAt: Timestamp.fromMillis(now),
+        updatedAt: Timestamp.fromMillis(now),
       }, {merge: true});
-    });
 
-    batch.update(jobRef, {
-      contentStatus: "succeeded",
-      assetSyncStatus: "pending",
-      seasonTitle: metadata.displayTitle,
-      sourceTitle: metadata.sourceTitle,
-      coverRemoteURL: metadata.coverRemoteURL,
-      sourceSortIndex: metadata.sourceSortIndex,
-      normalizedYear: metadata.year,
-      normalizedTerm: metadata.term,
-      metadataStatus: metadata.metadataStatus,
-      metadataConfidence: metadata.metadataConfidence,
-      targetSeasonID: seasonID,
-      createdPostIDs,
-      createdPostCount: imageCandidates.length,
-      assetTotalCount,
-      assetCompletedCount: 0,
-      assetFailedCount: 0,
-      contentCreatedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
+      imageCandidates.forEach((candidate, index) => {
+        batch.set(seasonRef.collection("posts").doc(createdPostIDs[index]), {
+          brandID: claim.brandID,
+          seasonID,
+          authorID: null,
+          orderIndex: index,
+          status: "published",
+          assetSyncStatus: "pending",
+          sourceImportJobID: claim.jobID,
+          media: [{
+            type: "image",
+            remoteURL: candidate.sourceURL,
+            thumbPath: null,
+            detailPath: null,
+            sourcePageURL: claim.sourceURL,
+          }],
+          caption: normalizedCaption(candidate.alt),
+          tagIDs: [],
+          metrics: {
+            likeCount: 0,
+            commentCount: 0,
+            replacementCount: 0,
+            saveCount: 0,
+            viewCount: 0,
+          },
+          createdAt: Timestamp.fromMillis(now - index),
+          updatedAt: Timestamp.fromMillis(now - index),
+        }, {merge: true});
+      });
+
+      batch.update(jobRef, {
+        contentStatus: "succeeded",
+        assetSyncStatus: "pending",
+        seasonTitle: metadata.displayTitle,
+        sourceTitle: metadata.sourceTitle,
+        coverRemoteURL: metadata.coverRemoteURL,
+        sourceSortIndex: metadata.sourceSortIndex,
+        normalizedYear: metadata.year,
+        normalizedTerm: metadata.term,
+        metadataStatus: metadata.metadataStatus,
+        metadataConfidence: metadata.metadataConfidence,
+        targetSeasonID: seasonID,
+        createdPostIDs,
+        createdPostCount: imageCandidates.length,
+        assetTotalCount,
+        assetCompletedCount: 0,
+        assetFailedCount: 0,
+        contentCreatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    };
+    if (claim.queueExecution) {
+      await db.runTransaction(async (tx) => {
+        await assertJobWriteOwnership(tx, jobRef, claim.queueExecution!);
+        writeContent(tx);
+      });
+    } else {
+      const batch = db.batch();
+      writeContent(batch);
+      await batch.commit();
+    }
 
     return {ok: true, seasonID, postCount: imageCandidates.length};
   } catch (error) {
@@ -1776,13 +2016,14 @@ async function syncAssets(
   claim: ClaimedJob,
   seasonID: string,
   logContext: LogContext,
+  queueExecution?: QueueJobExecution,
 ): Promise<{
   status: "ready" | "partial" | "failed";
   completedCount: number;
   failedCount: number;
   errorMessage?: string;
 }> {
-  await jobRef.update({
+  await updateOwnedJob(jobRef, queueExecution, {
     phase: "syncingAssets",
     assetSyncStatus: "syncing",
     assetSyncErrorMessage: null,
@@ -1806,11 +2047,11 @@ async function syncAssets(
     seasonID,
   );
   if (targets.length === 0) {
-    await seasonRef.set({
+    await updateOwnedTarget(jobRef, queueExecution, seasonRef, {
       assetSyncStatus: "ready",
       assetSyncErrorMessage: null,
       updatedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
+    });
     return {
       status: "ready",
       completedCount: declaredTotalCount ?? 0,
@@ -1818,7 +2059,8 @@ async function syncAssets(
     };
   }
 
-  const results = await runSyncTargets(dependencies, targets);
+  const results = await runSyncTargets(dependencies, targets,
+    queueExecution ? {jobID: claim.jobID, queueExecution} : undefined);
   const failedResults = results.filter((result) => !result.succeeded);
   failedResults.forEach((result) => {
     logAssetFailed(logContext, result);
@@ -1827,6 +2069,7 @@ async function syncAssets(
     dependencies.firestore,
     result,
     claim.sourceImportJobID ?? claim.jobID,
+    queueExecution ? {jobRef, execution: queueExecution} : undefined,
   )));
   const failedCount = failedResults.length;
   const completedCount = declaredTotalCount === null ?
@@ -1835,26 +2078,26 @@ async function syncAssets(
   const status = failedCount === 0 ? "ready" : (completedCount > 0 ? "partial" : "failed");
   const error = failedResults[0]?.errorMessage;
 
-  await seasonRef.set({
+  await updateOwnedTarget(jobRef, queueExecution, seasonRef, {
     assetSyncStatus: status,
     assetSyncErrorMessage: error ?? null,
     updatedAt: FieldValue.serverTimestamp(),
-  }, {merge: true});
+  });
 
   await Promise.all(failedResults.map(async (result) => {
     if (result.target.kind !== "postImage") {
       return;
     }
-    await postRefFor(
+    await updateOwnedTarget(jobRef, queueExecution, postRefFor(
       dependencies.firestore,
       result.target.brandID,
       result.target.seasonID,
       result.target.postID,
-    ).set({
+    ), {
       assetSyncStatus: "failed",
       assetSyncErrorMessage: result.errorMessage ?? "이미지 동기화 실패",
       updatedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
+    });
   }));
 
   return {
@@ -1970,6 +2213,7 @@ async function updateAssetFailureAfterRetry(
   db: Firestore,
   result: SyncTargetResult,
   sourceImportJobID: string,
+  queueContext?: {jobRef: FirebaseFirestore.DocumentReference; execution: QueueJobExecution},
 ): Promise<void> {
   if (result.target.kind !== "postImage") {
     return;
@@ -1987,10 +2231,20 @@ async function updateAssetFailureAfterRetry(
     failureID,
   );
   if (result.succeeded) {
-    await failureRef.delete();
+    if (queueContext) {
+      await db.runTransaction(async (tx) => {
+        await assertJobWriteOwnership(tx, queueContext.jobRef, queueContext.execution);
+        tx.delete(failureRef);
+      });
+    } else {
+      await failureRef.delete();
+    }
     return;
   }
   await db.runTransaction(async (transaction) => {
+    if (queueContext) {
+      await assertJobWriteOwnership(transaction, queueContext.jobRef, queueContext.execution);
+    }
     const snapshot = await transaction.get(failureRef);
     const payload: Record<string, unknown> = {
       brandID: target.brandID,
@@ -2122,10 +2376,23 @@ async function assetSyncTargets(
   return targets;
 }
 
-async function runSyncTargets(
+export async function runSyncTargets(
   dependencies: ProcessorDependencies,
   targets: SyncTarget[],
+  queueContext?: {jobID: string; queueExecution: QueueJobExecution},
 ): Promise<SyncTargetResult[]> {
+  if (dependencies.sourceBuffers && !dependencies.pipeline) {
+    throw new Error("원본 재사용은 형제 작업 종료를 보장하는 실험 경로가 필요합니다.");
+  }
+  if (dependencies.pipeline) {
+    const pipeline = dependencies.pipeline;
+    return mapScheduled(targets, pipeline.assets, (target) =>
+      browserImageGate.withImageWork(
+        () => measured("asset", () => syncSingleTarget(dependencies, target, queueContext)),
+        pipeline.signal,
+      ),
+    pipeline.signal);
+  }
   const results: SyncTargetResult[] = [];
   let cursor = 0;
   const workers = Array.from(
@@ -2138,7 +2405,8 @@ async function runSyncTargets(
         if (!target) {
           return;
         }
-        results[index] = await syncSingleTarget(dependencies, target);
+        results[index] = await browserImageGate.withImageWork(() =>
+          measured("asset", () => syncSingleTarget(dependencies, target, queueContext)));
       }
     },
   );
@@ -2149,7 +2417,10 @@ async function runSyncTargets(
 async function syncSingleTarget(
   dependencies: ProcessorDependencies,
   target: SyncTarget,
+  queueContext?: {jobID: string; queueExecution: QueueJobExecution},
 ): Promise<SyncTargetResult> {
+  let queueWrite: QueueAssetWrite | null = null;
+  const uploadedObjects: Partial<Record<"thumb" | "detail", AssetObjectMetadata>> = {};
   try {
     if (target.kind === "seasonCover") {
       const seasonSnapshot = await seasonRefFor(
@@ -2179,51 +2450,105 @@ async function syncSingleTarget(
       }
     }
 
-    const originalBytes = await withImmediateRetry(() => fetchRemoteImageBytes(
-      target.remoteURL,
-      target.sourcePageURL,
-    ));
     const thumbPolicy = target.kind === "seasonCover" ?
       SEASON_COVER_THUMB :
       POST_IMAGE_THUMB;
     const detailPolicy = target.kind === "seasonCover" ?
       SEASON_COVER_DETAIL :
       POST_IMAGE_DETAIL;
-    const [thumbBytes, detailBytes] = await Promise.all([
-      jpegBytes(originalBytes, thumbPolicy.maxPixel, thumbPolicy.quality),
-      jpegBytes(originalBytes, detailPolicy.maxPixel, detailPolicy.quality),
-    ]);
-
-    if (target.kind === "seasonCover") {
-      const detailPath = seasonCoverDetailPath(target.brandID, target.seasonID);
-      await Promise.all([
-        uploadJPEG(dependencies.storage, seasonCoverThumbPath(target.brandID, target.seasonID), thumbBytes),
-        uploadJPEG(dependencies.storage, detailPath, detailBytes),
-      ]);
-      await seasonRefFor(dependencies.firestore, target.brandID, target.seasonID).set({
-        coverPath: detailPath,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, {merge: true});
-    } else {
-      const thumbPath = postThumbPath(target.brandID, target.seasonID, target.postID);
-      const detailPath = postDetailPath(target.brandID, target.seasonID, target.postID);
-      await Promise.all([
-        uploadJPEG(dependencies.storage, thumbPath, thumbBytes),
-        uploadJPEG(dependencies.storage, detailPath, detailBytes),
-      ]);
-      await updatePostMediaPaths(
-        dependencies.firestore,
-        target.brandID,
-        target.seasonID,
-        target.postID,
-        target.mediaIndex,
-        thumbPath,
-        detailPath,
-      );
+    let thumbPath = target.kind === "seasonCover" ?
+      seasonCoverThumbPath(target.brandID, target.seasonID) :
+      postThumbPath(target.brandID, target.seasonID, target.postID);
+    let detailPath = target.kind === "seasonCover" ?
+      seasonCoverDetailPath(target.brandID, target.seasonID) :
+      postDetailPath(target.brandID, target.seasonID, target.postID);
+    if (queueContext) {
+      const {ownership, executionID} = queueContext.queueExecution;
+      const transformPolicyVersion = [thumbPolicy.maxPixel, thumbPolicy.quality,
+        detailPolicy.maxPixel, detailPolicy.quality].join("-");
+      const identity = {
+        brandID: target.brandID,
+        seasonID: target.seasonID,
+        jobID: queueContext.jobID,
+        executionID,
+        epoch: ownership.epoch,
+        writeID: randomUUID(),
+        kind: target.kind,
+        ...(target.kind === "postImage" ? {
+          postID: target.postID,
+          mediaIndex: target.mediaIndex,
+        } : {}),
+        sourceURL: target.remoteURL,
+        transformPolicyVersion,
+      } as const;
+      const paths = assetWritePaths(identity);
+      queueWrite = {...identity, ordinal: queueContext.queueExecution.ordinal, paths};
+      thumbPath = paths.thumbPath;
+      detailPath = paths.detailPath;
     }
+    let writeIntent: Promise<void> | null = null;
+    const ensureWriteIntent = (): Promise<void> => {
+      const write = queueWrite;
+      const run = queueContext?.queueExecution;
+      if (!write || !run) return Promise.resolve();
+      writeIntent ??= beginAssetWrite(dependencies.firestore,
+        run.ownership, write);
+      return writeIntent;
+    };
+    await usingSourceBytes(dependencies.sourceBuffers,
+      dependencies.sourceBuffers ? canonicalCandidateURL(target.remoteURL) : "",
+      target.sourcePageURL,
+      () => withImmediateRetry(() => inStage(dependencies.pipeline, "download", () =>
+        fetchRemoteImageBytes(target.remoteURL, target.sourcePageURL))),
+      (originalBytes) => storeImageVariants(originalBytes, dependencies.pipeline, {
+        transform: (input, variant) => {
+          const policy = variant === "thumb" ? thumbPolicy : detailPolicy;
+          return jpegBytes(input, policy.maxPixel, policy.quality);
+        },
+        upload: async (bytes, variant) => {
+          const path = variant === "thumb" ? thumbPath : detailPath;
+          const write = queueWrite;
+          const run = queueContext?.queueExecution;
+          if (!write || !run) {
+            await uploadJPEG(dependencies.storage, path, bytes);
+            return;
+          }
+          await ensureWriteIntent();
+          const generation = await uploadJPEG(dependencies.storage, path, bytes, true);
+          if (!generation) throw new Error("ASSET_OBJECT_GENERATION_MISSING");
+          if (dependencies.retryFaultContext) {
+            await dependencies.developmentRetryFault?.afterUpload(dependencies.retryFaultContext,
+              {path, generation, size: bytes.length});
+          }
+          uploadedObjects[variant] = {generation, size: bytes.length};
+        },
+        savePaths: () => measured<unknown>("paths.save", () => {
+          const write = queueWrite;
+          const run = queueContext?.queueExecution;
+          if (write && run) {
+            return publishAssetWrite(dependencies.firestore, run.ownership, write,
+              uploadedObjects);
+          }
+          return target.kind === "seasonCover" ?
+            seasonRefFor(dependencies.firestore, target.brandID, target.seasonID).set({
+              coverPath: detailPath,
+              updatedAt: FieldValue.serverTimestamp(),
+            }, {merge: true}) :
+            updatePostMediaPaths(dependencies.firestore, target.brandID, target.seasonID,
+              target.postID, target.mediaIndex, thumbPath, detailPath);
+        }),
+      }));
 
     return {target, succeeded: true, skipped: false};
   } catch (error) {
+    if (queueWrite) {
+      try {
+        await finishAssetWrite(dependencies.firestore, queueWrite, "unpublished",
+          error instanceof Error ? error.name : "ASSET_WRITE_FAILED", uploadedObjects);
+      } catch (_ledgerError) {
+        // 종료가 불명확한 쓰기 의도는 원장에 남겨 복구 검사에서 확인한다.
+      }
+    }
     return {
       target,
       succeeded: false,
@@ -2235,11 +2560,11 @@ async function syncSingleTarget(
 
 async function failJob(
   jobRef: FirebaseFirestore.DocumentReference,
-  target: JobTarget,
+  target: JobTarget & {queueExecution?: QueueJobExecution},
   message: string,
   patch: Record<string, unknown>,
 ): Promise<JobResult> {
-  await jobRef.update({
+  await updateOwnedJob(jobRef, target.queueExecution, {
     status: "failed",
     phase: "completed",
     errorMessage: message,
@@ -2263,8 +2588,9 @@ async function failJob(
 async function releaseJobForTaskRetry(
   jobRef: FirebaseFirestore.DocumentReference,
   message: string,
+  queueExecution?: QueueJobExecution,
 ): Promise<void> {
-  await jobRef.update({
+  await updateOwnedJob(jobRef, queueExecution, {
     status: "queued",
     errorMessage: message,
     errorCode: "retryableNetworkFailure",
@@ -2288,18 +2614,23 @@ function errorStage(patch: Record<string, unknown>): string {
 async function refreshLease(
   jobRef: FirebaseFirestore.DocumentReference,
   workerID: string,
+  queueExecution?: QueueJobExecution,
 ): Promise<void> {
   const snapshot = await jobRef.get();
   if (snapshot.data()?.leaseOwner !== workerID) {
     return;
   }
-  await jobRef.update({
+  await updateOwnedJob(jobRef, queueExecution, {
     leaseExpiresAt: Timestamp.fromMillis(Date.now() + LEASE_DURATION_MS),
     updatedAt: FieldValue.serverTimestamp(),
   });
 }
 
 async function fetchHTML(url: string): Promise<string> {
+  return measured("html.download", () => fetchHTMLCore(url));
+}
+
+async function fetchHTMLCore(url: string): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_HTML_TIMEOUT_MS);
   try {
@@ -2320,7 +2651,8 @@ async function fetchHTML(url: string): Promise<string> {
     if (!contentType.toLowerCase().includes("text/html")) {
       throw new Error(`HTML 응답이 아닙니다: ${contentType || "unknown"}`);
     }
-    const bytes = await responseBytes(response, HTML_MAX_BYTES, "HTML 응답");
+    const bytes = await responseBytes(response, HTML_MAX_BYTES, "HTML 응답",
+      (count) => recordBytes("html.download", "receivedBytes", count));
     return bytes.toString("utf8");
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -2466,6 +2798,7 @@ async function extractionWithPlaywrightFallback(
   sourceURL: string,
   staticExtraction: ImageExtractionResult,
   fallbackReason: string,
+  signal?: AbortSignal,
 ): Promise<Pick<
   EvaluatedImageExtraction,
   "extraction" | "renderedCandidateCount"
@@ -2479,7 +2812,8 @@ async function extractionWithPlaywrightFallback(
   });
   const startedAt = Date.now();
   try {
-    const renderedHTML = await renderHTMLWithPlaywright(sourceURL);
+    const renderedHTML = await measured("html.render", () =>
+      renderHTMLWithPlaywright(sourceURL, signal));
     const renderedExtraction = extractImageCandidates(renderedHTML, sourceURL);
     console.log("[lookbook-import-worker] playwright fallback completed", {
       source: extractionSourceEvidence(sourceURL),
@@ -2514,6 +2848,7 @@ async function extractionWithPlaywrightFallback(
       renderedCandidateCount: renderedExtraction.candidates.length,
     };
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     console.warn("[lookbook-import-worker] playwright fallback failed", {
       source: extractionSourceEvidence(sourceURL),
       fallbackReason,
@@ -2534,44 +2869,56 @@ async function extractionWithPlaywrightFallback(
   }
 }
 
-async function renderHTMLWithPlaywright(sourceURL: string): Promise<string> {
-  await assertPublicHTTPURL(sourceURL);
-  const {chromium} = await import("playwright");
-  const browser = await chromium.launch({headless: true});
-  try {
-    const context = await browser.newContext({
-      viewport: {width: 1440, height: 1800},
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/124.0.0.0 Safari/537.36",
-    });
+async function renderHTMLWithPlaywright(
+  sourceURL: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  return browserImageGate.withBrowserWork(async (runSignal) => {
+    await assertPublicHTTPURL(sourceURL);
+    const {chromium} = await import("playwright");
+    const browser = await chromium.launch({headless: true});
+    const closeOnAbort = () => {
+      void browser.close().catch(() => undefined);
+    };
+    runSignal?.addEventListener("abort", closeOnAbort, {once: true});
     try {
-      await context.route("**/*", async (route) => {
-        const requestURL = route.request().url();
-        try {
-          await assertPublicHTTPURL(requestURL);
-          await route.continue();
-        } catch {
-          await route.abort("blockedbyclient");
-        }
+      runSignal?.throwIfAborted();
+      const context = await browser.newContext({
+        viewport: {width: 1440, height: 1800},
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+          "AppleWebKit/537.36 (KHTML, like Gecko) " +
+          "Chrome/124.0.0.0 Safari/537.36",
       });
-      const page = await context.newPage();
-      await page.goto(sourceURL, {
-        waitUntil: "domcontentloaded",
-        timeout: PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
-      });
-      await page.waitForTimeout(PLAYWRIGHT_RENDER_SETTLE_MS);
-      await page.waitForLoadState("networkidle", {timeout: 3_000}).catch(() => {
-        // 계속 열린 연결이 있어도 DOM 추출은 진행한다.
-      });
-      return await page.content();
+      try {
+        await context.route("**/*", async (route) => {
+          const requestURL = route.request().url();
+          try {
+            await assertPublicHTTPURL(requestURL);
+            await route.continue();
+          } catch {
+            await route.abort("blockedbyclient");
+          }
+        });
+        const page = await context.newPage();
+        await page.goto(sourceURL, {
+          waitUntil: "domcontentloaded",
+          timeout: PLAYWRIGHT_NAVIGATION_TIMEOUT_MS,
+        });
+        await page.waitForTimeout(PLAYWRIGHT_RENDER_SETTLE_MS);
+        await page.waitForLoadState("networkidle", {timeout: 3_000}).catch(() => {
+          // 계속 열린 연결이 있어도 DOM 추출은 진행한다.
+        });
+        runSignal?.throwIfAborted();
+        return await page.content();
+      } finally {
+        await context.close();
+      }
     } finally {
-      await context.close();
+      runSignal?.removeEventListener("abort", closeOnAbort);
+      await browser.close();
     }
-  } finally {
-    await browser.close();
-  }
+  }, signal);
 }
 
 function dynamicRenderingSignalCount(html: string): number {
@@ -2718,6 +3065,13 @@ async function fetchRemoteImageBytes(
   remoteURL: string,
   sourcePageURL: string,
 ): Promise<Buffer> {
+  return measured("image.download", () => fetchRemoteImageBytesCore(remoteURL, sourcePageURL));
+}
+
+async function fetchRemoteImageBytesCore(
+  remoteURL: string,
+  sourcePageURL: string,
+): Promise<Buffer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_IMAGE_TIMEOUT_MS);
   try {
@@ -2743,6 +3097,7 @@ async function fetchRemoteImageBytes(
       response,
       REMOTE_IMAGE_MAX_BYTES,
       "이미지",
+      (count) => recordBytes("image.download", "receivedBytes", count),
     );
     if (bytes.length === 0) {
       throw new Error("이미지 바이트가 비어 있습니다.");
@@ -2753,26 +3108,40 @@ async function fetchRemoteImageBytes(
   }
 }
 
-async function jpegBytes(input: Buffer, maxPixel: number, quality: number): Promise<Buffer> {
-  return sharp(input, {failOn: "none"})
-    .rotate()
-    .resize({
-      width: maxPixel,
-      height: maxPixel,
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .jpeg({quality, mozjpeg: true})
-    .toBuffer();
+export async function jpegBytes(input: Buffer, maxPixel: number, quality: number): Promise<Buffer> {
+  return measured("image.transform", async () => {
+    const output = await sharp(input, {failOn: "none"})
+      .rotate()
+      .resize({
+        width: maxPixel,
+        height: maxPixel,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({quality, mozjpeg: true})
+      .toBuffer();
+    recordBytes("image.transform", "completedBytes", output.length);
+    return output;
+  });
 }
 
-async function uploadJPEG(storage: Storage, path: string, bytes: Buffer): Promise<void> {
-  await storage.bucket().file(path).save(bytes, {
-    resumable: false,
-    metadata: {
-      contentType: "image/jpeg",
-      cacheControl: "public,max-age=3600",
-    },
+export async function uploadJPEG(
+  storage: Storage, path: string, bytes: Buffer, createOnly = false,
+): Promise<string | null> {
+  return measured("file.upload", async () => {
+    recordBytes("file.upload", "submittedBytes", bytes.length);
+    const file = storage.bucket().file(path);
+    await file.save(bytes, {
+      resumable: false,
+      ...(createOnly ? {preconditionOpts: {ifGenerationMatch: 0}} : {}),
+      metadata: {
+        contentType: "image/jpeg",
+        cacheControl: "public,max-age=3600",
+      },
+    });
+    recordBytes("file.upload", "completedBytes", bytes.length);
+    return file.metadata?.generation == null ? null :
+      String(file.metadata.generation);
   });
 }
 
@@ -3148,7 +3517,7 @@ function canScanJob(data: ImportJobData): boolean {
   return (
     data.jobType === "importSeasonFromURL" ||
     data.jobType === "retrySeasonAssets"
-  ) && isClaimable(data);
+  ) && !isQueueOwnedJob(data) && isClaimable(data);
 }
 
 function errorMessage(error: unknown): string {

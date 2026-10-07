@@ -1,0 +1,3689 @@
+{
+  "version": 1,
+  "sourceInputDigest": "c4fb65f71fa5f26a6f9a531e58b8629ba2aff0f612c81e75e7cdeb05028f0c56",
+  "seasons": [
+    {
+      "seasonID": "2026FW",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=785&cate_no=88&display_group=1",
+      "htmlSha256": "3974929403f6b6413b5ec6d1e3c476d01b335b84592674a5f7c87104a4cc3791",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784126637-01.jpg",
+          "path": "images/2026FW-001-d93fbf58c1d8.jpg",
+          "sha256": "d93fbf58c1d81a3c5ccafb556161f62b8429f07dd39f2490a5a82a6e4167425a",
+          "bytes": 1874151
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784126637-02.jpg",
+          "path": "images/2026FW-002-0b78c4a57373.jpg",
+          "sha256": "0b78c4a57373adaf5cd3e081a3f2ba3035a6a06e447b95374db7d162d0412878",
+          "bytes": 2236038
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/03.jpg",
+          "path": "images/2026FW-003-ce2ea4986cc8.jpg",
+          "sha256": "ce2ea4986cc861f29880e42ca5bd1ab76a3c188750bd37ecf1f7b18bbcc3e52b",
+          "bytes": 2696694
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/04.jpg",
+          "path": "images/2026FW-004-3d0207659091.jpg",
+          "sha256": "3d0207659091d251b70a4cbc2420829115b922b8547d63f9ff3e416396d85bcf",
+          "bytes": 2117430
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/05.jpg",
+          "path": "images/2026FW-005-20db7dc09789.jpg",
+          "sha256": "20db7dc09789cd306438303351e5bf23110edb871ca14cba09cfd8f9cefc27da",
+          "bytes": 2381613
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/06-1.jpg",
+          "path": "images/2026FW-006-edeec6494db1.jpg",
+          "sha256": "edeec6494db14719209a707655b26eaae4e5fcef2e5e7d5951a3db3b08b61015",
+          "bytes": 1899238
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784126728-07.jpg",
+          "path": "images/2026FW-007-8da87560d74e.jpg",
+          "sha256": "8da87560d74eb8f47ee50dbd99124a551a82ed5496defc4c0bb6797c151fa232",
+          "bytes": 2599182
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784126888-08.jpg",
+          "path": "images/2026FW-008-d2ac404470c2.jpg",
+          "sha256": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+          "bytes": 2737602
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127073-09.jpg",
+          "path": "images/2026FW-009-2f96fcb2470d.jpg",
+          "sha256": "2f96fcb2470d3a257607d29a1c7c95b7cbed31282304a3bc7e98690cb829b1fa",
+          "bytes": 1810844
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127084-10.jpg",
+          "path": "images/2026FW-010-9d02db7e2046.jpg",
+          "sha256": "9d02db7e2046e76bc136a4e8a56a1e1cf5955f29d1acaa619868a8631f20701c",
+          "bytes": 1934764
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127089-11.jpg",
+          "path": "images/2026FW-011-1ec2248c049c.jpg",
+          "sha256": "1ec2248c049cf8ff401bbf5b275d90419ae933ce0f8d3c6ee2e290d816d2c37f",
+          "bytes": 2589117
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127094-12.jpg",
+          "path": "images/2026FW-012-627dcfb4916f.jpg",
+          "sha256": "627dcfb4916f3541554ede36c19c2571c65ee99301f7233f5dc46a3a07089fee",
+          "bytes": 2546382
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127099-13.jpg",
+          "path": "images/2026FW-013-4dc903b2eab3.jpg",
+          "sha256": "4dc903b2eab317c928b6eb850ecaaf34c72b055ec44df336ab057d51e3efef31",
+          "bytes": 1845985
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/14.jpg",
+          "path": "images/2026FW-014-a922b2dea354.jpg",
+          "sha256": "a922b2dea354dd94c9fdbea36877e790a6c02015d47bcf56417ba7ccca80c904",
+          "bytes": 1797906
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/15.jpg",
+          "path": "images/2026FW-015-4c0a4691d628.jpg",
+          "sha256": "4c0a4691d62819b7cb34d073aef9bcaf5a318c89ea420daf7d8f9af51b570e27",
+          "bytes": 1768486
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127147-16.jpg",
+          "path": "images/2026FW-016-25c67c03a2e3.jpg",
+          "sha256": "25c67c03a2e3362827a19539677514b31383e9ffbb6d50c9fbe81d2bfb86fe8e",
+          "bytes": 1919489
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127151-17.jpg",
+          "path": "images/2026FW-017-35a2c809e22b.jpg",
+          "sha256": "35a2c809e22b28e6ee82a1eca6a2fc1c4d24fbcad2ead10c8ab9c4cec6f6024c",
+          "bytes": 2452999
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127159-18.jpg",
+          "path": "images/2026FW-018-ebd9c899faa8.jpg",
+          "sha256": "ebd9c899faa8dd075c28eb3eb92d30ffee3a2fdaa2ebd902830599d86cd5313f",
+          "bytes": 2067867
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127159-19.jpg",
+          "path": "images/2026FW-019-a78eab4cc87b.jpg",
+          "sha256": "a78eab4cc87ba9946176df43ed1c64d6081dfe3990fabdff65f0575323ec32c3",
+          "bytes": 1873630
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127159-20.jpg",
+          "path": "images/2026FW-020-79fa802e2634.jpg",
+          "sha256": "79fa802e2634fc0305158344336bf0c5eccf8be6b445dfd901528421a54c4fa4",
+          "bytes": 2267084
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127172-21.jpg",
+          "path": "images/2026FW-021-98d6e093d300.jpg",
+          "sha256": "98d6e093d30039e196f4f762ee5c56a3243307c830079b341cb2e94f8b9a70b2",
+          "bytes": 1694357
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127172-22.jpg",
+          "path": "images/2026FW-022-a2182427c3f4.jpg",
+          "sha256": "a2182427c3f46660420d8eb447d4fb27aff6b0423ea51d839d8a98d68ecf0e5e",
+          "bytes": 1846838
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127172-23.jpg",
+          "path": "images/2026FW-023-f690755a4869.jpg",
+          "sha256": "f690755a4869e1383960515cec41c6bcf17c75bba6c6f3a5722789b6a5bb27ab",
+          "bytes": 1948398
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260715/copy-1784127172-24.jpg",
+          "path": "images/2026FW-024-641e14a41a99.jpg",
+          "sha256": "641e14a41a999315d045b64a7400d13f2479ff24df2d933e714e48e331f704ef",
+          "bytes": 2173494
+        }
+      ]
+    },
+    {
+      "seasonID": "2026SS",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=534&cate_no=88&display_group=1",
+      "htmlSha256": "df4194c36b40f72a5b5817e0846c40620bc9c68bde8886fb7ea8441e2a2e67d8",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-1.jpg",
+          "path": "images/2026SS-001-730ad07def61.jpg",
+          "sha256": "730ad07def61a913935cb9a0097716421f020d0ba37311cd695ab36ae8300dac",
+          "bytes": 41521
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-2.jpg",
+          "path": "images/2026SS-002-cf548f24eb28.jpg",
+          "sha256": "cf548f24eb28f18245dcf8a8f1fc91491ca4257c9c5ce5863064549bce18bd2d",
+          "bytes": 49554
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-3.jpg",
+          "path": "images/2026SS-003-0c4b1d4b1ec6.jpg",
+          "sha256": "0c4b1d4b1ec6d5fbe3140dc1ce704982583f3f490de231e15397d277447e1124",
+          "bytes": 99354
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-4.jpg",
+          "path": "images/2026SS-004-7803a780fed2.jpg",
+          "sha256": "7803a780fed2be98b68cd7fd62e385cd972e535d56700ab841ab2c9f1eda62c9",
+          "bytes": 78383
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-5.jpg",
+          "path": "images/2026SS-005-496b162f1241.jpg",
+          "sha256": "496b162f12418a3471828f70d6a66dda2f785d96026f8bbfc5ad17e7138e5aac",
+          "bytes": 73836
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-6.jpg",
+          "path": "images/2026SS-006-09bb1a4821d0.jpg",
+          "sha256": "09bb1a4821d08a0667350a179e710ee296a25a8194dd6dd2cd6039638c03854b",
+          "bytes": 62929
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-7.jpg",
+          "path": "images/2026SS-007-3ba9fb0f3c1c.jpg",
+          "sha256": "3ba9fb0f3c1c91c0ed00ff494ccc645d03a5d3ec09db5d971ab97f453166fd3d",
+          "bytes": 109266
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-8.jpg",
+          "path": "images/2026SS-008-aae3dbfc52c7.jpg",
+          "sha256": "aae3dbfc52c7fac101a1d209e247e6220519c15433b37da0eb458185fcc14e6c",
+          "bytes": 54425
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-9.jpg",
+          "path": "images/2026SS-009-4b242a67d9d1.jpg",
+          "sha256": "4b242a67d9d18ab94d5465fd464860fdf0d2e4d6b29f40b1d8ea759de3c5b036",
+          "bytes": 60942
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-10.jpg",
+          "path": "images/2026SS-010-84503e126385.jpg",
+          "sha256": "84503e1263856e33178cf6bb180bab62427c11c00a31e36641ee9d1b4b872135",
+          "bytes": 48468
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-11.jpg",
+          "path": "images/2026SS-011-d2208cc9b22c.jpg",
+          "sha256": "d2208cc9b22c861fa4f7f249b0e15987560326eb3782b2361aa6a0a9d33297b3",
+          "bytes": 65357
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-12.jpg",
+          "path": "images/2026SS-012-04fae4d64490.jpg",
+          "sha256": "04fae4d6449098165286ddfbf3983c418b63a9b31bacf41f279de7ff9b08abf5",
+          "bytes": 86835
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-13.jpg",
+          "path": "images/2026SS-013-9f6ebca8e406.jpg",
+          "sha256": "9f6ebca8e40684642515b9b5f64ab581aea2e53982e62b84f2290c62aa51ac8b",
+          "bytes": 95130
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-14.jpg",
+          "path": "images/2026SS-014-b00cc982860e.jpg",
+          "sha256": "b00cc982860ef3b42e180f502ad3421e217a2acfc2f3ef41f5f376c44e210d6e",
+          "bytes": 43132
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-15.jpg",
+          "path": "images/2026SS-015-a37337a8717a.jpg",
+          "sha256": "a37337a8717a6b521a7b2c77e9143b60d3776c6cc7a117d02cc35d0343beedee",
+          "bytes": 65851
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-16.jpg",
+          "path": "images/2026SS-016-07a8d8780b8c.jpg",
+          "sha256": "07a8d8780b8c3bc24c9c43b36f4c42b019be0adfb2eedc7c12dad94d00938af9",
+          "bytes": 118983
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-17.jpg",
+          "path": "images/2026SS-017-b499429e6c75.jpg",
+          "sha256": "b499429e6c75e4c20a5b5500025b4e4feee77eebf602f249e05db5dd5c76f206",
+          "bytes": 79017
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-18.jpg",
+          "path": "images/2026SS-018-8bcdd4e9c58b.jpg",
+          "sha256": "8bcdd4e9c58bb0ea5c7d512c9b2c71fc4cd66352ad08e203ac272c56d74cae7d",
+          "bytes": 89409
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-19.jpg",
+          "path": "images/2026SS-019-04569f5fe60d.jpg",
+          "sha256": "04569f5fe60db8c3f1637f0a35dd8c7185a7fafc7c1ca482b7cbe7a4f48de253",
+          "bytes": 175171
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-20.jpg",
+          "path": "images/2026SS-020-5e725542033c.jpg",
+          "sha256": "5e725542033c4c93cec9c373a3a10dba6581d81df06e9fa1f40003779ec13d3d",
+          "bytes": 88976
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-21.jpg",
+          "path": "images/2026SS-021-47ab3dcb414c.jpg",
+          "sha256": "47ab3dcb414c5d7d3990ae57e9dc53d8ef8df6028844934c9c4df4ec7a22dc76",
+          "bytes": 105335
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-22.jpg",
+          "path": "images/2026SS-022-df602eecadf3.jpg",
+          "sha256": "df602eecadf30bf9f4f75492597e573dad1fc7bf6a2a1be2334c8df9df326cfd",
+          "bytes": 74802
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-23.jpg",
+          "path": "images/2026SS-023-a30650e6e619.jpg",
+          "sha256": "a30650e6e619dccd3801e2d6b8412c193ddcf8b8fc6bc8152816873f3adab9d0",
+          "bytes": 57671
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-24.jpg",
+          "path": "images/2026SS-024-49e14480f45e.jpg",
+          "sha256": "49e14480f45e8440c7da4511194878eafaf83c189de9b8ea30d460367ad790d5",
+          "bytes": 60390
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-25.jpg",
+          "path": "images/2026SS-025-569e2b0e9c09.jpg",
+          "sha256": "569e2b0e9c09b7e2db088a35d3865f0a8dacbe0f9331a92b21251fcbe50156e7",
+          "bytes": 65415
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-26.jpg",
+          "path": "images/2026SS-026-e13b36184610.jpg",
+          "sha256": "e13b36184610ec9b43e85bd90708f8ea710e3ea45edec44eafb4f33004cb6b85",
+          "bytes": 85591
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-27.jpg",
+          "path": "images/2026SS-027-348d9267c0bb.jpg",
+          "sha256": "348d9267c0bb1a2a5a95aab51c3cda6b190fdded531c03217fd59c43a3093e25",
+          "bytes": 96350
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-28.jpg",
+          "path": "images/2026SS-028-5aa7dfb17949.jpg",
+          "sha256": "5aa7dfb1794998eb4884b2d835836f288681a357a11b68ad0f27536f8684b606",
+          "bytes": 169255
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-29.jpg",
+          "path": "images/2026SS-029-ed4f74ca1a2b.jpg",
+          "sha256": "ed4f74ca1a2b7e825af59b4765d2be04739f85721bd37e60892435c07245112a",
+          "bytes": 135793
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260109/copy-1767954594-30.jpg",
+          "path": "images/2026SS-030-1d5662a69e1d.jpg",
+          "sha256": "1d5662a69e1d674a570d6b71d31e9595d49e19519bfb7b8d1efc13ebccc7a161",
+          "bytes": 62303
+        }
+      ]
+    },
+    {
+      "seasonID": "2025FW",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=469&cate_no=88&display_group=1",
+      "htmlSha256": "c6ad5ad47e8e08b1b8a720075827501ad92293fe472c137a49edf770bb86e7e1",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/copy-1758799861-2025020620Unaffected200097.jpg",
+          "path": "images/2025FW-001-a7d7c757433e.jpg",
+          "sha256": "a7d7c757433e16f772ad9dc01fe545997902b20bf5e217727a1af57e99b683fc",
+          "bytes": 945760
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected200234.jpg",
+          "path": "images/2025FW-002-2e937b43a30b.jpg",
+          "sha256": "2e937b43a30becc297f8c9752cfe9bf9d296c4a7da16dd9a091d7013ebc8cbc9",
+          "bytes": 1032971
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected200265.jpg",
+          "path": "images/2025FW-003-72e15413367b.jpg",
+          "sha256": "72e15413367bb429f94be3abbc5570338980df392cc988a4414f38cd3bc6a5f4",
+          "bytes": 858699
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected200715.jpg",
+          "path": "images/2025FW-004-9fe1b3e6bae3.jpg",
+          "sha256": "9fe1b3e6bae34bbe18b5e4ffd470e3fb7d7b4f99c45208dd9a01191aefaa76f3",
+          "bytes": 682569
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected200760.jpg",
+          "path": "images/2025FW-005-956b27774952.jpg",
+          "sha256": "956b27774952c4c4931fa4d6f69f1abdcc69884cbf1b4fb1f6a323d7b7c86254",
+          "bytes": 932800
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected200855.jpg",
+          "path": "images/2025FW-006-f9cfca2c3e1d.jpg",
+          "sha256": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+          "bytes": 953820
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected201237.jpg",
+          "path": "images/2025FW-007-4fdd9f3dd328.jpg",
+          "sha256": "4fdd9f3dd32852f2608f760d09d28c557d034480d28df4513a69b5a4c3ebe975",
+          "bytes": 1174020
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected201397.jpg",
+          "path": "images/2025FW-008-8783f57a6a42.jpg",
+          "sha256": "8783f57a6a424cd42761740dd5b54e725d95f69df9bca063e8cf04ebd9eb5812",
+          "bytes": 1191516
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected201691.jpg",
+          "path": "images/2025FW-009-30c688997d29.jpg",
+          "sha256": "30c688997d2982b7ac2d39c1e7ae8e249f481e45d3fe2f532db75cb65e04313e",
+          "bytes": 1282439
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected201926.jpg",
+          "path": "images/2025FW-010-4bcbaccac7e3.jpg",
+          "sha256": "4bcbaccac7e3080466b2f586d9b507273510f1101db59c24571a36ec6e678ec0",
+          "bytes": 1628763
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected202070.jpg",
+          "path": "images/2025FW-011-a87eecce5035.jpg",
+          "sha256": "a87eecce50353304ecd66cc5aeb4f7268269f489130edd616b0a65c51acfe363",
+          "bytes": 1176085
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected202173.jpg",
+          "path": "images/2025FW-012-5da35da0def7.jpg",
+          "sha256": "5da35da0def70e1e403adeea05eb6d3ba95e451bd33de9ef46c8af14e9e3df7c",
+          "bytes": 1551945
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/copy-1758800070-2025020620Unaffected201860.jpg",
+          "path": "images/2025FW-013-9d34a865502e.jpg",
+          "sha256": "9d34a865502e894b4b1b0b8414fee1acae0d7e2c7e9b832cde50c882826bdbef",
+          "bytes": 1716808
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20250925/2025020620Unaffected202277.jpg",
+          "path": "images/2025FW-014-27349a3aeba9.jpg",
+          "sha256": "27349a3aeba98fc82ee14b8044d194b6e9338643d1f08532b2447242f25d8fec",
+          "bytes": 1312138
+        }
+      ]
+    },
+    {
+      "seasonID": "2025SS",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=128&cate_no=88&display_group=1",
+      "htmlSha256": "50311bd28ec7b54057e68fbb5e705762cc81454f08f7b726d994eff289fa3533",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/E18486E185A6E1848BE185B5E186AB.jpg",
+          "path": "images/2025SS-001-d8394b90ac02.jpg",
+          "sha256": "d8394b90ac02e0ec8fe80f151e8b5b078ca4adfe00183d9e7332b351ca7cabee",
+          "bytes": 521327
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/1.jpg",
+          "path": "images/2025SS-002-77cfc3b5cd3e.jpg",
+          "sha256": "77cfc3b5cd3e5d5d62989291dca6878659133b98beef96e8d0ab734018831775",
+          "bytes": 550786
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/2.jpg",
+          "path": "images/2025SS-003-317fc1ab9765.jpg",
+          "sha256": "317fc1ab97653d4005da267b944b7c08bbea58b31b84c03fb31d1586c2a9bdd8",
+          "bytes": 212196
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-3.jpg",
+          "path": "images/2025SS-004-e20027df4f4c.jpg",
+          "sha256": "e20027df4f4c9d603866cbaed4e7b0a53f1382f23135aba9fd51055d16ae9a98",
+          "bytes": 153018
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/4.jpg",
+          "path": "images/2025SS-005-d7184c82dbce.jpg",
+          "sha256": "d7184c82dbce2c7241f65dd83d6c098e0cc6e2ff211e5d6b7b048ab8c95f5287",
+          "bytes": 847012
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/5.jpg",
+          "path": "images/2025SS-006-ff786aee7355.jpg",
+          "sha256": "ff786aee73556074d7fe89f91c0ff4896a0547aeecad2fdbc3115d89b10a7db2",
+          "bytes": 875532
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-6.jpg",
+          "path": "images/2025SS-007-9344021c20ae.jpg",
+          "sha256": "9344021c20ae6098f401410fae60bafabea4e0e66380655a880f2dd69800de3c",
+          "bytes": 206599
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/7.jpg",
+          "path": "images/2025SS-008-4873739796d9.jpg",
+          "sha256": "4873739796d9cbc021b4a54e3f2eecdd88e3ddb25f85f1de22b52f9cbc32845f",
+          "bytes": 660012
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/8.jpg",
+          "path": "images/2025SS-009-da9e7b8186ef.jpg",
+          "sha256": "da9e7b8186ef96a275aec11b858e4a18aaadb55cfba8f232794ef602b95f6115",
+          "bytes": 795737
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/9.jpg",
+          "path": "images/2025SS-010-a8275db33f78.jpg",
+          "sha256": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+          "bytes": 822696
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-10.jpg",
+          "path": "images/2025SS-011-32b12221a734.jpg",
+          "sha256": "32b12221a734de3918650626168fa0ab71a47be2056f426df44a0e67bb1028b1",
+          "bytes": 299901
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/11.jpg",
+          "path": "images/2025SS-012-30632fa4d441.jpg",
+          "sha256": "30632fa4d441d90e4cab85ad186882a3429eb82c82e7033c0ed3413768ed1322",
+          "bytes": 575804
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/12.jpg",
+          "path": "images/2025SS-013-da9e7b8186ef.jpg",
+          "sha256": "da9e7b8186ef96a275aec11b858e4a18aaadb55cfba8f232794ef602b95f6115",
+          "bytes": 795737
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/13.jpg",
+          "path": "images/2025SS-014-ac5699ca77dc.jpg",
+          "sha256": "ac5699ca77dc9439f47a61f6510211816fa01b133f92398c11a53b7fee4a5172",
+          "bytes": 835358
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-14.jpg",
+          "path": "images/2025SS-015-9461567a17a9.jpg",
+          "sha256": "9461567a17a944956b85b82d2c05217527e48cf1ae1c2fdae1b4effff260e8af",
+          "bytes": 246708
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-15.jpg",
+          "path": "images/2025SS-016-28a09a0ae8b7.jpg",
+          "sha256": "28a09a0ae8b7d6f3ce99892d024161b92796e580ea2169079a1c463a296e545a",
+          "bytes": 195357
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20260202/copy-1770029610-16.jpg",
+          "path": "images/2025SS-017-96e80f8fa4f7.jpg",
+          "sha256": "96e80f8fa4f7156b5c9955d9b6ac60dea37bc4ca0bda75f97fc39b8468f9849d",
+          "bytes": 110360
+        }
+      ]
+    },
+    {
+      "seasonID": "2024FW",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=510&cate_no=88&display_group=1",
+      "htmlSha256": "826b0604e6c0569a903f46a2580cd801cb59aea715ba9cb81a889cf61e9af196",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-1.jpg",
+          "path": "images/2024FW-001-2283ccc5a2a0.jpg",
+          "sha256": "2283ccc5a2a053a5763dc9d6cdb6b24160af4eba80aa9c297eae36dc4c4ec9f9",
+          "bytes": 207965
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-2.jpg",
+          "path": "images/2024FW-002-5f35d2607af2.jpg",
+          "sha256": "5f35d2607af2c22e640d753c64490584a580a90ca0952a31ff1b6c8e7292ab23",
+          "bytes": 235800
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-3.jpg",
+          "path": "images/2024FW-003-b80420f728b7.jpg",
+          "sha256": "b80420f728b7b30ec9c00def70e42952e6a4b4f66e2743e8fcdcdc092156268f",
+          "bytes": 228502
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-4.jpg",
+          "path": "images/2024FW-004-b833a067b9f2.jpg",
+          "sha256": "b833a067b9f2e650c52458ef2b368552aa4081a243877eccb157ec93b4ef4811",
+          "bytes": 218087
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-5.jpg",
+          "path": "images/2024FW-005-1f83150445e0.jpg",
+          "sha256": "1f83150445e095c69544885f60af4358cebfda2c5f7d841d5e1c93596f8913a9",
+          "bytes": 219374
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-6.jpg",
+          "path": "images/2024FW-006-e1e949e3af69.jpg",
+          "sha256": "e1e949e3af69a5f041c958a89ea0d17de67a5b460d536678516f7bd97205462a",
+          "bytes": 226451
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-7.jpg",
+          "path": "images/2024FW-007-0cae18b56222.jpg",
+          "sha256": "0cae18b562220cbc3dbf5d65c82d54071a8a0a8b611785f29f0c7ddcf21f423d",
+          "bytes": 213433
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-8.jpg",
+          "path": "images/2024FW-008-36f570b50fcf.jpg",
+          "sha256": "36f570b50fcf85f5cd9dcc4f3cafbff048c98bb728972034af0811710ecbf414",
+          "bytes": 225669
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-9.jpg",
+          "path": "images/2024FW-009-1197412b6dc7.jpg",
+          "sha256": "1197412b6dc7585322327892a570433f419e28e2dba75925c2a00c3e4b675d41",
+          "bytes": 224715
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-10.jpg",
+          "path": "images/2024FW-010-282ae1c56343.jpg",
+          "sha256": "282ae1c5634355a0d73a899d868fff0e0ef30fbfd94088deedf52103f56f4693",
+          "bytes": 222314
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-11.jpg",
+          "path": "images/2024FW-011-72f9d20fabef.jpg",
+          "sha256": "72f9d20fabef747dd64ffe7d52fc2f326115c3f918d20dffb108fd9e4390d649",
+          "bytes": 224699
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-12.jpg",
+          "path": "images/2024FW-012-2e511d5a1e37.jpg",
+          "sha256": "2e511d5a1e3780dafff32aa8d221630ba5305fd1093b92a254f0b0cdecdaa541",
+          "bytes": 224651
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-13.jpg",
+          "path": "images/2024FW-013-b217a781a900.jpg",
+          "sha256": "b217a781a900e384eb4315509a85899240c7f452623ceeb12f2d33c16002edd8",
+          "bytes": 243702
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-14.jpg",
+          "path": "images/2024FW-014-a02f81448300.jpg",
+          "sha256": "a02f814483003a90725cdf39dfb13e51f5540d372728a4a69f84a69a6918824d",
+          "bytes": 215001
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-15.jpg",
+          "path": "images/2024FW-015-ab46b2df1da9.jpg",
+          "sha256": "ab46b2df1da9ea3fbf2d45ec39d670a9acb8907b4673cae0a52fb7db525ebfb6",
+          "bytes": 232303
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-16.jpg",
+          "path": "images/2024FW-016-fe651a78a396.jpg",
+          "sha256": "fe651a78a396a872806bbf909a8496610408b4583d206079557e3ccef614b44a",
+          "bytes": 228303
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-17.jpg",
+          "path": "images/2024FW-017-a6b8fad78cb6.jpg",
+          "sha256": "a6b8fad78cb6f1f4550ccca9da8731e03aeac1e1e4268b5acb91cbf366e55ef5",
+          "bytes": 221308
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-18.jpg",
+          "path": "images/2024FW-018-d22fa82d6738.jpg",
+          "sha256": "d22fa82d6738f479123228d0dd512ab456bd9e903ac44360a0d3b51d36a1e42e",
+          "bytes": 2109113
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-19.jpg",
+          "path": "images/2024FW-019-298156b0d08a.jpg",
+          "sha256": "298156b0d08aabb4880ee96f8cb32a04a06091a6d4de2478f7b6f529751d2302",
+          "bytes": 1738111
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-20.jpg",
+          "path": "images/2024FW-020-4011f4a1ffb8.jpg",
+          "sha256": "4011f4a1ffb8ad214ae3005f700e4a078c55c86ea32f8c80d14bc2c8acf0a25e",
+          "bytes": 2052476
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-21.jpg",
+          "path": "images/2024FW-021-b085a2de0c11.jpg",
+          "sha256": "b085a2de0c11b49eb0a89eb107f99b5eac4621d5fc7c96193985f5a5362c8a68",
+          "bytes": 1180269
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024FW-Unaffected-22.jpg",
+          "path": "images/2024FW-022-e40937e7cfbb.jpg",
+          "sha256": "e40937e7cfbb624de101a29660e16d743faf586ff180aa5af7e3a7c4220b69c6",
+          "bytes": 1623034
+        }
+      ]
+    },
+    {
+      "seasonID": "2024SS",
+      "sourceURL": "https://unaffected.co.kr/collection/view.html?product_no=507&cate_no=88&display_group=1",
+      "htmlSha256": "9b0498bc465308acbaf0784451c6e71acd4bb6e54758dad593b36866d24fcb3a",
+      "images": [
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-1.png",
+          "path": "images/2024SS-001-8110c8a016ed.png",
+          "sha256": "8110c8a016ed6083746bee1e0d4fea14ad73f0dee4cabeda8441eb9a889cda78",
+          "bytes": 899078
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-2.png",
+          "path": "images/2024SS-002-7ff2175f4a8a.png",
+          "sha256": "7ff2175f4a8ad899bebba8f5dd372fe5c3deaab957a1ad8ac27c69fb22e59527",
+          "bytes": 955639
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-3.png",
+          "path": "images/2024SS-003-96c75f0d1a32.png",
+          "sha256": "96c75f0d1a32c1d8eb8cdc8f46df4b77a93b79cc2a7896fad51d84417330a962",
+          "bytes": 878314
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-4.png",
+          "path": "images/2024SS-004-1b5bfd346540.png",
+          "sha256": "1b5bfd3465402d21b1c844c512f1b2b09e7657a93d4e9566a06f1c0ed0461032",
+          "bytes": 907593
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-5.png",
+          "path": "images/2024SS-005-d53f1de94127.png",
+          "sha256": "d53f1de941277153686bf8fd3e21b99d2913fda4f00240a384fc4aa545472c5b",
+          "bytes": 943831
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-6.png",
+          "path": "images/2024SS-006-a05e5d7f7b96.png",
+          "sha256": "a05e5d7f7b965d420cb27ba13007895b94c9116274f3b262d258ee9f9c4c5c39",
+          "bytes": 938537
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-7.png",
+          "path": "images/2024SS-007-f1f2edb799c5.png",
+          "sha256": "f1f2edb799c571140d151894a10c4f7c44b1408063d075054f7730cb2d3dfa47",
+          "bytes": 901527
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-8.png",
+          "path": "images/2024SS-008-73b87fd74ba9.png",
+          "sha256": "73b87fd74ba940289d8a87bd483423dac31154f7222bd0d72cb098d0989e6097",
+          "bytes": 967515
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-9.png",
+          "path": "images/2024SS-009-0bc714ad08fc.png",
+          "sha256": "0bc714ad08fcb15ec0cfea5b6f510fbf48002a616d63c1958682b7dbb462c0cd",
+          "bytes": 964426
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-10.png",
+          "path": "images/2024SS-010-36baff0f9b15.png",
+          "sha256": "36baff0f9b15f1ab0731b1b3125817bf772f5d0a15bb84a619b3754b9992f483",
+          "bytes": 910552
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-11.png",
+          "path": "images/2024SS-011-5b97fb968107.png",
+          "sha256": "5b97fb9681073eb66e7ebdf36ccf90e356dcd890f067b8c7ccfc70a94b8a7092",
+          "bytes": 899399
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-12.png",
+          "path": "images/2024SS-012-82310cd2aa31.png",
+          "sha256": "82310cd2aa3154ec9fef1eadb00705f44fc464803c13ff013bd5e7520917c9aa",
+          "bytes": 885098
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-13.png",
+          "path": "images/2024SS-013-423281063d6b.png",
+          "sha256": "423281063d6b8fb5661b897d7bd2d418c5ab0ffe24e82ca0be90589998c297f0",
+          "bytes": 921627
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-14.png",
+          "path": "images/2024SS-014-2a8eb1c1f015.png",
+          "sha256": "2a8eb1c1f015f1c96013df5a796585b99d206096cbfe719433c3b139dde0a5e0",
+          "bytes": 941409
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-15.png",
+          "path": "images/2024SS-015-2cf3e87016df.png",
+          "sha256": "2cf3e87016df148b7d1426fe8ecc51e5eb7c6358ddf58d0a26e3c7a096b89771",
+          "bytes": 932942
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-16.png",
+          "path": "images/2024SS-016-8fc63cd4ea09.png",
+          "sha256": "8fc63cd4ea09765559e6d0f887ad6c501fb4dccf69cbffb99037a8c9dfe7ad4b",
+          "bytes": 958194
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-17.png",
+          "path": "images/2024SS-017-9f569b65a2c9.png",
+          "sha256": "9f569b65a2c981ec388f1f578a053deea66b1fa712840f002c226cd7e7f50ce3",
+          "bytes": 889071
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-18.png",
+          "path": "images/2024SS-018-98b159a4b706.png",
+          "sha256": "98b159a4b706d79772501e79bac973618c3c5b10b0ccf65dff19c20b90c22f5e",
+          "bytes": 910965
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-19.png",
+          "path": "images/2024SS-019-bae1c02e1079.png",
+          "sha256": "bae1c02e107934b3870f36f759ee2774d1222809165309715c153a0cfb3d1b86",
+          "bytes": 931188
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-20.png",
+          "path": "images/2024SS-020-e31231119c9d.png",
+          "sha256": "e31231119c9d53422169f6ebd2e79c0fd3d0b66e2e87b9f9b2fd330dea24d8e0",
+          "bytes": 831774
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-21.png",
+          "path": "images/2024SS-021-08a2139c423b.png",
+          "sha256": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+          "bytes": 928786
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-22.jpg",
+          "path": "images/2024SS-022-90e579aa6e36.jpg",
+          "sha256": "90e579aa6e363a8f77eb92da80907cd686f73f92df1fb1abdba897bb8524c9bc",
+          "bytes": 195146
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-23.jpg",
+          "path": "images/2024SS-023-27838ea593df.jpg",
+          "sha256": "27838ea593dfce624bec3d61e48fe45aafe68c5fb622c2c83968211533c7a239",
+          "bytes": 226433
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-24.jpg",
+          "path": "images/2024SS-024-5ad7bddcdb8d.jpg",
+          "sha256": "5ad7bddcdb8d2c1c04fc6f2db6a64fbdbdc333609748cb3ea34c5e680ad19a33",
+          "bytes": 200640
+        },
+        {
+          "sourceURL": "https://unaffected.co.kr/web/upload/NNEditor/20251204/2024SS-Unaffected-25.jpg",
+          "path": "images/2024SS-025-93cc378f6aaf.jpg",
+          "sha256": "93cc378f6aaf684ccbb36f6685d79a49404eca49b32a101a4b8ef3f5eb9f6558",
+          "bytes": 665670
+        }
+      ]
+    }
+  ],
+  "covers": [
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202607/83ea9f2da531ae9d83969985fda453a1.jpg",
+      "path": "images/2026FW-cover-17fcf219eb07.jpg",
+      "sha256": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+      "bytes": 144053,
+      "seasonID": "2026FW"
+    },
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202601/899b4eb3c23b48f54b5b593751c118f8.jpg",
+      "path": "images/2026SS-cover-e819b7fa689a.jpg",
+      "sha256": "e819b7fa689a29b77203005871366ab2e12e2f48134ede9e65faaf752676dee0",
+      "bytes": 113931,
+      "seasonID": "2026SS"
+    },
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202509/a43cb20f57a06ec5ac985bf881f99a00.jpg",
+      "path": "images/2025FW-cover-05453239b6b1.jpg",
+      "sha256": "05453239b6b196fbd53768ed6c36d3a5f7efab96f382575ea63a4c0b074fbd9c",
+      "bytes": 222201,
+      "seasonID": "2025FW"
+    },
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202602/792e4c7c8daa234c28b79c558fe6cd50.jpg",
+      "path": "images/2025SS-cover-cb76e29fbc7f.jpg",
+      "sha256": "cb76e29fbc7fa6b2aaa640f2a441c95729e61483461e03b494d1b52820b4769d",
+      "bytes": 261564,
+      "seasonID": "2025SS"
+    },
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202512/4dc4d415371ea79bc589ed062c62b8e1.jpg",
+      "path": "images/2024FW-cover-9f5faa36eec2.jpg",
+      "sha256": "9f5faa36eec2a2600f083599226d1f6856ae36ecd555c7ad1e43bca6cdda3c14",
+      "bytes": 95976,
+      "seasonID": "2024FW"
+    },
+    {
+      "sourceURL": "https://unaffected.co.kr/web/product/big/202512/59b9dbc6fb6aaf676b6736674acf5b2f.jpg",
+      "path": "images/2024SS-cover-11537b6fe6cd.jpg",
+      "sha256": "11537b6fe6cd8375c39ce9d49a269e6b4ce858d9bcde380d9fa397422f9a581e",
+      "bytes": 109820,
+      "seasonID": "2024SS"
+    }
+  ],
+  "golden": [
+    {
+      "seasonID": "2026FW",
+      "uniqueImages": 24,
+      "uploadFiles": 50,
+      "uploadBytes": 17494855,
+      "assetTargets": 25,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "d93fbf58c1d81a3c5ccafb556161f62b8429f07dd39f2490a5a82a6e4167425a",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 35463,
+          "sha256": "53b3d1bfad6522410a67e1fa7a7482fd88ffe1452d8bd47b9346dbafd9a72772",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d93fbf58c1d81a3c5ccafb556161f62b8429f07dd39f2490a5a82a6e4167425a",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 431110,
+          "sha256": "a4ee1cb0a5f8e4320d8830a4967057e5b035a1973b9f511f491081dc0e9fb702",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0b78c4a57373adaf5cd3e081a3f2ba3035a6a06e447b95374db7d162d0412878",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 59376,
+          "sha256": "56d58f7a2a87623d2d46a7e245f76d1e9ce8f9f63e693a5fbc0196836ee99637",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0b78c4a57373adaf5cd3e081a3f2ba3035a6a06e447b95374db7d162d0412878",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 580314,
+          "sha256": "634b8f09997c8a5476ac875a6ef1ae04bf08dc9a455284022248c14aa9e39d8c",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ce2ea4986cc861f29880e42ca5bd1ab76a3c188750bd37ecf1f7b18bbcc3e52b",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 33895,
+          "sha256": "8480599f9bd9d71072bfe91bfcaf28a6b64560a091d29c9038ec78cc1b86e1ca",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ce2ea4986cc861f29880e42ca5bd1ab76a3c188750bd37ecf1f7b18bbcc3e52b",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 428377,
+          "sha256": "b308ecaf0e97e899e43e72e1ed89c86a27d7257f1b87e462426c195807fe4be3",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "3d0207659091d251b70a4cbc2420829115b922b8547d63f9ff3e416396d85bcf",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 67852,
+          "sha256": "ce86d3b89268c71651058ca19dc8727a4da7bb0c93b1e41d72c4983523f84934",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "3d0207659091d251b70a4cbc2420829115b922b8547d63f9ff3e416396d85bcf",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 588333,
+          "sha256": "a656a5b186a8882d6e5218c8f49e62bda9dcec44996e417c51e74bfb1c911580",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "20db7dc09789cd306438303351e5bf23110edb871ca14cba09cfd8f9cefc27da",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 70759,
+          "sha256": "732e37a61bf4da6cfff2daa2cfead5a1ac669f77d19f6a14e22d40410da019ed",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "20db7dc09789cd306438303351e5bf23110edb871ca14cba09cfd8f9cefc27da",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 673730,
+          "sha256": "584b5f85f220e841b5c821f87d432c473a0654ec9f119ee749d8352b6635dd88",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "edeec6494db14719209a707655b26eaae4e5fcef2e5e7d5951a3db3b08b61015",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 123263,
+          "sha256": "255d142e3d4253ef92fe58c8a6ba425b657ac5a2d4074e0082b7f5148729e518",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "edeec6494db14719209a707655b26eaae4e5fcef2e5e7d5951a3db3b08b61015",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 956735,
+          "sha256": "ac4a65f8c156118c26277d9265c10a57e7e43e834eb202ffd86423a63ffb8c71",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8da87560d74eb8f47ee50dbd99124a551a82ed5496defc4c0bb6797c151fa232",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 84857,
+          "sha256": "63e681bc8afe6d70d17b213d81eec5c0f676665102a72117cd1fbb3ee470614c",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8da87560d74eb8f47ee50dbd99124a551a82ed5496defc4c0bb6797c151fa232",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 732369,
+          "sha256": "efdec6d365b99712e120065212dac76010c3d80e5b332f097dd86bc9721ec55b",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 54302,
+          "sha256": "cfd1f5b5682295abd073f88434fdcc86be2685ccb2f5d730231d1be79f3d4da4",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d2ac404470c25c225e6d9b38ba48b859f33b381bb54549368d616ccfd58fbb46",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 671130,
+          "sha256": "37bca3a96da6bffc926695f060764b9d1704425bce9279ea13b6fb8e6f120f89",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2f96fcb2470d3a257607d29a1c7c95b7cbed31282304a3bc7e98690cb829b1fa",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 114627,
+          "sha256": "971515e44ed8f758ccca22a68fbdbb11f001b324fcbb4b75ab646c1dc94afd0f",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2f96fcb2470d3a257607d29a1c7c95b7cbed31282304a3bc7e98690cb829b1fa",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 892282,
+          "sha256": "288fc73270f843bcb0169c9f3def2d05222f5b2370d47db0d652e18a9acdd47a",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9d02db7e2046e76bc136a4e8a56a1e1cf5955f29d1acaa619868a8631f20701c",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 92978,
+          "sha256": "1319a453b19765c792c5ba3e313faef4127f6cc3a893e2d44b41f91f6698db9b",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9d02db7e2046e76bc136a4e8a56a1e1cf5955f29d1acaa619868a8631f20701c",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 654543,
+          "sha256": "07759d0bd6243a46c1d99e970df47011daf0574ff3dca74432a3f8f9037e537b",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1ec2248c049cf8ff401bbf5b275d90419ae933ce0f8d3c6ee2e290d816d2c37f",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 91780,
+          "sha256": "e28cfd31c10016c46577d5f7b1965e3317196714f2214a83bae6e2abde9cf9e7",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1ec2248c049cf8ff401bbf5b275d90419ae933ce0f8d3c6ee2e290d816d2c37f",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 787634,
+          "sha256": "943b0a11ab04551a633babbadbcc9e3026a3501f938d740b2ae9dc57da6c3213",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "627dcfb4916f3541554ede36c19c2571c65ee99301f7233f5dc46a3a07089fee",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 58085,
+          "sha256": "1724f11e93ced40f6e46d23002554852e97d0477830f0cffbce67924070643e4",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "627dcfb4916f3541554ede36c19c2571c65ee99301f7233f5dc46a3a07089fee",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 593081,
+          "sha256": "b77a091b0a03c826f16bec1d59610445f93f2937456ba87692c009fd1524312f",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4dc903b2eab317c928b6eb850ecaaf34c72b055ec44df336ab057d51e3efef31",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 111141,
+          "sha256": "3336a36266cd934199ba7e13ed89fbd51470af5f3b0901284dbef44e525bb0b2",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4dc903b2eab317c928b6eb850ecaaf34c72b055ec44df336ab057d51e3efef31",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 830885,
+          "sha256": "3cae12dc05e82c83e031cc29059bfc05d917d4c8dcc280a3068a0cc01acacf72",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a922b2dea354dd94c9fdbea36877e790a6c02015d47bcf56417ba7ccca80c904",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 109755,
+          "sha256": "c2388b8d458d9c23263437682848f14666926f6d8232c735734eed6dfc4fc3bb",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a922b2dea354dd94c9fdbea36877e790a6c02015d47bcf56417ba7ccca80c904",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 857772,
+          "sha256": "c701a4922d25adcb89a99aeaae694a6bc6833e422a355fcca81514753ba6d044",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4c0a4691d62819b7cb34d073aef9bcaf5a318c89ea420daf7d8f9af51b570e27",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 135107,
+          "sha256": "8be7363c06726e08a726472b345afe6e503079e65741ee0ba5ac2684dbcf2ed3",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4c0a4691d62819b7cb34d073aef9bcaf5a318c89ea420daf7d8f9af51b570e27",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 1040025,
+          "sha256": "bbf10fbaebdc28b070f4f70c7e12d63bdf18a530fdfcca9db08059bdcb91c336",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "25c67c03a2e3362827a19539677514b31383e9ffbb6d50c9fbe81d2bfb86fe8e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 36896,
+          "sha256": "00b1ae82de3718c6e3b25b58fdc0b2b85ee07ca77df8ba75cd090d8f9f5746c8",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "25c67c03a2e3362827a19539677514b31383e9ffbb6d50c9fbe81d2bfb86fe8e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 425012,
+          "sha256": "f77e18eff392f35717c3009170de162c9ef8c4995409cd372e4dfc266f8dab41",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "35a2c809e22b28e6ee82a1eca6a2fc1c4d24fbcad2ead10c8ab9c4cec6f6024c",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 89564,
+          "sha256": "7cf24565e1c7149b5fb63c9fd2a634c37838d33cc8237604afb50ea6c361a35b",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "35a2c809e22b28e6ee82a1eca6a2fc1c4d24fbcad2ead10c8ab9c4cec6f6024c",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 712189,
+          "sha256": "5ac91aa6909f556da80b503f8f797c281baa8b31eb77f03975c7c6830977d930",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ebd9c899faa8dd075c28eb3eb92d30ffee3a2fdaa2ebd902830599d86cd5313f",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 45964,
+          "sha256": "c2ff672f6f013ee4433b36c8107a6e13bb348b22db517e63bdea31e9c6eb2c2c",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ebd9c899faa8dd075c28eb3eb92d30ffee3a2fdaa2ebd902830599d86cd5313f",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 464945,
+          "sha256": "cab7ceba1dff43f685a70cb5bfd076d75bd1a436cd6ec06e018ea6cfd7d42964",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a78eab4cc87ba9946176df43ed1c64d6081dfe3990fabdff65f0575323ec32c3",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 43140,
+          "sha256": "71e95d0660e28282f2c60fd570c1a745251d0bc8fe474136108aef0cd89f149c",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a78eab4cc87ba9946176df43ed1c64d6081dfe3990fabdff65f0575323ec32c3",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 441369,
+          "sha256": "dce2e2ca26c902f88ff7747a2672d13cf2a8b3f90287a90f449a4cbabbc34632",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "79fa802e2634fc0305158344336bf0c5eccf8be6b445dfd901528421a54c4fa4",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 90116,
+          "sha256": "7d0e48a099487db05c7b56facc5e61cde90ed6aedae196f87dcf8842d24c59fc",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "79fa802e2634fc0305158344336bf0c5eccf8be6b445dfd901528421a54c4fa4",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 795154,
+          "sha256": "7e22f11d19a9f4a12dc75cfd3ce7af011f2f2d438a3966d9aedc1cdf00dfd740",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "98d6e093d30039e196f4f762ee5c56a3243307c830079b341cb2e94f8b9a70b2",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 42949,
+          "sha256": "cff5166d2e4ddcb8b8dd1d5f7ecc59445b4c131a0e10368cda90707a64caff3c",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "98d6e093d30039e196f4f762ee5c56a3243307c830079b341cb2e94f8b9a70b2",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 446475,
+          "sha256": "b565e5b404997e1a135d3a3ce18e67e0b4b8904f808b7eb87a6f56c575b58833",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a2182427c3f46660420d8eb447d4fb27aff6b0423ea51d839d8a98d68ecf0e5e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 82561,
+          "sha256": "c43ed19b77b9b91e8c9b1626e03c011a131e7f9bc9fdbae8c178025990538fe8",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a2182427c3f46660420d8eb447d4fb27aff6b0423ea51d839d8a98d68ecf0e5e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 639556,
+          "sha256": "1fba0dac9023eb03340accae4fab349a81f1950fec3f76a8d3f6b5602bc604c1",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f690755a4869e1383960515cec41c6bcf17c75bba6c6f3a5722789b6a5bb27ab",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 37820,
+          "sha256": "b4b9ff107c188f6cdc447d7978eceaba241cae887960cb769172c35a4c67b256",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f690755a4869e1383960515cec41c6bcf17c75bba6c6f3a5722789b6a5bb27ab",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 439193,
+          "sha256": "7bedc19d01cd5c68bb6ff9e84bd5cf526ff24a4b15d364e962058de7136ed5a6",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "641e14a41a999315d045b64a7400d13f2479ff24df2d933e714e48e331f704ef",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 56432,
+          "sha256": "9ec4b08b545c22e2306178d90fb203fc8893e8d093120633dd19a4b27900cd23",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "641e14a41a999315d045b64a7400d13f2479ff24df2d933e714e48e331f704ef",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 546171,
+          "sha256": "49bb703947ad7b8076d6fb35836f61032bce06ed01069f769e8204703aeabb12",
+          "width": 1536,
+          "height": 1920
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 15937,
+          "sha256": "322899db005c7e2738b74b5fdb357279592a901b3d5c8dce3cd4f43edbc6f5d5",
+          "width": 410,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "17fcf219eb076e8ae3650ebfc08c9a9b04e299b116feb068143e4a43c402d467",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 81852,
+          "sha256": "90c2905a61af2b00dcc0e26d6c1b35befcdcef51552f91b28708890ade15678c",
+          "width": 800,
+          "height": 1000
+        }
+      ]
+    },
+    {
+      "seasonID": "2026SS",
+      "uniqueImages": 30,
+      "uploadFiles": 62,
+      "uploadBytes": 2353608,
+      "assetTargets": 31,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "730ad07def61a913935cb9a0097716421f020d0ba37311cd695ab36ae8300dac",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 15375,
+          "sha256": "4559c07519883f200b907c560592ad7555c9f457983b2950b0242c4827c5a7e0",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "730ad07def61a913935cb9a0097716421f020d0ba37311cd695ab36ae8300dac",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 21583,
+          "sha256": "d21bc2ee94fe9849ab59de53ae8ed2eeec4d9df7ae66822a719132b02d8a2ffc",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "cf548f24eb28f18245dcf8a8f1fc91491ca4257c9c5ce5863064549bce18bd2d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 18285,
+          "sha256": "087f91d91d5aaee0d3d4f819cd66b155b9164a273f02968ed2074ffab1992bbe",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "cf548f24eb28f18245dcf8a8f1fc91491ca4257c9c5ce5863064549bce18bd2d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 26114,
+          "sha256": "36b276be89bb0af4f0bb294ff0bbd4187a398b263e7e006d014fe139d624bca4",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0c4b1d4b1ec6d5fbe3140dc1ce704982583f3f490de231e15397d277447e1124",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 36187,
+          "sha256": "a0ec8fdbfedc31ebefc324a28373ee50b439d7779570174cd694a9379b4505fe",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0c4b1d4b1ec6d5fbe3140dc1ce704982583f3f490de231e15397d277447e1124",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 52591,
+          "sha256": "5e10bcbc58d0f38189a922c1603cdfd16424c1309acc9beecd6c37c2833603a6",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "7803a780fed2be98b68cd7fd62e385cd972e535d56700ab841ab2c9f1eda62c9",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 29485,
+          "sha256": "d18799edbbee3cf2c05c0318c032dc7d24743b6c79a906de81d79929ca3a7aed",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "7803a780fed2be98b68cd7fd62e385cd972e535d56700ab841ab2c9f1eda62c9",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 42046,
+          "sha256": "22e63a8ddf67ce039b1796c44f69a7c6b9272d7988fb13a361ac30c998bd4ce0",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "496b162f12418a3471828f70d6a66dda2f785d96026f8bbfc5ad17e7138e5aac",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 24596,
+          "sha256": "5973dcf3e60e241b17c0efadaecd2bde5eeb9e1055394a9c7d90d27bfc82a695",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "496b162f12418a3471828f70d6a66dda2f785d96026f8bbfc5ad17e7138e5aac",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 37016,
+          "sha256": "2e3168320d9011558deb1355e95cd44eea93add74812d83eeae9766616b8aca6",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "09bb1a4821d08a0667350a179e710ee296a25a8194dd6dd2cd6039638c03854b",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 23744,
+          "sha256": "844a3d2fbeb257636aebd89488b1c9e8787f41a9c73b7d3baafb78f554d47280",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "09bb1a4821d08a0667350a179e710ee296a25a8194dd6dd2cd6039638c03854b",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 34078,
+          "sha256": "752aa512e3025f91a100038fedf5f47427b452aa0629dfaf257b3405a41e6091",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "3ba9fb0f3c1c91c0ed00ff494ccc645d03a5d3ec09db5d971ab97f453166fd3d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 40442,
+          "sha256": "3164f165fb1c81889d88ccb5157a6d48367a02086f8ea8dcbb40e86af9748b23",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "3ba9fb0f3c1c91c0ed00ff494ccc645d03a5d3ec09db5d971ab97f453166fd3d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 58827,
+          "sha256": "f7a72766adf2532dcc0dbf259907d16994aa1a3b00cf57e199b9b250db205f5f",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "aae3dbfc52c7fac101a1d209e247e6220519c15433b37da0eb458185fcc14e6c",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 21929,
+          "sha256": "e0358b3dba68c1b8572884f504ea20e9e71cc01d05dc2bab62e15fe957c9b626",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "aae3dbfc52c7fac101a1d209e247e6220519c15433b37da0eb458185fcc14e6c",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 30040,
+          "sha256": "1365f9d25560bfc650ed7b68fd80154de6db412e5d6c9f365ce5b9f5534598ab",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4b242a67d9d18ab94d5465fd464860fdf0d2e4d6b29f40b1d8ea759de3c5b036",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 24254,
+          "sha256": "00f22bccedbf2ac9b333b27458f10993f24d65a4cafd6228e770f83698a47e87",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4b242a67d9d18ab94d5465fd464860fdf0d2e4d6b29f40b1d8ea759de3c5b036",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 33869,
+          "sha256": "c1504edfc0ccd19789dc58d6e9001b8bee3f446149c02491a8e3135ff13c3cb2",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "84503e1263856e33178cf6bb180bab62427c11c00a31e36641ee9d1b4b872135",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 18501,
+          "sha256": "90918e7dc5ee39481dc12b50434a4ef7401849d7cb597e32edf752edeed6c0e2",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "84503e1263856e33178cf6bb180bab62427c11c00a31e36641ee9d1b4b872135",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 26161,
+          "sha256": "842c7ea92f6edf8363871bb4acbd9b5b694f77595e0f1bbfdde108eeeb3a0f87",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d2208cc9b22c861fa4f7f249b0e15987560326eb3782b2361aa6a0a9d33297b3",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 13359,
+          "sha256": "e42db1f80bcda7777a917d14eebd73f29f59642f93d5adc5ee42e857e6da0905",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d2208cc9b22c861fa4f7f249b0e15987560326eb3782b2361aa6a0a9d33297b3",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 25552,
+          "sha256": "e56fe8f527024289323e3694d046bccc5cf13da725b007937083bad723829c87",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "04fae4d6449098165286ddfbf3983c418b63a9b31bacf41f279de7ff9b08abf5",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 23284,
+          "sha256": "93b348ba36b5ec903d742891de69117682b63c92a00a040ca753cd517496b091",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "04fae4d6449098165286ddfbf3983c418b63a9b31bacf41f279de7ff9b08abf5",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 38809,
+          "sha256": "1ea1aacd50dd85462bc096e802f2677c02022dbb729aaf9c5997551d6004a827",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9f6ebca8e40684642515b9b5f64ab581aea2e53982e62b84f2290c62aa51ac8b",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26156,
+          "sha256": "6611640371e949a82843fa218ed4b25e87ca1f94016a623ac32a2fe9ea47a311",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9f6ebca8e40684642515b9b5f64ab581aea2e53982e62b84f2290c62aa51ac8b",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 43304,
+          "sha256": "2f0570e00a97a8e5e8c7b1c39a13cc164de607e000817e1f805e68fffb8d84ab",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b00cc982860ef3b42e180f502ad3421e217a2acfc2f3ef41f5f376c44e210d6e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 8299,
+          "sha256": "fa62e3a7a835496e8e7f31d2b0b5ea33d28c09486b3ec5d06700eda74b57e071",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b00cc982860ef3b42e180f502ad3421e217a2acfc2f3ef41f5f376c44e210d6e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 16116,
+          "sha256": "23c56d1d142901679be4357096288b2fc618fd4084de6272a4ab3c60639ce008",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a37337a8717a6b521a7b2c77e9143b60d3776c6cc7a117d02cc35d0343beedee",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 25994,
+          "sha256": "0392f05481d9ed513e2fa99101801acd85505fb729ac3ddff4f318a8b491e4ab",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a37337a8717a6b521a7b2c77e9143b60d3776c6cc7a117d02cc35d0343beedee",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 36540,
+          "sha256": "bc5f214c1f3fe8185cefe851756206cb54e450e73079be5e084fe64aa4120a89",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "07a8d8780b8c3bc24c9c43b36f4c42b019be0adfb2eedc7c12dad94d00938af9",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 44795,
+          "sha256": "b2a8471a3d698045a9f73c40d0717054a22c7c4fc794968bbd465bd8a175252c",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "07a8d8780b8c3bc24c9c43b36f4c42b019be0adfb2eedc7c12dad94d00938af9",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 63560,
+          "sha256": "2178979e4a7637cbd6f8e3ecb14d76a07531ee7a24a976b3038cef5be9836189",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b499429e6c75e4c20a5b5500025b4e4feee77eebf602f249e05db5dd5c76f206",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 33136,
+          "sha256": "5a74fabdce30b048d59aa2d743248cf8b5570e44a6c22396f53455b8a2bdcb6f",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b499429e6c75e4c20a5b5500025b4e4feee77eebf602f249e05db5dd5c76f206",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 45394,
+          "sha256": "6f6462e8a46623eb366bbac725ed7d05bfedec3bd4bac9ff5ac69461c53046b2",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8bcdd4e9c58bb0ea5c7d512c9b2c71fc4cd66352ad08e203ac272c56d74cae7d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34955,
+          "sha256": "2870350cef48cc509af9e25485b9804108b5c8be7e28e24b81e15ddbae1b8d4d",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8bcdd4e9c58bb0ea5c7d512c9b2c71fc4cd66352ad08e203ac272c56d74cae7d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 49328,
+          "sha256": "1d1303eb39dd61ea015b847070216d33fc984a4abcfd45bb6b27787f0b7f8b70",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "04569f5fe60db8c3f1637f0a35dd8c7185a7fafc7c1ca482b7cbe7a4f48de253",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 62708,
+          "sha256": "cae158745dfde521c3adeb3b1f0f01bd1c30931c46e3a3385e27299ce9411bef",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "04569f5fe60db8c3f1637f0a35dd8c7185a7fafc7c1ca482b7cbe7a4f48de253",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 89411,
+          "sha256": "3d50a1ed76afd50e974b69735b88e4b0c4a2f78d87dc510c729b5761a5f58dbc",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5e725542033c4c93cec9c373a3a10dba6581d81df06e9fa1f40003779ec13d3d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34757,
+          "sha256": "c002ed2fbed5f915f8ddc2ebc1300fb3182ee06f4d816e316d1798619af00719",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5e725542033c4c93cec9c373a3a10dba6581d81df06e9fa1f40003779ec13d3d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 48729,
+          "sha256": "775f2d39b2a1730b59644d98424b0fae7288efb0d4ea4feeff95f7a177baf32e",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "47ab3dcb414c5d7d3990ae57e9dc53d8ef8df6028844934c9c4df4ec7a22dc76",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 40271,
+          "sha256": "a86d434fc8a34911daec454b784ccef3c2422236b7c88ea53a5d3ef049385ac1",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "47ab3dcb414c5d7d3990ae57e9dc53d8ef8df6028844934c9c4df4ec7a22dc76",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 56043,
+          "sha256": "91da028f4143de7c7fd886d080e83dbcc9f271780b02483f70d7bc4e9ed78dce",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "df602eecadf30bf9f4f75492597e573dad1fc7bf6a2a1be2334c8df9df326cfd",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 30514,
+          "sha256": "d951074b5358b9fe503751fa1b5873601134c90ef80ebd0810c0e36a539a212c",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "df602eecadf30bf9f4f75492597e573dad1fc7bf6a2a1be2334c8df9df326cfd",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 42245,
+          "sha256": "b61aed0d735d905d1faf4deb91db2db5b333da995ebbbf15fe84a23310946ad7",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a30650e6e619dccd3801e2d6b8412c193ddcf8b8fc6bc8152816873f3adab9d0",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 22888,
+          "sha256": "a44677af892f0f3e645051888ca34723c3abe501416415c0657dec4e913e62ff",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a30650e6e619dccd3801e2d6b8412c193ddcf8b8fc6bc8152816873f3adab9d0",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 31869,
+          "sha256": "fbc44ebe21dde6ad5208b5bc93507e63e5e741f97304c8a89efad8fec2498fdf",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "49e14480f45e8440c7da4511194878eafaf83c189de9b8ea30d460367ad790d5",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 24078,
+          "sha256": "28863d979c16edef2402958fc070e16b6be257596ca9aa7c76f5f49d10befa21",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "49e14480f45e8440c7da4511194878eafaf83c189de9b8ea30d460367ad790d5",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 33570,
+          "sha256": "f050ce7cee4afba1a13477eaa47672c47f06f53022f7d903dd465e16648f7a7b",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "569e2b0e9c09b7e2db088a35d3865f0a8dacbe0f9331a92b21251fcbe50156e7",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34860,
+          "sha256": "4d7e4b681bcc84511927bd6ad897d03616985637643bce69cfa019e393a536d4",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "569e2b0e9c09b7e2db088a35d3865f0a8dacbe0f9331a92b21251fcbe50156e7",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 43896,
+          "sha256": "4548d36de798283e3814a22b6e07991627ab766d0a74b5c6c82ebac5c15008ad",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e13b36184610ec9b43e85bd90708f8ea710e3ea45edec44eafb4f33004cb6b85",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34729,
+          "sha256": "fbbcfc8e37ec5fcc321d0315a173c86edf96bc4d77ccac0794e8c03d2d3805f3",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e13b36184610ec9b43e85bd90708f8ea710e3ea45edec44eafb4f33004cb6b85",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 48710,
+          "sha256": "81ad805fc4d3dfcff6eaf6d671b44039c5a550d00083a79445cd494d93cadfbf",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "348d9267c0bb1a2a5a95aab51c3cda6b190fdded531c03217fd59c43a3093e25",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 35245,
+          "sha256": "a67ff527c4bc542446b2a205df41ffe8c62b9dd1f5a36a47982c0e7e582f92bb",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "348d9267c0bb1a2a5a95aab51c3cda6b190fdded531c03217fd59c43a3093e25",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 51740,
+          "sha256": "32b843ffba3f3c5456f7e0c55fbdc29192de55e4bdf8dea9384a0158d24abfec",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5aa7dfb1794998eb4884b2d835836f288681a357a11b68ad0f27536f8684b606",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 66152,
+          "sha256": "cee72bc3f8a04b02575b323136caa1851b6c583f0b1a50b691f6e1f1d8e24857",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5aa7dfb1794998eb4884b2d835836f288681a357a11b68ad0f27536f8684b606",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 95206,
+          "sha256": "9e54a0f464721bf6436ce34f72ccad5d2ff89d2781a459a31f1a62a3199b351b",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ed4f74ca1a2b7e825af59b4765d2be04739f85721bd37e60892435c07245112a",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 56865,
+          "sha256": "d67c950041863bb9c62347b5501b2529f79f100c16cf59c8a508f4a545b01624",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ed4f74ca1a2b7e825af59b4765d2be04739f85721bd37e60892435c07245112a",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 79542,
+          "sha256": "c712744d6c5f4b297c43e77e7685df3685fb4266bf13048f622378eee7dd9097",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1d5662a69e1d674a570d6b71d31e9595d49e19519bfb7b8d1efc13ebccc7a161",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 33597,
+          "sha256": "b600a7756944f2238481079fbef1b814268fc33044eb9c6f201d8c2fa8343bf6",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1d5662a69e1d674a570d6b71d31e9595d49e19519bfb7b8d1efc13ebccc7a161",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 41920,
+          "sha256": "ea165c7d30963ada6bb9830e3d6ca90e17baa9c8c4a088e073f8da2184b74e1c",
+          "width": 540,
+          "height": 675
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "e819b7fa689a29b77203005871366ab2e12e2f48134ede9e65faaf752676dee0",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 9981,
+          "sha256": "fbd99a9e1d9ee82baa288872f0dc985a6c2e4d1fb876018db2df88e330da06ee",
+          "width": 362,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "e819b7fa689a29b77203005871366ab2e12e2f48134ede9e65faaf752676dee0",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 60378,
+          "sha256": "9564d1e44527763a63ad74d29d22bd07ae1e7c22ced434bd6a53f07c54839b3e",
+          "width": 707,
+          "height": 1000
+        }
+      ]
+    },
+    {
+      "seasonID": "2025FW",
+      "uniqueImages": 14,
+      "uploadFiles": 30,
+      "uploadBytes": 6089773,
+      "assetTargets": 15,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "a7d7c757433e16f772ad9dc01fe545997902b20bf5e217727a1af57e99b683fc",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 40167,
+          "sha256": "81b1cd3c40fac5022a6967cdedb03b6d69ff891bbd1442df6a164d845129e957",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a7d7c757433e16f772ad9dc01fe545997902b20bf5e217727a1af57e99b683fc",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 326903,
+          "sha256": "29f7c5fc7d96e970fbea6cd9d8400433a651d5f6657cb8b4a334ce88ece4e9f6",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2e937b43a30becc297f8c9752cfe9bf9d296c4a7da16dd9a091d7013ebc8cbc9",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26921,
+          "sha256": "959847e12fa2187a4cf21faf9810d74bab882c6663aea0d299562f1b031258f5",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2e937b43a30becc297f8c9752cfe9bf9d296c4a7da16dd9a091d7013ebc8cbc9",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 250977,
+          "sha256": "c00980a7d5a9dbe871e7e282f46497b3c3f29b58b82930a150fb3302f08e321e",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "72e15413367bb429f94be3abbc5570338980df392cc988a4414f38cd3bc6a5f4",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26024,
+          "sha256": "620f7ba1858a1f25fcc0dda8bf8df067b5b06092c54e651b948df8e7f42cb4d0",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "72e15413367bb429f94be3abbc5570338980df392cc988a4414f38cd3bc6a5f4",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 271201,
+          "sha256": "c0c1381edad38c7481f69ca90b3fac77b7b7932f4396f2e14eae8c7af38baacb",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9fe1b3e6bae34bbe18b5e4ffd470e3fb7d7b4f99c45208dd9a01191aefaa76f3",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 25058,
+          "sha256": "00c10f63024793b139e679c300558188fad645808398cfa1f97415adafabc527",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9fe1b3e6bae34bbe18b5e4ffd470e3fb7d7b4f99c45208dd9a01191aefaa76f3",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 220172,
+          "sha256": "28e9e17eecbcf83b9653a6776018205a1cb9e72df462d93e75bb27ac74229ad3",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "956b27774952c4c4931fa4d6f69f1abdcc69884cbf1b4fb1f6a323d7b7c86254",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 43036,
+          "sha256": "1621cf371061165383412ff8f70befebc0425462c7d4e51c65c82e063cbb978d",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "956b27774952c4c4931fa4d6f69f1abdcc69884cbf1b4fb1f6a323d7b7c86254",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 334815,
+          "sha256": "e47cc9aff2f38b5df19c90fa09a927d10ec80260a71045bb2945e63b9b85b6bb",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31332,
+          "sha256": "603b4223492bc8433c2ffa7e7f33dfdd7969047fa2f7ba3544fdc2c3c73611d3",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f9cfca2c3e1da52e8d6ad18867fd7e0fd0861bb31767fe5b7295299cd0da1155",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 304530,
+          "sha256": "458430ea55b3d7744015d18ccbf9907302264a76fe072e55be73eaa04ed0ed82",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4fdd9f3dd32852f2608f760d09d28c557d034480d28df4513a69b5a4c3ebe975",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 39665,
+          "sha256": "0d06d8c32ff2a4a55ad45cc0236008c25ffcb51b887ab149e3e466800e23d03a",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4fdd9f3dd32852f2608f760d09d28c557d034480d28df4513a69b5a4c3ebe975",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 357326,
+          "sha256": "93006a4e753d3e9108e2a482be1528dd4c3d88af032bc1bf74242da9125e11e7",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8783f57a6a424cd42761740dd5b54e725d95f69df9bca063e8cf04ebd9eb5812",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31684,
+          "sha256": "48397c1e6ee6a780e58c027ef2a91d655803783445996ea8ef991c24be99f7f1",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8783f57a6a424cd42761740dd5b54e725d95f69df9bca063e8cf04ebd9eb5812",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 346162,
+          "sha256": "8c5324833fe8e4e0609c770b99e58a995776aa265d35ecc0333deb0e2ec13e18",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "30c688997d2982b7ac2d39c1e7ae8e249f481e45d3fe2f532db75cb65e04313e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 71366,
+          "sha256": "ed34c2cdda510039197c1da5baf060312942d1ccafc0eeef1736234311380ac3",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "30c688997d2982b7ac2d39c1e7ae8e249f481e45d3fe2f532db75cb65e04313e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 458048,
+          "sha256": "57c1be7fdc860fb56ac8a08706d9b108ee8ac47afef17f16fb9c853ff6c4ab69",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4bcbaccac7e3080466b2f586d9b507273510f1101db59c24571a36ec6e678ec0",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 68994,
+          "sha256": "335f4b70d140f6b059abf545a09ff394d3f0a6744f955c91dbc696ed654254d1",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4bcbaccac7e3080466b2f586d9b507273510f1101db59c24571a36ec6e678ec0",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 556848,
+          "sha256": "bf28006992ac353955085f546e7073fc61b6486bc0ef2fe6c7b7a905f03e94ef",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a87eecce50353304ecd66cc5aeb4f7268269f489130edd616b0a65c51acfe363",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 50965,
+          "sha256": "17e11fa41b55f9c3bfa222c295c7e6d97b0ba2f8b563bf1818cac353cccb555f",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a87eecce50353304ecd66cc5aeb4f7268269f489130edd616b0a65c51acfe363",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 408516,
+          "sha256": "61b4172735f8a450dc7f6c74b7ec4ca98d0c00bd027daf6412bda923411cc7ba",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5da35da0def70e1e403adeea05eb6d3ba95e451bd33de9ef46c8af14e9e3df7c",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 56152,
+          "sha256": "dc1712a4c07a83a8dfeb231a5192f792fb9f29c33ec385e8e866a98aaba5a24c",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5da35da0def70e1e403adeea05eb6d3ba95e451bd33de9ef46c8af14e9e3df7c",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 483260,
+          "sha256": "187fc01fad53e4f0ac08507b825485e87a6e8ef4d139423a82400056951d1d54",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9d34a865502e894b4b1b0b8414fee1acae0d7e2c7e9b832cde50c882826bdbef",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 70607,
+          "sha256": "59736d2a5fa832dc72ab169eefaddf210e7f4efe01cadf9f84ecf62b975c2156",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9d34a865502e894b4b1b0b8414fee1acae0d7e2c7e9b832cde50c882826bdbef",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 549337,
+          "sha256": "71a200394fb2f4a39f20900543ba857cd9a8392ee93662296b331e750cf3b6a3",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "27349a3aeba98fc82ee14b8044d194b6e9338643d1f08532b2447242f25d8fec",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 46135,
+          "sha256": "cfa3b9b36ec2164792fd015e5e084be3235bfbf223ce865195bed0c4e0ef619a",
+          "width": 576,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "27349a3aeba98fc82ee14b8044d194b6e9338643d1f08532b2447242f25d8fec",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 420721,
+          "sha256": "6d07b6a86e1d3692cafc59237e671584011a1865e818ace18d4ab609796d4137",
+          "width": 1440,
+          "height": 1920
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "05453239b6b196fbd53768ed6c36d3a5f7efab96f382575ea63a4c0b074fbd9c",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 26340,
+          "sha256": "eeb0ef7244a32b90031c1071bbe0cd22529982981a4c81767e8cf0a53a77713b",
+          "width": 384,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "05453239b6b196fbd53768ed6c36d3a5f7efab96f382575ea63a4c0b074fbd9c",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 146511,
+          "sha256": "ccc79e83bdc6d979aadb3618c7d42022f48e0478efb0e74573cdd34262c210c8",
+          "width": 750,
+          "height": 1000
+        }
+      ]
+    },
+    {
+      "seasonID": "2025SS",
+      "uniqueImages": 16,
+      "uploadFiles": 34,
+      "uploadBytes": 7170862,
+      "assetTargets": 17,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "d8394b90ac02e0ec8fe80f151e8b5b078ca4adfe00183d9e7332b351ca7cabee",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 68944,
+          "sha256": "65edc639f5b0a0bb77d6b6039203deb1e824bb689f4681e643259f6265e23469",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d8394b90ac02e0ec8fe80f151e8b5b078ca4adfe00183d9e7332b351ca7cabee",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 378231,
+          "sha256": "306126f9ccf8fff2052000e5a15442711f23a16c26c2723d1f6dd119e4763dc0",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "77cfc3b5cd3e5d5d62989291dca6878659133b98beef96e8d0ab734018831775",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 91763,
+          "sha256": "748807efefc34739a4b8e50d687b7495b67d60b7710da483252ce06df0e89a16",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "77cfc3b5cd3e5d5d62989291dca6878659133b98beef96e8d0ab734018831775",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 437942,
+          "sha256": "9e1212ac04791457f333def4e31c7eaa0606b1e193c1e46ed85f0b275258cf3e",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "317fc1ab97653d4005da267b944b7c08bbea58b31b84c03fb31d1586c2a9bdd8",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 79211,
+          "sha256": "8d353340063861dc297b5620c78e81fd12bec73a32624eade93b0b14eb2925e5",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "317fc1ab97653d4005da267b944b7c08bbea58b31b84c03fb31d1586c2a9bdd8",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 242432,
+          "sha256": "7863ea4b699803c7d6e1dd09484039a400a7caf729ab9d5400c3a76664d76b7e",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e20027df4f4c9d603866cbaed4e7b0a53f1382f23135aba9fd51055d16ae9a98",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 47261,
+          "sha256": "ba445e0c6c4a95e2cc81ed3f9873870e47f6af87f36f5d41e1282f89dd535892",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e20027df4f4c9d603866cbaed4e7b0a53f1382f23135aba9fd51055d16ae9a98",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 141792,
+          "sha256": "1d34285b6313c1967e4fa9829dfe5d73c8910f4bb2cf209770b43d3b3edb3b62",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d7184c82dbce2c7241f65dd83d6c098e0cc6e2ff211e5d6b7b048ab8c95f5287",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 93457,
+          "sha256": "5136bd7e596f62859bf4ac811e9d6ca328c435c023e454d6ef54976925bbd5e9",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d7184c82dbce2c7241f65dd83d6c098e0cc6e2ff211e5d6b7b048ab8c95f5287",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 635187,
+          "sha256": "13837e0929f6a96a88b2b409e018d5dc7ef94133f12f6c9f99ee3257abf95ed6",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ff786aee73556074d7fe89f91c0ff4896a0547aeecad2fdbc3115d89b10a7db2",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 96438,
+          "sha256": "a8e373a9d29fb16d3d6bb24608abbcb877c7cca83c822e3242a18e413284d99d",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ff786aee73556074d7fe89f91c0ff4896a0547aeecad2fdbc3115d89b10a7db2",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 658241,
+          "sha256": "2f903a720ddc9d41c7e051c86fdb51e61ad9c35b1613eb81a42919d8b0e6d053",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9344021c20ae6098f401410fae60bafabea4e0e66380655a880f2dd69800de3c",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 37958,
+          "sha256": "9ac3ee37d897c35e522c9e41bffebdbfe764bf8e86b604bc263ae515ff161f68",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9344021c20ae6098f401410fae60bafabea4e0e66380655a880f2dd69800de3c",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 157386,
+          "sha256": "4220557b9978efad996dfafc9c7c2055691679e6afcfcf9763702a85e4c1111a",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4873739796d9cbc021b4a54e3f2eecdd88e3ddb25f85f1de22b52f9cbc32845f",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 67753,
+          "sha256": "424e6dd69ab4e529223458310271efeb7c474329d1674af300afaa18b43575b3",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4873739796d9cbc021b4a54e3f2eecdd88e3ddb25f85f1de22b52f9cbc32845f",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 428467,
+          "sha256": "cc61a6223476a87030725606aa959fb8db2d118be98207b927d862c8d93bfbea",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "da9e7b8186ef96a275aec11b858e4a18aaadb55cfba8f232794ef602b95f6115",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 86458,
+          "sha256": "ee0c5c6c09c4ab26486f7f89b80ce55dd1c13ecb43a750afc297a71566e51ced",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "da9e7b8186ef96a275aec11b858e4a18aaadb55cfba8f232794ef602b95f6115",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 594184,
+          "sha256": "d8b4699839046e185b699064ce3687f611eadcc0a110ac07811d842ce770ff39",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 88017,
+          "sha256": "c33c8d2427e9f5b12e322f3f453048b7e811abecd50a698aaafe7e3574048519",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a8275db33f78e4fc7b9fa4bb8a4d0ad3331e72a139e90977d6f0fa23cb3a8470",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 614351,
+          "sha256": "4f687be5810534bda6715b7b16a25dc3394ceb20f892f222621c9a71387f9f5a",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "32b12221a734de3918650626168fa0ab71a47be2056f426df44a0e67bb1028b1",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 49265,
+          "sha256": "077c1220872b524540d192e23c9e855ed64384336836726644a3ec05bc2117b4",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "32b12221a734de3918650626168fa0ab71a47be2056f426df44a0e67bb1028b1",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 206735,
+          "sha256": "1cbaa3483a368152b25b588653d00e4a33befd4f026444e8581d7cda7ad72e15",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "30632fa4d441d90e4cab85ad186882a3429eb82c82e7033c0ed3413768ed1322",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 55854,
+          "sha256": "fb6917d5ac3460e69750bf86eff6aec96295dcdac3dae4eed031115790b49c2b",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "30632fa4d441d90e4cab85ad186882a3429eb82c82e7033c0ed3413768ed1322",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 417579,
+          "sha256": "444787224609661e71627895979b3743cb95455bed78f9dda5fe405965ecf8f6",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ac5699ca77dc9439f47a61f6510211816fa01b133f92398c11a53b7fee4a5172",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 86044,
+          "sha256": "0819abf615498f16e804b5663546ba39ee3a454c3b20ad8a0a8cc56cca41cd36",
+          "width": 615,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ac5699ca77dc9439f47a61f6510211816fa01b133f92398c11a53b7fee4a5172",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 622706,
+          "sha256": "d2bf9a651f032585f4644e866702f100c7154a02184916d8393eda1dbaa3effc",
+          "width": 1350,
+          "height": 1687
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9461567a17a944956b85b82d2c05217527e48cf1ae1c2fdae1b4effff260e8af",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 47723,
+          "sha256": "870c5aa63730291dfebf13c1a402ac4e07dc6003ce4ec2bd2609a22e16a61ef7",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9461567a17a944956b85b82d2c05217527e48cf1ae1c2fdae1b4effff260e8af",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 196436,
+          "sha256": "03eee286b9a9b5e2d20ef401153f722b82b091e303afe2cb0a145e4b95400a5e",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "28a09a0ae8b7d6f3ce99892d024161b92796e580ea2169079a1c463a296e545a",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 25717,
+          "sha256": "9162c16d930b539f156e5ed324495219f3a6c22d2d641d3d391edbdde000e5f9",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "28a09a0ae8b7d6f3ce99892d024161b92796e580ea2169079a1c463a296e545a",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 132079,
+          "sha256": "3a42bdc032e284975883565b67259047a2c461b70d9e12e8e1557c886049e5e8",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "post",
+          "sourceHash": "96e80f8fa4f7156b5c9955d9b6ac60dea37bc4ca0bda75f97fc39b8468f9849d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 19997,
+          "sha256": "82c678d635a7e28056b5e8e73b4c6737561735a3a4a288536f1741b9f8b76bbc",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "96e80f8fa4f7156b5c9955d9b6ac60dea37bc4ca0bda75f97fc39b8468f9849d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 80187,
+          "sha256": "7c1a32cb0ae3f9e6a24abd68f7e3e64dff16ede7b422f26a020515f16cb2eb3e",
+          "width": 1080,
+          "height": 1350
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "cb76e29fbc7fa6b2aaa640f2a441c95729e61483461e03b494d1b52820b4769d",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 24763,
+          "sha256": "84045d474d627024e76c5aac7b6d384b1d2f94b51b5467836e0207848b43c4f8",
+          "width": 410,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "cb76e29fbc7fa6b2aaa640f2a441c95729e61483461e03b494d1b52820b4769d",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 160304,
+          "sha256": "ed0daf201387d847ff0fcb7cbec58604b53b17113071d5a2d73a310c16913848",
+          "width": 800,
+          "height": 1000
+        }
+      ]
+    },
+    {
+      "seasonID": "2024FW",
+      "uniqueImages": 22,
+      "uploadFiles": 46,
+      "uploadBytes": 5890313,
+      "assetTargets": 23,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "2283ccc5a2a053a5763dc9d6cdb6b24160af4eba80aa9c297eae36dc4c4ec9f9",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 27964,
+          "sha256": "7910fa85de9b6845747daf3335c935e682bf35a1b9c3c47e791443b4929bec3a",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2283ccc5a2a053a5763dc9d6cdb6b24160af4eba80aa9c297eae36dc4c4ec9f9",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 208917,
+          "sha256": "71dcc7aae3bb8adba9927bc998c3233f04f204068865c8577535c0614cf8f289",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5f35d2607af2c22e640d753c64490584a580a90ca0952a31ff1b6c8e7292ab23",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31810,
+          "sha256": "543952a3d4aefe0f6906cbe172b3d566724b42017d9d735678431da7edff886b",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5f35d2607af2c22e640d753c64490584a580a90ca0952a31ff1b6c8e7292ab23",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 237133,
+          "sha256": "f6c788a7ae942b0edba26920f0c107a989dfa6bbaba15456174cadf6b245aa7c",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b80420f728b7b30ec9c00def70e42952e6a4b4f66e2743e8fcdcdc092156268f",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32205,
+          "sha256": "82d95de8e7a3ad575186114b01b79ed7cd2650f58dfa4ed3817b3be236aefed8",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b80420f728b7b30ec9c00def70e42952e6a4b4f66e2743e8fcdcdc092156268f",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 231113,
+          "sha256": "363ddcd062608e78d6e4a9f4a231dd012b7e5d7761f5748e890aa7913729c880",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b833a067b9f2e650c52458ef2b368552aa4081a243877eccb157ec93b4ef4811",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31465,
+          "sha256": "e47802c4a62bcabcfcff3c67036e64eb85acff95ffdcd9eb96d2e94a6830e3ac",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b833a067b9f2e650c52458ef2b368552aa4081a243877eccb157ec93b4ef4811",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 222415,
+          "sha256": "ec02a41edb79f5aa2bf3a1d05f43253043887be9f49a789ef470ab42665c73c3",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1f83150445e095c69544885f60af4358cebfda2c5f7d841d5e1c93596f8913a9",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 29959,
+          "sha256": "edab557bced4597c3cc02497b9df4bedcc2a8e88c71fa7a07f42043ed7a887d2",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1f83150445e095c69544885f60af4358cebfda2c5f7d841d5e1c93596f8913a9",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 221166,
+          "sha256": "5a5e9294f1561b141ba2dd75a1ece31e8a24212aeb6e53b5123da17e36cfbf2e",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e1e949e3af69a5f041c958a89ea0d17de67a5b460d536678516f7bd97205462a",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31593,
+          "sha256": "cc4b8e62f571724abb923f53e9175ad41a1643211d12c7ab6b2c34c7fcf88dc9",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e1e949e3af69a5f041c958a89ea0d17de67a5b460d536678516f7bd97205462a",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 228967,
+          "sha256": "7c5a4d87e23f79290f37bc967fbdd2149450e445d19d900aabbc889b1278597f",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0cae18b562220cbc3dbf5d65c82d54071a8a0a8b611785f29f0c7ddcf21f423d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31560,
+          "sha256": "1f3eac0fbb846f743415684ed8e371b99363ee46071c48439acc76f02d45ac37",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0cae18b562220cbc3dbf5d65c82d54071a8a0a8b611785f29f0c7ddcf21f423d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 227499,
+          "sha256": "d6f96c7cac8dfc5e8ca2485a62b18575e17b70745d1603049203ba64586a0e2d",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "36f570b50fcf85f5cd9dcc4f3cafbff048c98bb728972034af0811710ecbf414",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31284,
+          "sha256": "392803a89eb624949b9d84ab4f5f5399e0454d88ea593a8bf81d70b4173f41f9",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "36f570b50fcf85f5cd9dcc4f3cafbff048c98bb728972034af0811710ecbf414",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 230317,
+          "sha256": "cb8e7f5ceadb38e7d9beb4ce87b35ae6500489f0727fa6c5ea32aab0342d85af",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1197412b6dc7585322327892a570433f419e28e2dba75925c2a00c3e4b675d41",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31796,
+          "sha256": "22f6b6a4cee23af284e8d451c5bf7e0a98b580f78f837d6e0ad8bf1f4969973b",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1197412b6dc7585322327892a570433f419e28e2dba75925c2a00c3e4b675d41",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 227791,
+          "sha256": "22d6a2596e5358bb8535c001fcc12e52bcbe9268474794cc371d6ca9f1c20f78",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "282ae1c5634355a0d73a899d868fff0e0ef30fbfd94088deedf52103f56f4693",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32695,
+          "sha256": "bf261363f321ccf26e5a3552efaee51311def0edd2e00f24709532bc629aa9bd",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "282ae1c5634355a0d73a899d868fff0e0ef30fbfd94088deedf52103f56f4693",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 226833,
+          "sha256": "1d86ed63384c6c55dd04e733f62e9006d60b03dfd93e02a8226959c545173486",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "72f9d20fabef747dd64ffe7d52fc2f326115c3f918d20dffb108fd9e4390d649",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 30713,
+          "sha256": "1eab691bb83d972340cab26e99cccc35f736b10b2dafb8193333ea9bf719cae6",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "72f9d20fabef747dd64ffe7d52fc2f326115c3f918d20dffb108fd9e4390d649",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 226703,
+          "sha256": "dbad8865aa98ddebce36f5e0ec24a2ed9110cd7610d99427ad32e86e721dcf14",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2e511d5a1e3780dafff32aa8d221630ba5305fd1093b92a254f0b0cdecdaa541",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31753,
+          "sha256": "d292fd741072faa5c622109b09edfecd4d5f7a57026614ca3043ec8e9485c03c",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2e511d5a1e3780dafff32aa8d221630ba5305fd1093b92a254f0b0cdecdaa541",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 229352,
+          "sha256": "88addb06dc0fab4b96e58db2b8bbe7196a67e202c287c2ef3ca030fe86985577",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b217a781a900e384eb4315509a85899240c7f452623ceeb12f2d33c16002edd8",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 33787,
+          "sha256": "b83ad6c5277258b5f217065ba537473210990e15729e8a4f20e11599894e67bd",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b217a781a900e384eb4315509a85899240c7f452623ceeb12f2d33c16002edd8",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 245990,
+          "sha256": "d2760ecbf1e1a32dd6b374c0f31c6e687c2b7f0fd044dad5442854302d9c7f8d",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a02f814483003a90725cdf39dfb13e51f5540d372728a4a69f84a69a6918824d",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31943,
+          "sha256": "f36b212d91461f6a6c1fa1a93d2c41a04e67dfdb70c89cea76ec8998108ca793",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a02f814483003a90725cdf39dfb13e51f5540d372728a4a69f84a69a6918824d",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 229849,
+          "sha256": "8d8311a04800aaaff02775351ba94d4d9d84fbe66f453a8c2bb4120240347cb5",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ab46b2df1da9ea3fbf2d45ec39d670a9acb8907b4673cae0a52fb7db525ebfb6",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32424,
+          "sha256": "689bfd1227170cb12cd3ac2c1687e444cd140f28f80b885331cb867da41be3d8",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "ab46b2df1da9ea3fbf2d45ec39d670a9acb8907b4673cae0a52fb7db525ebfb6",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 234470,
+          "sha256": "35abb2eadbd97f06d9fb8e582bbcdfb98ca52182f9659675fa9217145e0a2f1c",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "fe651a78a396a872806bbf909a8496610408b4583d206079557e3ccef614b44a",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32446,
+          "sha256": "1d8874a9761632ceb1a96e89c1fd518e52909e6f4fb954e2b3206eacaf3e0419",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "fe651a78a396a872806bbf909a8496610408b4583d206079557e3ccef614b44a",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 232707,
+          "sha256": "88510e64463fedf85bebe8ab0215c439a87fff5f69b7dde7929bd8b5358307e3",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a6b8fad78cb6f1f4550ccca9da8731e03aeac1e1e4268b5acb91cbf366e55ef5",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31426,
+          "sha256": "a000c4f5c058edc4b41ac55f07289af9341fd9dbb05bfc8c635bbfd5e0c9bdd3",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a6b8fad78cb6f1f4550ccca9da8731e03aeac1e1e4268b5acb91cbf366e55ef5",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 225922,
+          "sha256": "8de921374ab5f733098110a3be72c2c5795ac0399bc912341420f4fb1dd4f866",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d22fa82d6738f479123228d0dd512ab456bd9e903ac44360a0d3b51d36a1e42e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 21414,
+          "sha256": "349cabfb5ead465e14fa1eb7e033162260e49393d13925da12bf7a25892937ef",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d22fa82d6738f479123228d0dd512ab456bd9e903ac44360a0d3b51d36a1e42e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 249636,
+          "sha256": "5f9efd0f5f4ce9790e6e64456f6f1f75636cbdd4e47869ec95544c4d0e21e758",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "298156b0d08aabb4880ee96f8cb32a04a06091a6d4de2478f7b6f529751d2302",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 44092,
+          "sha256": "2b2511ad655235da82ab2a78834571eceed6c77345d873c4415aa06ac00505f5",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "298156b0d08aabb4880ee96f8cb32a04a06091a6d4de2478f7b6f529751d2302",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 332296,
+          "sha256": "1d91f60b60900b96bfed6e29cca61028bf2cc3556f89dd21e811b2b0550e07e9",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4011f4a1ffb8ad214ae3005f700e4a078c55c86ea32f8c80d14bc2c8acf0a25e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 25908,
+          "sha256": "e73a7556278726cc83d73870240f86f02acaf157f3c84d70659cc5714979abc5",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "4011f4a1ffb8ad214ae3005f700e4a078c55c86ea32f8c80d14bc2c8acf0a25e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 268791,
+          "sha256": "6eedb885a3f3df29fd68582dc23ea400d1794d5e29cb5e41b10b066442335a22",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b085a2de0c11b49eb0a89eb107f99b5eac4621d5fc7c96193985f5a5362c8a68",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 23424,
+          "sha256": "beca44bc8480db8b12845982514a26264c1a4802d57282fa909e23673796bc4f",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "b085a2de0c11b49eb0a89eb107f99b5eac4621d5fc7c96193985f5a5362c8a68",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 185978,
+          "sha256": "bc19ec23b163b5e856990795ad1a821a6aa110dfe360c0a2a27b6dce8d921564",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e40937e7cfbb624de101a29660e16d743faf586ff180aa5af7e3a7c4220b69c6",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26768,
+          "sha256": "2a73b1ee96f2ed2192c68abec50653967b62a7e1eeab892bfdd28f5007a2695a",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e40937e7cfbb624de101a29660e16d743faf586ff180aa5af7e3a7c4220b69c6",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 219060,
+          "sha256": "49ea345b7dbd54fcfb8005778b1cfaaccaaf4822ba68217441594bc4a98b56ab",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "9f5faa36eec2a2600f083599226d1f6856ae36ecd555c7ad1e43bca6cdda3c14",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 10917,
+          "sha256": "885c2d28264ea518f3202626360957a59b88518923b1880e378d8b62ba97cdcb",
+          "width": 342,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "9f5faa36eec2a2600f083599226d1f6856ae36ecd555c7ad1e43bca6cdda3c14",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 58062,
+          "sha256": "7543267703fbcf177ea506af52991e76c2b231e8d205d0352a6b4b1461e62a48",
+          "width": 667,
+          "height": 1000
+        }
+      ]
+    },
+    {
+      "seasonID": "2024SS",
+      "uniqueImages": 25,
+      "uploadFiles": 52,
+      "uploadBytes": 3260207,
+      "assetTargets": 26,
+      "outputs": [
+        {
+          "kind": "post",
+          "sourceHash": "8110c8a016ed6083746bee1e0d4fea14ad73f0dee4cabeda8441eb9a889cda78",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 28068,
+          "sha256": "0299558db92f8f102f4e32edfb9da8b44475028bf9a813c34fcb756669a9e02c",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8110c8a016ed6083746bee1e0d4fea14ad73f0dee4cabeda8441eb9a889cda78",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 57610,
+          "sha256": "e73630345c69f7791ab1208f7d256577cd2437c931c5238d4f2ad917b467cd97",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "7ff2175f4a8ad899bebba8f5dd372fe5c3deaab957a1ad8ac27c69fb22e59527",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 33874,
+          "sha256": "eab204336e4b190faed35500e4aa53fd11ae6c95046991319f4b6c266146bc29",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "7ff2175f4a8ad899bebba8f5dd372fe5c3deaab957a1ad8ac27c69fb22e59527",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 69556,
+          "sha256": "778368e218cbe3721f1d5107b41872a4998cc6730698149b3be2ca7b78276d0a",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "96c75f0d1a32c1d8eb8cdc8f46df4b77a93b79cc2a7896fad51d84417330a962",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26430,
+          "sha256": "e5e85de34f6f568c97ddb1919cb724685fb93a477778e5a5c988324429574360",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "96c75f0d1a32c1d8eb8cdc8f46df4b77a93b79cc2a7896fad51d84417330a962",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 53892,
+          "sha256": "9c9bdc3f75c07bd5ad1362435e818be8c8024234721c72a19a61f77678a338ed",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1b5bfd3465402d21b1c844c512f1b2b09e7657a93d4e9566a06f1c0ed0461032",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 30715,
+          "sha256": "5ed966d0e90da4bce66c97639b17107e5058f54505325e3ad56f8804a6f7763b",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "1b5bfd3465402d21b1c844c512f1b2b09e7657a93d4e9566a06f1c0ed0461032",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 61445,
+          "sha256": "58f0ed95b69205f6bb27dc61ffca89938352ae3bcdb2cb80d9a073089e0b0542",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d53f1de941277153686bf8fd3e21b99d2913fda4f00240a384fc4aa545472c5b",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 35261,
+          "sha256": "989b9bbce8efbf365b5de66e040953d33745c02b4d28f63bc049997a2c2be53d",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "d53f1de941277153686bf8fd3e21b99d2913fda4f00240a384fc4aa545472c5b",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 69856,
+          "sha256": "4a921ad72b232ae41cd89ad88e60b6dc4b4dbbc697251c9f72815c2e59d925f6",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a05e5d7f7b965d420cb27ba13007895b94c9116274f3b262d258ee9f9c4c5c39",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 39421,
+          "sha256": "3604d1d9b5e710da9ec5b8062d02823fe3575e1e1e3d6fff780e0caedf9e8e2d",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "a05e5d7f7b965d420cb27ba13007895b94c9116274f3b262d258ee9f9c4c5c39",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 73121,
+          "sha256": "7c384b71488c52efc865e316eb07a457a5cd01d8674a3abe5051df3da85efbe8",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f1f2edb799c571140d151894a10c4f7c44b1408063d075054f7730cb2d3dfa47",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32710,
+          "sha256": "2eb22e576baa69206484dac1928c8d58bd713b4f681b18c838c681e4de96656a",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "f1f2edb799c571140d151894a10c4f7c44b1408063d075054f7730cb2d3dfa47",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 63161,
+          "sha256": "cbd7b3433b02ef9224ceaf8d501cec817dcd107fd569261899ab2e2ddbfc74f5",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "73b87fd74ba940289d8a87bd483423dac31154f7222bd0d72cb098d0989e6097",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 37500,
+          "sha256": "1b167839f21a0305119239b70fc0f3a22d296b54490c314888f5e0f2142248b0",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "73b87fd74ba940289d8a87bd483423dac31154f7222bd0d72cb098d0989e6097",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 73205,
+          "sha256": "1b3e04ec34b84b26185aa849f3b8746c0190813ffc3c561121d2109bb4521db9",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0bc714ad08fcb15ec0cfea5b6f510fbf48002a616d63c1958682b7dbb462c0cd",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34026,
+          "sha256": "48972547a2581d4a41c7ffe8cb7c19722b5bbe41104499a8e776b6f8a8f58090",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "0bc714ad08fcb15ec0cfea5b6f510fbf48002a616d63c1958682b7dbb462c0cd",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 70949,
+          "sha256": "a87019e73237a472425c220224cc032540f1f38fe604ed5ea85b8fa3851036dc",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "36baff0f9b15f1ab0731b1b3125817bf772f5d0a15bb84a619b3754b9992f483",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31294,
+          "sha256": "35a7e00fead8e63688a75c46af138a730f4cc16276d4dac8b455dcf8b606e60f",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "36baff0f9b15f1ab0731b1b3125817bf772f5d0a15bb84a619b3754b9992f483",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 62464,
+          "sha256": "762a4da0d9905095ed38f05aabc78dd587c883e10769eab756eb3b4547e2e4d5",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5b97fb9681073eb66e7ebdf36ccf90e356dcd890f067b8c7ccfc70a94b8a7092",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 29482,
+          "sha256": "5ae9eb66bf53adc3af23435c73661eff3c8858f30f0d9c6c4e9de32c18d10b03",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5b97fb9681073eb66e7ebdf36ccf90e356dcd890f067b8c7ccfc70a94b8a7092",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 59276,
+          "sha256": "460efb1dbec208007220c36ab1ba963993308d6b512c2db73c1f70a3d0234209",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "82310cd2aa3154ec9fef1eadb00705f44fc464803c13ff013bd5e7520917c9aa",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 28517,
+          "sha256": "e724e2036d71398bb5c85ea8b79f896260dbd862bf15734d7692461f807982dd",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "82310cd2aa3154ec9fef1eadb00705f44fc464803c13ff013bd5e7520917c9aa",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 56809,
+          "sha256": "9a9a13feec0f85e678f4941d305062520886af27bd8bd8433ea30341d75d6a25",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "423281063d6b8fb5661b897d7bd2d418c5ab0ffe24e82ca0be90589998c297f0",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 35256,
+          "sha256": "d6c0473f71167d86bae4dd1a346b5f2b4a7e7138c962a379f7057078fff9247e",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "423281063d6b8fb5661b897d7bd2d418c5ab0ffe24e82ca0be90589998c297f0",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 68394,
+          "sha256": "d6edf94559e15f1e205d37ad03caf563fb8ed00c0d3df948f2c2c8b755fe83f8",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2a8eb1c1f015f1c96013df5a796585b99d206096cbfe719433c3b139dde0a5e0",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 34173,
+          "sha256": "7006c8a1fac4f7f9a595ad63788d79d7b2bb2042a09d365909a93ac694524b25",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2a8eb1c1f015f1c96013df5a796585b99d206096cbfe719433c3b139dde0a5e0",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 68505,
+          "sha256": "623f850d906e9fa379c748a544c4c279fb270c358780e9992b8a13aa14e6659c",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2cf3e87016df148b7d1426fe8ecc51e5eb7c6358ddf58d0a26e3c7a096b89771",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32602,
+          "sha256": "c2829ca504bda86c6fc06cbe2ab5d3a8162535818065be4bdc86c4aa5e8f90b1",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "2cf3e87016df148b7d1426fe8ecc51e5eb7c6358ddf58d0a26e3c7a096b89771",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 65059,
+          "sha256": "6f467b8aa9f461d29ad536bc6823e0efc21eaa89e1265bfe50eec68a3c4ab8b9",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8fc63cd4ea09765559e6d0f887ad6c501fb4dccf69cbffb99037a8c9dfe7ad4b",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 45147,
+          "sha256": "346598cb05202eb71f3df626626cac2af32b5d7af067637aac00383a6951e1b2",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "8fc63cd4ea09765559e6d0f887ad6c501fb4dccf69cbffb99037a8c9dfe7ad4b",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 81965,
+          "sha256": "63839708ebeba6baaade9375d350cd8cdbf6d7b30bf5e155171963f4ba0a2457",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9f569b65a2c981ec388f1f578a053deea66b1fa712840f002c226cd7e7f50ce3",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 26176,
+          "sha256": "31d709909aab7506006fae56e60fd6b6745df7f524ad76139ddba4d148f51663",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "9f569b65a2c981ec388f1f578a053deea66b1fa712840f002c226cd7e7f50ce3",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 53767,
+          "sha256": "bff9478c4f438c427d9d1d59630fd9d870db97148824ba9a1e9c1dff48941a70",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "98b159a4b706d79772501e79bac973618c3c5b10b0ccf65dff19c20b90c22f5e",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 32337,
+          "sha256": "209a4230064f7ec0e687c2f2e4dcdbc7232bf4166a164c4f2cbc6158ea4c6a89",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "98b159a4b706d79772501e79bac973618c3c5b10b0ccf65dff19c20b90c22f5e",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 63779,
+          "sha256": "388c56057b95f3d6989923513a1ae6f2a1c451083dc03c503fabbef7e4ae9a4a",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "bae1c02e107934b3870f36f759ee2774d1222809165309715c153a0cfb3d1b86",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 35118,
+          "sha256": "c64791fabc782c2a883daa39865ba8da00fea60c39ad3a92dd58cde33919e724",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "bae1c02e107934b3870f36f759ee2774d1222809165309715c153a0cfb3d1b86",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 68109,
+          "sha256": "0c87640f2b56c1267f12c82c5758190a7ea76c8fc7f7d5313eeca9cb756018e3",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e31231119c9d53422169f6ebd2e79c0fd3d0b66e2e87b9f9b2fd330dea24d8e0",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 30016,
+          "sha256": "82c64797aab7c83a6ed9dd1280c734d3492b37e16d19df2b9b6e60fb89843029",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "e31231119c9d53422169f6ebd2e79c0fd3d0b66e2e87b9f9b2fd330dea24d8e0",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 56722,
+          "sha256": "6891988a609aa558a5e9f023deb4f150a09ea04b1c551f2a9d1500ca21b354ba",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 38515,
+          "sha256": "7ed8ed6dbace42831e6377d7f19737cf8848ffbfa949786273e2c656c1b3bc2f",
+          "width": 614,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "08a2139c423bea50ff7ad370156efd60608299829de5d4b510bdaaec8ba05456",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 71209,
+          "sha256": "6517d09dce9b0de98646d3b1735c61d974ed118a841715ae07c416b0377a7031",
+          "width": 700,
+          "height": 875
+        },
+        {
+          "kind": "post",
+          "sourceHash": "90e579aa6e363a8f77eb92da80907cd686f73f92df1fb1abdba897bb8524c9bc",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 20626,
+          "sha256": "0771c088964e8dbb1070d053a8345ca48dc95c0b5a0c3b0bbd438ff68edd4899",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "90e579aa6e363a8f77eb92da80907cd686f73f92df1fb1abdba897bb8524c9bc",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 180630,
+          "sha256": "83a44d24d50943eeac3d1abcd0061f7ebb9672f256c7c2a877412f75df548533",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "27838ea593dfce624bec3d61e48fe45aafe68c5fb622c2c83968211533c7a239",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 20478,
+          "sha256": "01b64c64abee261f5eb91727004fa219727f96c81488cf4e8928e5c204bfa8e6",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "27838ea593dfce624bec3d61e48fe45aafe68c5fb622c2c83968211533c7a239",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 227695,
+          "sha256": "25f06500f6d2acb81ac7f3612aad38caa14682d31fd3a5f9d2dfbd56aa020d5a",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5ad7bddcdb8d2c1c04fc6f2db6a64fbdbdc333609748cb3ea34c5e680ad19a33",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 31851,
+          "sha256": "eecc13ac273a7fe07eef62dd4fafb4147dfcbd55ff7afd72a8e465ee23e11e49",
+          "width": 768,
+          "height": 512
+        },
+        {
+          "kind": "post",
+          "sourceHash": "5ad7bddcdb8d2c1c04fc6f2db6a64fbdbdc333609748cb3ea34c5e680ad19a33",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 210827,
+          "sha256": "35feb1bc382e9b343fe7fbcda71b6f9041138be542410df429df3846a5d5dfa8",
+          "width": 1920,
+          "height": 1280
+        },
+        {
+          "kind": "post",
+          "sourceHash": "93cc378f6aaf684ccbb36f6685d79a49404eca49b32a101a4b8ef3f5eb9f6558",
+          "maxPixel": 768,
+          "quality": 82,
+          "bytes": 48881,
+          "sha256": "2ec061bcfadc47be243de7c712316717c9d0080fc7f0ce6338b4a8e4fab99e73",
+          "width": 512,
+          "height": 768
+        },
+        {
+          "kind": "post",
+          "sourceHash": "93cc378f6aaf684ccbb36f6685d79a49404eca49b32a101a4b8ef3f5eb9f6558",
+          "maxPixel": 1920,
+          "quality": 90,
+          "bytes": 373507,
+          "sha256": "3eb0dd3ff23584b9c78ef75722d6b9ea72b3540d6b6856401c8b6694aa98ce96",
+          "width": 1280,
+          "height": 1920
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "11537b6fe6cd8375c39ce9d49a269e6b4ce858d9bcde380d9fa397422f9a581e",
+          "maxPixel": 512,
+          "quality": 75,
+          "bytes": 12973,
+          "sha256": "c578fa2c87203b85a61d8c5395d901b228e0b8bd002a1a51c926fbdae99d05fa",
+          "width": 342,
+          "height": 512
+        },
+        {
+          "kind": "cover",
+          "sourceHash": "11537b6fe6cd8375c39ce9d49a269e6b4ce858d9bcde380d9fa397422f9a581e",
+          "maxPixel": 1600,
+          "quality": 88,
+          "bytes": 67248,
+          "sha256": "3e79d86ab535c6d1c231aa9a6d87f43dbbf69b93e0e65db40ceeee89106a5b5f",
+          "width": 667,
+          "height": 1000
+        }
+      ]
+    }
+  ],
+  "goldenProfile": {
+    "id": "linux-amd64-sharp0345-vips8173-mozjpeg0826579",
+    "platform": "linux",
+    "arch": "x64",
+    "sharp": "0.34.5",
+    "vips": "8.17.3",
+    "mozjpeg": "0826579",
+    "sourceCorpusDigest": "307bdf7d1b90c04fbcc8ed16307aa7e2ed559cc008207eed8fd487cece676a10"
+  }
+}

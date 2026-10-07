@@ -1,6 +1,7 @@
 /* eslint-disable max-len */
 import type {Page} from "playwright";
 import {createHash} from "node:crypto";
+import {inspectDiscoveryPageControls} from "./season-discovery-controls.js";
 
 import {
   extractionResult,
@@ -23,6 +24,7 @@ import {
   responseBytes,
   retryableStatusError,
 } from "./public-http.js";
+import {browserImageGate} from "./queue/browser-gate.js";
 import {
   enrichSeasonCovers,
   type CoverImageSource,
@@ -143,8 +145,6 @@ const DEFAULT_LIMITS: DiagnosticLimits = {
 const HTML_MAX_BYTES = 5 * 1024 * 1024;
 const USER_AGENT =
   "OutPickLookbookImporter/0.1 (+https://outpick.app)";
-const LOAD_MORE_TEXT_PATTERN =
-  /^(?:더\s*보기|more|load\s*more|view\s*more|전체보기|\+)$/i;
 const DYNAMIC_RENDERING_SIGNAL_PATTERNS = [
   /__NEXT_DATA__/i,
   /__NUXT__|__NUXT_DATA__|\bnuxt(?:App|State)?\b/i,
@@ -309,6 +309,7 @@ export function classifyDiscovery(
     dynamicRenderingDetected: boolean;
     renderedFallbackUsed: boolean;
     renderedImproved: boolean;
+    unresolvedExpansion: boolean;
     timedOut?: boolean;
   },
 ): {
@@ -328,7 +329,8 @@ export function classifyDiscovery(
   if (input.candidateCount === 0) {
     failureReasons.push("no_candidates_found");
   }
-  if (input.loadMoreDetected) {
+  if (input.loadMoreDetected &&
+      (input.unresolvedExpansion || !input.renderedFallbackUsed)) {
     failureReasons.push("load_more_detected");
     suggestedFixes.push({
       type: "enable_load_more_click_loop",
@@ -337,7 +339,8 @@ export function classifyDiscovery(
       message: "더 보기 버튼을 반복 클릭하는 공통 로직이 필요합니다.",
     });
   }
-  if (input.dynamicRenderingDetected || input.renderedFallbackUsed) {
+  if ((input.dynamicRenderingDetected && !input.renderedFallbackUsed) ||
+      (input.unresolvedExpansion && !input.loadMoreDetected)) {
     failureReasons.push("dynamic_rendering_detected");
     suggestedFixes.push({
       type: "enable_rendered_discovery",
@@ -445,6 +448,7 @@ async function runDiscovery(
       (renderedExtraction?.dynamicRenderingDetected ?? false),
     renderedFallbackUsed: renderedExtraction !== null,
     renderedImproved,
+    unresolvedExpansion,
   });
   const retainedHTML = renderedExtraction?.retainedHTML ?? html;
   const structureTokens = extractionStructureTokens(retainedHTML);
@@ -608,6 +612,14 @@ async function renderedDiscovery(
   sourceURL: string,
   limits: DiagnosticLimits,
 ): Promise<RenderedDiscovery> {
+  return browserImageGate.withBrowserWork(() =>
+    renderedDiscoveryUsingBrowser(sourceURL, limits));
+}
+
+async function renderedDiscoveryUsingBrowser(
+  sourceURL: string,
+  limits: DiagnosticLimits,
+): Promise<RenderedDiscovery> {
   await assertPublicHTTPURL(sourceURL);
   const {chromium} = await import("playwright");
   const browser = await chromium.launch({headless: true});
@@ -643,6 +655,7 @@ async function renderedDiscovery(
       const interaction = await runPageInteractions(page, sourceURL, limits);
       const finalHTML = await page.content();
       const finalExtraction = extractionFromHTML(finalHTML, sourceURL, limits);
+      const remainingControls = await inspectDiscoveryPageControls(page);
       return {
         ...extractionResultWithStrategy(
           finalExtraction,
@@ -653,7 +666,8 @@ async function renderedDiscovery(
         loadMoreClickCount: interaction.loadMoreClickCount,
         infiniteScrollAttempted: interaction.scrollAttemptCount > 0,
         scrollAttemptCount: interaction.scrollAttemptCount,
-        finalLoadMoreDetected: finalExtraction.loadMoreDetected,
+        finalLoadMoreDetected: remainingControls.loadMoreDetected ||
+          remainingControls.forwardPaginationDetected,
         retainedHTML: finalHTML,
         loadMoreDetected:
           beforeExtraction.loadMoreDetected ||
@@ -745,45 +759,7 @@ async function runPageInteractions(
 }
 
 async function clickLoadMoreCandidate(page: Page): Promise<boolean> {
-  return await page.evaluate((patternSource) => {
-    type BrowserElement = {
-      innerText?: string;
-      textContent?: string | null;
-      getAttribute: (name: string) => string | null;
-      hasAttribute: (name: string) => boolean;
-      click: () => void;
-    };
-    const browserDocument = (globalThis as unknown as {
-      document: {
-        querySelectorAll: (selector: string) => ArrayLike<BrowserElement>;
-      };
-    }).document;
-    const pattern = new RegExp(patternSource, "i");
-    const elements = Array.from(
-      browserDocument.querySelectorAll("button,a,[role='button']"),
-    );
-    const target = elements.find((element) => {
-      const text = (element.innerText || element.textContent || "").trim();
-      const ariaLabel = (element.getAttribute("aria-label") || "").trim();
-      const className = element.getAttribute("class") || "";
-      const disabled =
-        element.hasAttribute("disabled") ||
-        element.getAttribute("aria-disabled") === "true";
-      if (disabled) {
-        return false;
-      }
-      return (
-        pattern.test(text) ||
-        pattern.test(ariaLabel) ||
-        /more|load|view_more|btnMore|paginate/i.test(className)
-      );
-    });
-    if (!target) {
-      return false;
-    }
-    target.click();
-    return true;
-  }, LOAD_MORE_TEXT_PATTERN.source);
+  return (await inspectDiscoveryPageControls(page, true)).clicked;
 }
 
 function mergeCandidates(
