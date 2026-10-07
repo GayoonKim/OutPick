@@ -12,6 +12,7 @@ URL 기반 브랜드/시즌 등록 파이프라인을 Firestore job queue와 Clo
 - phase별 목표와 완료 기준은 `docs/ai/tasks/lookbook-import-worker/plan.md`를 본다.
 - Phase 4.5의 Cloud Tasks, lifecycle, fallback, observability 상세 설계는 `docs/ai/tasks/lookbook-import-worker/phase-4-5-design.md`를 본다.
 - 기술 선택의 이유와 대안은 `docs/ai/tasks/lookbook-import-worker/decisions.md`를 본다.
+- 제품 FIFO 대기열의 승인된 새 흐름과 phase는 `docs/ai/tasks/lookbook-import-performance/product-queue-design.md`, `product-queue-implementation-plan.md`, 현재 phase 결과 문서를 본다. 새 계약이 기존 route를 자동으로 대체한 것은 아니다.
 - 커밋에 포함할 하네스 문서 판단은 `docs/ai/workflows/implementation/commits.md`의 하네스 커밋 기준을 따른다.
 
 ## 가치 기준
@@ -80,6 +81,21 @@ Cloud Run worker:
 - 내부 API runtime/caller identity와 Production revision verifier는 Phase 4B 상세 하네스에서 확정하며 현재 코드에는 아직 없다.
 - 기존 시즌 동일성은 canonical URL을 우선하고, URL이 달라도 동일 브랜드의 정규화 이름이 하나만 일치할 때만 연결한다. 모호한 이름·복수 일치·URL/이름 충돌은 review로 보내며 source URL 갱신만으로 이미지 import를 시작하지 않는다.
 - Cloud Run의 외부 endpoint는 HTTPS로 노출되고, 컨테이너 내부 Express server는 `process.env.PORT`에서 plain HTTP로 listen한다.
+
+## 제품 FIFO 대기열 전환 상태
+
+**2026-10-07 Q7 합의한 검증 완료:** 정상 A/B·A~J와 K/L의 실제 종료·처음부터 총5회·실패 목록·맨뒤 수동 새5회·성공 제거를 완료했다. 후보26의 Q7태그0%/base12 100%이며 같은1CPU2GiB를 유지했다. 새124JPEG의 현재 원장·hash·generation, 대기열 종료와 현재 서버 필수6게이트/iOS28을 확인했다. `queue/termination-retry.ts`와 `restart.ts`가 정확한 이전run 증거/CAS 뒤 새파싱을 시작한다. 정식관리자웹·실제장시간경계/24h삭제는 후속 미검증이다. [최종결과](../tasks/lookbook-import-performance/product-queue-q7-final-results.md). 아래Q6/Q7실행전기록은 과거시점이다.
+
+**2026-10-06 Q6 로컬 통합 상태:** Functions queue preparation/dispatch와 Worker OIDC `/tasks/import-batch`가 모든 지원 batch kind를 현재 FIFO owner/epoch 아래서 활성화한다. `queue/activation.ts`는 frozen continuation expectation을 검증하고 최초 activation의 domain mutation을 `activatedAt`으로 고정한다. asset retry는 source digest를 검증하고 child job/source claim으로 실행한다. 실행별 asset 경로와 generation 조건부 공개, browser/image/hash gate, 삭제 fence, recovery/retention 설계는 아래 Q3/Q4 기록대로 유지된다. retryable season 오류는 지연 없이 최초 포함 총5회 재시도한다. 14분 HTTP 경계는 retryable 503을 보낸 뒤 현재 processor promise의 drain을 기다리며 새 admission을 멈춘다. G-F/G-W/G-E/G-R/G-L/G-I 최신 local gate는 모두 통과했다. 상세 source digest와 summary는 [Q6 결과](../tasks/lookbook-import-performance/product-queue-q6-results.md)에 있다.
+
+기존 `/wake`, `/tasks/import-job`, `/tasks/discover-seasons`는 레거시 delivery entrypoints로 남아 있다. 로컬 코드에서 queue-owned 작업은 batch owner/epoch 없이 처리되지 않도록 fencing한다. 해당 route 차단, Cloud Tasks 전달/retry, Cloud Run 15분 종료/drain, IAM, 실제 URL/Storage와 복구의 Development 동작은 원격 revision을 확인하지 않아 미검증이다. Q7 전에 현재 Development 설정을 read-only 대조한다. 단계별 역사 및 제한은 [Q2](../tasks/lookbook-import-performance/product-queue-q2-results.md), [Q3](../tasks/lookbook-import-performance/product-queue-q3-results.md), [Q4](../tasks/lookbook-import-performance/product-queue-q4-results.md), [Q6](../tasks/lookbook-import-performance/product-queue-q6-results.md)를 본다.
+
+- Functions admission은 `lookbookImportQueue/main` 순번과 `lookbookImportBatches/{batchID}` frozen item 입력을 만들고, 준비 event가 job/execution/continuation을 만든다.
+- Worker `src/queue/coordinator.ts`는 batch owner/bootID/epoch, run 종료 확인, 다음 head 전환을 transaction으로 관리한다. `checkpoint.ts`는 execution attempt count/retryAt/item progress를 같은 owner transaction으로 쓴다.
+- `runtime.ts`는 한 batch에서 시즌6, 다운로드4, 변환1, 업로드4, 경로 저장 무제한, 메모리 원본 재사용128MiB를 설정한다. 취소 뒤 새 시즌을 더 시작하지 않고 기존 작업 종료를 기다리는 스케줄러가 있다.
+- `queue/ownership.ts`는 부분 queue 표식 job이 legacy `/wake`·단건 task에서 실행되지 않게 한다. `processor.ts::claimJob`은 `queueActiveRunID`와 batch token/root job을 같은 transaction에서 대조한다. batch activation과 root run ID 전환의 소스는 `queue/activation.ts`다.
+- `queue/http-deadline.ts::waitForQueueBatchResponse`는 deadline 후 retryable 503을 보내고 operation 완료를 계속 await한다. 이것은 HTTP 응답 동작과 local drain promise를 검사하며 실제 Cloud Run process 종료를 증명하지 않는다. 정확한 Linux 시나리오와 HTTP helper 검사는 [Q6 결과](../tasks/lookbook-import-performance/product-queue-q6-results.md)를 따른다.
+- G-W/G-E는 현재 구현의 lint/build·unit·Firestore Emulator transaction·scheduler만 검증한다. 이미지 HTTP/Storage 전송, Cloud Run 프로세스 종료/OOM, Development 동작은 별도 게이트와 승인 실행 전까지 검증되지 않는다.
 
 ## 호출 인증 경계
 

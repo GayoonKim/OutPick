@@ -1,5 +1,30 @@
 # Data Entrypoints
 
+**Q7 실제중단원장(2026-10-07):** K의3accepted/동일execution attempt1·batch143c...epoch49, consumedOOM1회, queue/batch/executionactive를보존했다. 부분writes6(당시unpublished4/uploading2)·객체12/384872B는완료산출물이아니다. assets부모문서가없을수있어실행기는bounded listDocuments로하위writes를조회한다. 서버cleanup예약·성공124JPEG·실패목록제거의원격확인은아직남았다. [결과·원본](../tasks/lookbook-import-performance/q7-retry-development-results.md).
+
+**Q7 K/L 제어 원장(2026-10-07):** `lookbookImportQ7FaultCampaigns/{campaignID}`와 `/targets/{executionID}`는 서버 전용 Development 검증 데이터다. campaign/revision/digest/expiresAt20분·exact batch/job/execution·K consumedAt/원본 upload generation·L consumedAttempts1~5를 보존한다. 공개 API/IAM 추가 없음. 제품 접수8회와 제어 문서 쓰기는 별도 집계한다. asset cleanup은 run 종료 증거 또는90일 automaticTerminationRetry 감사로 exact project/batch/run을 검증하며 현재 참조/진행파일을 보호한다. Development 정리 스케줄러미배포·24시간 물리삭제는 미검증.
+
+**Q7-R1 실패 목록(2026-10-07):** 서버 `seasonImportFailures`는 원본 실행 이력과 별도다. 실패 identity는 기존 importJobs sourceURL claim hash이고 최신 executionID+version으로 경합을 막는다. 진행/검토 문서는 보호하며 안 함의 `seasonImportFailureActions` receipt는30일, 실패 상세30일/종료 감사90일이다. run 종료 증거는 실제 drain 필드와 분리하고 restartPreparedAttempt는 같은 정리를 반복하지 않도록 준비된 시도를 표시한다. 부분 season/posts/assetFailures는 이번 job 소유·사용자 활동 없는 범위만 정리한다. [스키마](../DATA_SCHEMA.md), [구현 계약](../tasks/lookbook-import-performance/q7-retry-contract-plan.md).
+
+**Q7 실행 증거와 데이터 경계(2026-10-06):** `tools/lookbook-import-worker/scripts/q7-runner.mjs`는 Development 제품 callable로 브랜드/discovery/import/review를 요청하고, `q7-journal.mjs`에 전송 전 요청을 원자 기록한다. 응답 불명확 상태는 재전송하지 않고 새 stage를 막는다. 결과 collector는 Firestore queue/batch/run/epoch/review와 exact Storage generation의 bytes/hash/JPEG 크기를 읽기 전용으로 대조한다. 현재 candidate만 준비됐고 새 QA 브랜드/Storage object는 아직 만들지 않았다. 실행 증거 위치와 예상 전송량은 [Q7 readiness](../tasks/lookbook-import-performance/product-queue-q7-readiness.md).
+
+**Q6 queue 실행 원장 보강(2026-10-06):** batch item 시작 때 `queueActiveRunID`가 job root에 현재 run을 표시해 legacy claim 경로와 실행권을 대조한다. continuation은 최초 활성화 뒤 `activatedAt`을 기록해 같은 batch 재진입 시 도메인 상태를 다시 바꾸지 않는다. asset retry child job은 `queueActivatedForBatchID`로 동일 batch에서 재활성화를 구분하며 parent job/source claim을 보존한다. 세부 path/transaction 경계는 [DATA_SCHEMA](../DATA_SCHEMA.md#제품-fifo-import-실행-이력), [Q6 결과](../tasks/lookbook-import-performance/product-queue-q6-results.md).
+
+**Q5 앱 요청 기록(2026-10-06):** GRDB `lookbookImportRequest(ownerUID,requestID)` migration27은 서버 FIFO 원장이 아니라 앱 재실행·응답 유실 시 같은 요청을 복구하기 위한 계정별 outbox/receipt다. 미확정은 보존하고 settled만 30일 뒤 정리한다. AppCompositionRoot에서 store/UID를 provider의 brand/discovery/import/retry/review/repair adapter에 주입한다. 계정 삭제 scrubber와 임시 DB tests는 G-I에서 검증한다. [Q5 결과](../tasks/lookbook-import-performance/product-queue-q5-results.md), [schema](../DATA_SCHEMA.md#제품-fifo-import-실행-이력).
+
+**Q4 최신 데이터 상태(2026-10-05):** batch의 `retentionNextAt/receiptExpiresAt/detailsPruned/detailCleanupAfter`, `brandCreationRequests.receiptExpiresAt/retentionNextAt`, `recoveryDecisions.createdAt/expiresAt`을 Functions가 만료 정리에 사용한다. batch/brand 생성 receipt는 최소30일, 해결된 실패 상세30일, 복구 결정90일이며 현재 head·진행·검토·복구는 연장 보호한다. queue-owned write ledger는 uploading 동안 보호하고 terminal·미참조·24시간 후에만 exact generation으로 시간당 정리한다. 로컬 emulator만 검증했으며 원격 Firestore/Storage 삭제는 실행하지 않았다. [Q4 구현·게이트](../tasks/lookbook-import-performance/product-queue-q4-results.md), [schema](../DATA_SCHEMA.md#제품-fifo-import-실행-이력).
+
+Q3 최신: queue image write는 `brands/{brandID}/importJobs/{jobID}/executions/{executionID}/assets/{assetKey}/writes/{writeID}`에 `uploading` 원장과 target scope/path를 업로드 전에 기록하고, 두 객체 generation·size 및 terminal 상태를 게시 시점에 기록한다. 삭제 함수는 `status=uploading` collection-group 조회로 정확한 post/season/brand 범위를 차단한다. `firestore.indexes.json`의 세 composite index가 필요하며 이 작업에서 배포하지 않았다. [Q3 구현·검증](../tasks/lookbook-import-performance/product-queue-q3-results.md).
+
+## Lookbook product queue records
+
+Q2/Q6 최신: `runs/{runID}.resourceEvidence`에는 cgroup 표본 수·최대 비율·출처·한도와 메모리/접수 중단/14분 drain 관측이 저장된다. 모든 지원 batch kind는 같은 owner/epoch 경계에서 활성화되며 retryable 시즌 오류는 즉시 최초 포함 총5회 재시도한다. 14분 응답 경계는 retryable 503 후 processor drain을 기다린다. 원격 Cloud Run 종료 증거는 없다.
+
+- Firestore source/field rules: `docs/ai/DATA_SCHEMA.md`의 `제품 FIFO import 실행 이력`과 `docs/ai/entrypoints/FIREBASE.md`의 Q2 Worker 실행 기록.
+- Worker transaction modules: `tools/lookbook-import-worker/src/queue/{coordinator,checkpoint,batch-runner,activation,supervisor,http-deadline}.ts`. Batch claim/run/progress와 execution attempt ledger를 owner/bootID/epoch fence로 쓴다. `activation.ts`가 discovery/import/retry/review/repair를 이어주고 `server.ts`가 14분 retryable 503·drain 대기를 제공한다.
+- Local verification/result: `verification/lookbook-product-queue.json`, `firestore-tests/lookbook-import-queue.emulator.test.mjs`, [Q2 결과](../tasks/lookbook-import-performance/product-queue-q2-results.md).
+- Functions Cloud Tasks sender/head trigger/reconciliation 및 각 지원 kind의 Worker activation은 로컬 구현·Emulator 검증됐다. legacy 경로의 실제 Development 차단, task 재전달, 실행별 asset 경로·조건부 공개와 active write deletion fence의 원격 동작은 Q7 확인 대상이다. 이 작업에서 Development/Production task를 보내지 않았다.
+
 ## 채팅 검색 임시 결과
 
 [최종 데이터/API 계약](../architecture/CHAT_MESSAGE_SEARCH.md)을 기준으로 한다.
