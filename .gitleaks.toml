@@ -1,0 +1,16 @@
+title = "OutPick strict secret scan"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "검토된 occurrence key golden fixture 두 개: 인증 키가 아닌 입력 해시"
+condition = "AND"
+paths = ['''(?:^|/)contracts/lookbook-extraction-issue-v1\.json$''']
+regexTarget = "secret"
+regexes = ['''^(?:5b690dfea60c75558ded40e5710ae0250dab8cef|49a4ede10af1f2ec96bbc0744403e56cdf56a937)$''']
+
+[[rules]]
+id = "outpick-auth-link"
+description = "Authentication action tokens in links"
+regex = '''(?:oobCode|access_token|refresh_token)=([A-Za-z0-9_-]{16,})'''
+secretGroup = 1

@@ -38,7 +38,12 @@ const outputs = [
   ['contracts/chat-search/unicode/manifest.json', manifest],
   ['OutPick/Resources/ChatSearchUnicode-LICENSE.txt', texts['LICENSE.txt']]
 ];
-for (const [path, content] of outputs) {
+const consumerIndex = process.argv.indexOf('--consumer');
+const consumer = consumerIndex === -1 ? 'all' : process.argv[consumerIndex + 1];
+if (!['all', 'backend', 'ios'].includes(consumer)) throw new Error('유효한 계약 소비자가 필요합니다.');
+const selected = outputs.filter(([path]) => consumer === 'all' || path.startsWith('contracts/') ||
+  (consumer === 'backend' ? path.startsWith('Socket/') : path.startsWith('OutPick/')));
+for (const [path, content] of selected) {
   const url = new URL(path, root);
   if (process.argv.includes('--check')) {
     if (await readFile(url, 'utf8') !== content) throw new Error(`생성 자료 불일치: ${path}`);

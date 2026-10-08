@@ -5,37 +5,15 @@
     "verification",
     "tools/verification-gate",
     "contracts/chat-search",
-    "Socket",
-    "firestore-tests",
-    "functions",
     "OutPick",
     "OutPickTests",
     "OutPickUITests",
     "OutPick.xcodeproj",
     "Configurations",
-    "scripts",
     "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
-    "firestore.rules",
-    "firestore.indexes.json",
-    "storage.rules",
-    "storage.chat-media-quarantine.rules",
-    "storage.moderation-evidence.rules",
-    "firebase.json",
     "AGENTS.md"
   ],
   "checks": [
-    {
-      "id": "gate-selftest",
-      "command": "node",
-      "args": [
-        "--test",
-        "tools/verification-gate/gate.test.mjs"
-      ],
-      "cwd": ".",
-      "timeoutMs": 120000,
-      "kind": "command",
-      "nodeMajor": 24
-    },
     {
       "id": "firebase-config-test",
       "command": "sh",
@@ -45,79 +23,6 @@
       "cwd": ".",
       "timeoutMs": 120000,
       "kind": "command"
-    },
-    {
-      "id": "socket-check",
-      "command": "npm",
-      "args": [
-        "--prefix",
-        "Socket",
-        "run",
-        "check"
-      ],
-      "cwd": ".",
-      "timeoutMs": 300000,
-      "kind": "command",
-      "nodeMajor": 24
-    },
-    {
-      "id": "socket-test",
-      "command": "npm",
-      "args": [
-        "--prefix",
-        "Socket",
-        "test"
-      ],
-      "cwd": ".",
-      "timeoutMs": 300000,
-      "kind": "node",
-      "nodeMajor": 24,
-      "reportNames": [
-        "main"
-      ],
-      "requiredTests": [
-        "Socket/test/runtime/rateLimiter.test.js::rate limiter는 key와 window별 요청 수를 제한한다",
-        "Socket/test/media/directMediaUploadService.test.js::묶음 크기에 맞춰 전체 객체 확인 후 한번만 확정한다",
-        "Socket/test/media/mediaDeliveryWatcher.test.js::pending delivery는 lease 후 기존 media event와 push를 보내고 completed가 된다",
-        "Socket/test/messages/messagePayload.test.js::답장 미디어 만료 시각은 대상 서버 메시지에서만 가져온다",
-        "Socket/test/messages/messageSearchIndex.test.js::공통 v2 fixture의 정규화와 token이 일치한다",
-        "Socket/test/messages/messageSearchIndex.test.js::고정 Unicode 매핑과 정규화 corpus를 통과한다",
-        "Socket/test/messages/messageSearchPersistence.test.js::실제 텍스트 handler가 본문으로 v2 검색 필드를 저장하고 위조 필드를 무시한다",
-        "Socket/test/messages/messageSearchPersistence.test.js::재전송은 seq ACK와 검색 필드의 멱등성을 보존한다",
-        "Socket/test/messages/messageSearchPersistence.test.js::역할 안내 룩북 빈 미디어 본문은 검색 대상에서 제외된다"
-      ]
-    },
-    {
-      "id": "firestore-storage-test",
-      "command": "npm",
-      "args": [
-        "--prefix",
-        "firestore-tests",
-        "test"
-      ],
-      "cwd": ".",
-      "timeoutMs": 1200000,
-      "kind": "node",
-      "nodeMajor": 24,
-      "reportNames": [
-        "rules",
-        "transactions"
-      ],
-      "requiredTests": [
-        "firestore-tests/room-document-id.rules.test.mjs::authenticated owner can atomically create room, member, and joined projection",
-        "firestore-tests/room-succession-deadline.emulator.test.mjs::한 방이 50초에 만료돼도 다른 방의 성공과 일반 참여방 정리를 보존한다",
-        "firestore-tests/chat-media-storage.rules.test.mjs::클라이언트는 서버 전용 만료 정리 원장을 읽거나 쓸 수 없다",
-        "firestore-tests/chat-media-storage.rules.test.mjs::미만료 ready 원본과 썸네일도 클라이언트 SDK 직접 읽기를 거부한다",
-        "firestore-tests/chat-media-storage.rules.test.mjs::기한 누락·오류·만료·계약2·삭제·숨김·폐쇄 방의 ready 객체는 읽지 못한다",
-        "firestore-tests/moderation-reports.emulator.test.mjs::만료 정리는 증거 복사 완료까지 보류하고 복사 후 원본·썸네일 generation을 삭제한다",
-        "firestore-tests/moderation-reports.emulator.test.mjs::만료된 미디어는 새 증거 준비를 거부하지만 기존 신고 receipt 재조회는 유지한다",
-        "firestore-tests/moderation-reports.emulator.test.mjs::부분 삭제는 성공한 파일을 빼고 남은 generation만 다음 시간에 재시도한다",
-        "firestore-tests/chat-moderation.emulator.test.mjs::만료 정리와 메시지 삭제 경합은 두 삭제 순서에서 수렴하고 무관한 객체를 보존한다",
-        "firestore-tests/chat-moderation.emulator.test.mjs::만료 정리와 방 종료 경합은 두 삭제 순서에서 수렴하고 무관한 객체를 보존한다",
-        "firestore-tests/chat-moderation.emulator.test.mjs::만료 정리와 계정 탈퇴 경합은 두 삭제 순서에서 수렴하고 무관한 객체를 보존한다",
-        "firestore-tests/chat-message-search.emulator.test.mjs::일반 관리자 탈퇴 삭제가 검색 필드를 tombstone에서 제거한다",
-        "firestore-tests/chat-message-search.emulator.test.mjs::고정 상한과 값 cursor가 빈 일치 페이지 삭제 경계 동률에서도 누락 중복을 만들지 않는다"
-      ]
     },
     {
       "id": "chat-search-ios",
@@ -190,7 +95,7 @@
         "GRDBChatSearchStoreTests/deletionMarkerWinsAgainstLateCandidatePage()",
         "GRDBChatSearchStoreTests/visibilityRevisionRejectsBothWriteOrdersAndRollsBackOnFailure()",
         "AppDatabaseMigrationTests/senderUIDRebuilderRemovesLegacySenderIDAndBackfillsValidRows()",
-        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySixMigrationsWithoutLegacyColumns()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
         "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
         "GRDBChatDeletionSyncStoreTests/revisionGapRollsBackScrubAndCursor()",

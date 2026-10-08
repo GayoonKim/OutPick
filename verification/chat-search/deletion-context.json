@@ -5,37 +5,15 @@
     "verification",
     "tools/verification-gate",
     "contracts/chat-search",
-    "Socket",
-    "firestore-tests",
-    "functions",
     "OutPick",
     "OutPickTests",
     "OutPickUITests",
     "OutPick.xcodeproj",
     "Configurations",
-    "scripts",
     "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
-    "firestore.rules",
-    "firestore.indexes.json",
-    "storage.rules",
-    "storage.chat-media-quarantine.rules",
-    "storage.moderation-evidence.rules",
-    "firebase.json",
     "AGENTS.md"
   ],
   "checks": [
-    {
-      "id": "gate-selftest",
-      "command": "node",
-      "args": [
-        "--test",
-        "tools/verification-gate/gate.test.mjs"
-      ],
-      "cwd": ".",
-      "timeoutMs": 120000,
-      "kind": "command",
-      "nodeMajor": 24
-    },
     {
       "id": "firebase-config-test",
       "command": "sh",
@@ -117,7 +95,7 @@
         "GRDBChatSearchStoreTests/deletionMarkerWinsAgainstLateCandidatePage()",
         "GRDBChatSearchStoreTests/visibilityRevisionRejectsBothWriteOrdersAndRollsBackOnFailure()",
         "AppDatabaseMigrationTests/senderUIDRebuilderRemovesLegacySenderIDAndBackfillsValidRows()",
-        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySixMigrationsWithoutLegacyColumns()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
         "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
         "GRDBChatDeletionSyncStoreTests/revisionGapRollsBackScrubAndCursor()",

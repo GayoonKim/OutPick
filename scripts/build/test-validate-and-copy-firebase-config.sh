@@ -7,8 +7,8 @@ validator="$script_directory/validate-and-copy-firebase-config.sh"
 fixture="$script_directory/fixtures/GoogleService-Info-Fixture.plist"
 production_url="https://outpick-socket-2w7zhxurhq-du.a.run.app"
 development_url="https://outpick-socket-development-xyenspjiwa-du.a.run.app"
-development_kakao_key="f5f18b00bc7b163aa5be39fef99e646d"
-production_kakao_key="a2b20f7bedfb9582147f572ef004d0f0"
+development_kakao_key="development-kakao-fixture"
+production_kakao_key="production-kakao-fixture"
 temporary_directory=$(mktemp -d)
 
 cleanup() {
@@ -17,6 +17,13 @@ cleanup() {
 trap cleanup EXIT
 
 run_validator() {
+  case "$1" in
+    development) fixture_value="$development_kakao_key" ;;
+    production) fixture_value="$production_kakao_key" ;;
+    *) fixture_value="unsupported-fixture" ;;
+  esac
+  fixture_fingerprint=$(printf '%s' "$fixture_value" | shasum -a 256 | cut -d ' ' -f 1)
+  OUTPICK_VALIDATION_TEST_FINGERPRINT="$fixture_fingerprint" \
   OUTPICK_VALIDATE_ONLY=1 \
   OUTPICK_ENVIRONMENT="$1" \
   PRODUCT_BUNDLE_IDENTIFIER="$2" \
@@ -31,7 +38,7 @@ run_validator() {
 
 expect_failure() {
   if "$@" >/dev/null 2>&1; then
-    echo "expected failure but succeeded: $*" >&2
+    echo "expected failure but succeeded" >&2
     exit 1
   fi
 }

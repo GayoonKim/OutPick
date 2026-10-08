@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "repository-split-v1",
+  "source": "OutPick-Backend",
+  "files": {
+    "tools/security/scan.mjs": "18f6a43a7910c00e48e89682f2b605ee47fdfc4109ff707577dc3de60f1f4d8e",
+    "tools/security/scan.test.mjs": "51d054a7ab7b3be92a981d6f9156d7fdd4d626684277ff963c7a3b8c3418bd54",
+    "tools/security/gitleaks-lock.json": "0125a60d01488bb7ca4c853c2f011a21a5b2ae0c1b81fd2e4e9c2278bcec6474",
+    ".gitleaks.toml": "9ab878b45c56f8d1078df8621b434d59bcb3b57e3e84f640e57b1d88a8def9fb"
+  }
+}

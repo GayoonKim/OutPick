@@ -2,8 +2,15 @@
   "version": 1,
   "runTimeoutMs": 2100000,
   "inputs": [
-    "verification", "tools/verification-gate", "OutPick", "OutPickTests", "OutPick.xcodeproj",
-    "Configurations", "scripts/build", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "AGENTS.md"
+    "verification",
+    "tools/verification-gate",
+    "OutPick",
+    "OutPickTests",
+    "OutPick.xcodeproj",
+    "Configurations",
+    "scripts/build",
+    "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
+    "AGENTS.md"
   ],
   "checks": [
     {
@@ -11,11 +18,16 @@
       "command": "xcodebuild",
       "args": [
         "test",
-        "-project", "OutPick.xcodeproj",
-        "-scheme", "OutPick-Development",
-        "-destination", "platform=iOS Simulator,id=7544249E-D0EE-4B88-A48F-E384DF84E6A4",
-        "-parallel-testing-enabled", "NO",
-        "-derivedDataPath", "output/verification-derived-data",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,id=7544249E-D0EE-4B88-A48F-E384DF84E6A4",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
         "-only-testing:OutPickTests/ChatMediaExpiryCacheIndexTests",
         "-only-testing:OutPickTests/ChatMessagePageLoaderTests",
         "-only-testing:OutPickTests/ChatRoomViewModelMessageActionTests",
@@ -128,7 +140,7 @@
         "VideoSaveLifetimeTests/testChatCloseAfterSubmissionSuccess()",
         "ChatMessageMediaAttachmentMappingTests/directUploadAttachmentPreservesServerRetentionAndGenerationContract()",
         "GRDBChatMediaIndexStoreTests/mediaEntriesUpsertAndPaginateByNewestFirst()",
-        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySixMigrationsWithoutLegacyColumns()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "ChatMessageRecordMapperTests/messageRecordRoundTripPreservesMediaExpiry()",
         "ChatMessageActionPolicyTests/expiredMediaDisablesMessageReportButKeepsReplyBlockAndDeletion()",
         "OutPickTests/galleryStopsWhenRemoteCursorDoesNotAdvance()",

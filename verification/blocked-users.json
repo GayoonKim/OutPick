@@ -1,22 +1,53 @@
 {
   "version": 1,
   "runTimeoutMs": 2100000,
-  "inputs": ["verification", "tools/verification-gate", "Configurations", "scripts/build", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "OutPick", "OutPickTests", "OutPickUITests", "OutPick.xcodeproj", "AGENTS.md"],
-  "checks": [{
-    "id": "blocked-users-ios",
-    "command": "xcodebuild",
-    "args": ["test", "-project", "OutPick.xcodeproj", "-scheme", "OutPick-Development", "-destination", "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2", "-only-testing:OutPickTests/BlockedUsersViewModelTests", "-only-testing:OutPickTests/UserBlockSessionControllerTests", "-only-testing:OutPickTests/AvatarImagePresentationStateTests", "-only-testing:OutPickTests/ChatSearchVisibilityTests", "-only-testing:OutPickTests/AppRuntimeConfigurationTests", "-parallel-testing-enabled", "NO", "-derivedDataPath", "output/verification-derived-data", "CODE_SIGNING_ALLOWED=NO"],
-    "cwd": ".",
-    "timeoutMs": 1800000,
-    "kind": "xcresult",
-    "requiredTests": [
-      "BlockedUsersViewModelTests/profilesLoadOnlyOnDemandAndFailureKeepsUnblockAvailable()",
-      "BlockedUsersViewModelTests/latestProfileReplacesSnapshotAndSuppliesAvatar()",
-      "BlockedUsersViewModelTests/duplicateUnblockIsSuppressedAndFailureAllowsRetry()",
-      "BlockedUsersViewModelTests/lateProfileDoesNotRestoreUnblockedUser()",
-      "BlockedUsersViewModelTests/refreshRejectsOldProfileResponseAndRetriesFailedProfile()",
-      "BlockedUsersViewModelTests/listFailureEndsLoadingAndRetryRestoresList()",
-      "UserBlockSessionControllerTests/successfulMutationUpdatesMemoryAndAccountSnapshot()"
-    ]
-  }]
+  "inputs": [
+    "verification",
+    "tools/verification-gate",
+    "Configurations",
+    "scripts/build",
+    "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
+    "OutPick",
+    "OutPickTests",
+    "OutPickUITests",
+    "OutPick.xcodeproj",
+    "AGENTS.md"
+  ],
+  "checks": [
+    {
+      "id": "blocked-users-ios",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-only-testing:OutPickTests/BlockedUsersViewModelTests",
+        "-only-testing:OutPickTests/UserBlockSessionControllerTests",
+        "-only-testing:OutPickTests/AvatarImagePresentationStateTests",
+        "-only-testing:OutPickTests/ChatSearchVisibilityTests",
+        "-only-testing:OutPickTests/AppRuntimeConfigurationTests",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO"
+      ],
+      "cwd": ".",
+      "timeoutMs": 1800000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "BlockedUsersViewModelTests/profilesLoadOnlyOnDemandAndFailureKeepsUnblockAvailable()",
+        "BlockedUsersViewModelTests/latestProfileReplacesSnapshotAndSuppliesAvatar()",
+        "BlockedUsersViewModelTests/duplicateUnblockIsSuppressedAndFailureAllowsRetry()",
+        "BlockedUsersViewModelTests/lateProfileDoesNotRestoreUnblockedUser()",
+        "BlockedUsersViewModelTests/refreshRejectsOldProfileResponseAndRetriesFailedProfile()",
+        "BlockedUsersViewModelTests/listFailureEndsLoadingAndRetryRestoresList()",
+        "UserBlockSessionControllerTests/successfulMutationUpdatesMemoryAndAccountSnapshot()"
+      ]
+    }
+  ]
 }

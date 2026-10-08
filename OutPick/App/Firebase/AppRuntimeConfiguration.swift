@@ -1,15 +1,16 @@
 import Foundation
+import CryptoKit
 
 enum OutPickEnvironment: String, Equatable, Sendable {
     case development
     case production
 
-    var expectedKakaoNativeAppKey: String {
+    var expectedKakaoFingerprint: String {
         switch self {
         case .development:
-            "f5f18b00bc7b163aa5be39fef99e646d"
+            "d9f6d5115799a4f991b2006c2921d3868b73df08cbfdf34ad567189001c7b26b"
         case .production:
-            "a2b20f7bedfb9582147f572ef004d0f0"
+            "a8defd938f01ac550a5ef88186028be93bb2ed271b67ec585dcf979076682dde"
         }
     }
 
@@ -66,7 +67,11 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
     let kakaoNativeAppKey: String
     let kakaoURLScheme: String
 
-    init(infoDictionary: [String: Any], bundleIdentifier: String) throws {
+    init(
+        infoDictionary: [String: Any],
+        bundleIdentifier: String,
+        expectedKakaoFingerprint: ((OutPickEnvironment) -> String)? = nil
+    ) throws {
         guard let environment = OutPickEnvironment(
             rawValue: try Self.requiredString("OUTPICK_ENVIRONMENT", in: infoDictionary)
         ) else {
@@ -90,10 +95,11 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
             "OUTPICK_KAKAO_URL_SCHEME",
             in: infoDictionary
         )
-        guard kakaoNativeAppKey == environment.expectedKakaoNativeAppKey else {
+        let fingerprint = expectedKakaoFingerprint?(environment) ?? environment.expectedKakaoFingerprint
+        guard Self.kakaoFingerprint(for: kakaoNativeAppKey) == fingerprint else {
             throw AppEnvironmentError.kakaoEnvironmentMismatch
         }
-        guard kakaoURLScheme == "kakao\(environment.expectedKakaoNativeAppKey)" else {
+        guard kakaoURLScheme == "kakao\(kakaoNativeAppKey)" else {
             throw AppEnvironmentError.kakaoCallbackMismatch
         }
 
@@ -127,6 +133,10 @@ struct AppRuntimeConfiguration: Equatable, Sendable {
         self.googleReversedClientID = googleReversedClientID
         self.kakaoNativeAppKey = kakaoNativeAppKey
         self.kakaoURLScheme = kakaoURLScheme
+    }
+
+    static func kakaoFingerprint(for value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     static func load(bundle: Bundle = .main) throws -> AppRuntimeConfiguration {
