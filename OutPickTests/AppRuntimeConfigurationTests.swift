@@ -7,8 +7,8 @@ struct AppRuntimeConfigurationTests {
         "https://outpick-socket-development-xyenspjiwa-du.a.run.app"
     private let productionSocketURL =
         "https://outpick-socket-2w7zhxurhq-du.a.run.app"
-    private let developmentKakaoNativeAppKey = "f5f18b00bc7b163aa5be39fef99e646d"
-    private let productionKakaoNativeAppKey = "a2b20f7bedfb9582147f572ef004d0f0"
+    private let developmentKakaoNativeAppKey = "development-kakao-fixture"
+    private let productionKakaoNativeAppKey = "production-kakao-fixture"
 
     @Test func developmentConfigurationAcceptsOnlyDevelopmentBoundaries() throws {
         let configuration = try makeConfiguration(
@@ -199,6 +199,23 @@ struct AppRuntimeConfigurationTests {
         }
     }
 
+    @Test func bundledRuntimeUsesApprovedKakaoFingerprint() throws {
+        let configuration = try AppRuntimeConfiguration.load()
+        #expect(configuration.environment == .development)
+    }
+
+    @Test func developmentRejectsUnapprovedKakaoConfiguration() {
+        expectError(.kakaoEnvironmentMismatch) {
+            _ = try makeConfiguration(
+                environment: "development",
+                bundleIdentifier: "GayoonKim.OutPick.dev",
+                projectID: "outpick-test",
+                socketURL: developmentSocketURL,
+                kakaoNativeAppKey: "unapproved-kakao-fixture"
+            )
+        }
+    }
+
     private func makeConfiguration(
         environment: String,
         bundleIdentifier: String,
@@ -219,7 +236,12 @@ struct AppRuntimeConfigurationTests {
                 "OUTPICK_KAKAO_NATIVE_APP_KEY": resolvedKakaoNativeAppKey,
                 "OUTPICK_KAKAO_URL_SCHEME": kakaoURLScheme ?? "kakao\(resolvedKakaoNativeAppKey)"
             ],
-            bundleIdentifier: bundleIdentifier
+            bundleIdentifier: bundleIdentifier,
+            expectedKakaoFingerprint: { environment in
+                AppRuntimeConfiguration.kakaoFingerprint(for: expectedKakaoNativeAppKey(
+                    for: environment.rawValue
+                ))
+            }
         )
     }
 

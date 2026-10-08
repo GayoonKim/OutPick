@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "repository-split-v1",
+  "source": "OutPick-Backend",
+  "files": {
+    "tools/verification-gate/gate.mjs": "94aa7f98b2dfcfde05e4bb1a70c89951e35e50189a10d3784fe7ce2960615864",
+    "tools/verification-gate/node-reporter.mjs": "a767143df7b9ae87c4e17518c0a1cad5872d0132a698cc1aad1b2c40abe4bda6",
+    "tools/verification-gate/gate.test.mjs": "d5b0b0600cacb82ceb753fe2e8e54d4b04118d1c9d4d3ce5e81aef76ed0b9d93",
+    "tools/verification-gate/run-node-tests.mjs": "4602c1b2a216b4383590f5b07639754cdd0dca52a2e7a6df521f9d1f60b3ebb0"
+  }
+}

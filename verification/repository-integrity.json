@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "runTimeoutMs": 180000,
+  "inputs": [
+    "tools/verification-gate",
+    "tools/security",
+    ".gitleaks.toml",
+    "tools/repository-integrity",
+    "contracts",
+    "OutPick/Features/Chat/Domain/Models/ChatSearchUnicodeData.swift",
+    "OutPick/Resources/ChatSearchUnicode-LICENSE.txt",
+    "verification/repository-integrity.json"
+  ],
+  "checks": [
+    {
+      "id": "gate-integrity",
+      "command": "node",
+      "args": [
+        "tools/repository-integrity/check.mjs",
+        "tools/verification-gate/upstream.json"
+      ],
+      "cwd": ".",
+      "timeoutMs": 30000,
+      "kind": "command",
+      "nodeMajor": 24
+    },
+    {
+      "id": "security-integrity",
+      "command": "node",
+      "args": [
+        "tools/repository-integrity/check.mjs",
+        "tools/security/upstream.json"
+      ],
+      "cwd": ".",
+      "timeoutMs": 30000,
+      "kind": "command",
+      "nodeMajor": 24
+    },
+    {
+      "id": "client-integrity",
+      "command": "node",
+      "args": [
+        "tools/repository-integrity/check.mjs",
+        "contracts/client-manifest.json"
+      ],
+      "cwd": ".",
+      "timeoutMs": 30000,
+      "kind": "command",
+      "nodeMajor": 24
+    },
+    {
+      "id": "unicode-generated",
+      "command": "node",
+      "args": [
+        "contracts/chat-search/generate-unicode.mjs",
+        "--check",
+        "--consumer",
+        "ios"
+      ],
+      "cwd": ".",
+      "timeoutMs": 60000,
+      "kind": "command",
+      "nodeMajor": 24
+    }
+  ]
+}

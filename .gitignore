@@ -1,5 +1,7 @@
 # macOS
 .DS_Store
+.local/
+.firebaserc
 
 # Xcode user state
 xcuserdata/

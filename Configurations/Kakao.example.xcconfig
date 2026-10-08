@@ -1,0 +1,2 @@
+// LocalSecrets/Kakao/Development.xcconfig 또는 Production.xcconfig에 실제 값을 설정한다.
+OUTPICK_KAKAO_NATIVE_APP_KEY = example-native-app-key

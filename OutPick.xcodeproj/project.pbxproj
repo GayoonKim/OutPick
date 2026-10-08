@@ -401,7 +401,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C0A00012F30000000000002 /* Development.xcconfig */;
 			buildSettings = {
-				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
+				API_KEY = "$(OUTPICK_KAKAO_NATIVE_APP_KEY)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.Debug.entitlements;
@@ -423,7 +423,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/OutPick/functions/node_modules/@unrs/resolver-binding-darwin-arm64",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OUTPICK_PRODUCT_BUNDLE_IDENTIFIER)";
@@ -439,7 +438,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C0A00012F30000000000002 /* Development.xcconfig */;
 			buildSettings = {
-				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
+				API_KEY = "$(OUTPICK_KAKAO_NATIVE_APP_KEY)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
@@ -461,7 +460,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/OutPick/functions/node_modules/@unrs/resolver-binding-darwin-arm64",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OUTPICK_PRODUCT_BUNDLE_IDENTIFIER)";
@@ -787,7 +785,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C0A00012F30000000000003 /* Production.xcconfig */;
 			buildSettings = {
-				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
+				API_KEY = "$(OUTPICK_KAKAO_NATIVE_APP_KEY)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.Debug.entitlements;
@@ -809,7 +807,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/OutPick/functions/node_modules/@unrs/resolver-binding-darwin-arm64",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OUTPICK_PRODUCT_BUNDLE_IDENTIFIER)";
@@ -825,7 +822,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 0C0A00012F30000000000003 /* Production.xcconfig */;
 			buildSettings = {
-				API_KEY = 934b7b2086ff3fa2bc0365cece7c892c;
+				API_KEY = "$(OUTPICK_KAKAO_NATIVE_APP_KEY)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = OutPick/OutPick.entitlements;
@@ -847,7 +844,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/OutPick/functions/node_modules/@unrs/resolver-binding-darwin-arm64",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OUTPICK_PRODUCT_BUNDLE_IDENTIFIER)";

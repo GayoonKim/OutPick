@@ -43,7 +43,7 @@ plist_reversed_client_id=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID
 
 case "$OUTPICK_ENVIRONMENT" in
   development)
-    expected_kakao_native_app_key="f5f18b00bc7b163aa5be39fef99e646d"
+    expected_kakao_fingerprint="d9f6d5115799a4f991b2006c2921d3868b73df08cbfdf34ad567189001c7b26b"
     expected_socket_url="https://outpick-socket-development-xyenspjiwa-du.a.run.app"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick.dev" ] || \
       fail "Development Bundle ID는 GayoonKim.OutPick.dev여야 합니다."
@@ -53,7 +53,7 @@ case "$OUTPICK_ENVIRONMENT" in
       fail "Development Socket URL이 canonical URL과 다릅니다."
     ;;
   production)
-    expected_kakao_native_app_key="a2b20f7bedfb9582147f572ef004d0f0"
+    expected_kakao_fingerprint="a8defd938f01ac550a5ef88186028be93bb2ed271b67ec585dcf979076682dde"
     expected_socket_url="https://outpick-socket-2w7zhxurhq-du.a.run.app"
     [ "$PRODUCT_BUNDLE_IDENTIFIER" = "GayoonKim.OutPick" ] || \
       fail "Production Bundle ID는 GayoonKim.OutPick이어야 합니다."
@@ -67,9 +67,14 @@ case "$OUTPICK_ENVIRONMENT" in
     ;;
 esac
 
-[ "$OUTPICK_KAKAO_NATIVE_APP_KEY" = "$expected_kakao_native_app_key" ] || \
+if [ -n "${OUTPICK_VALIDATION_TEST_FINGERPRINT:-}" ]; then
+  [ "${OUTPICK_VALIDATE_ONLY:-0}" = "1" ] || fail "테스트 지문은 검증 전용 모드에서만 허용됩니다."
+  expected_kakao_fingerprint="$OUTPICK_VALIDATION_TEST_FINGERPRINT"
+fi
+actual_kakao_fingerprint=$(printf '%s' "$OUTPICK_KAKAO_NATIVE_APP_KEY" | shasum -a 256 | cut -d ' ' -f 1)
+[ "$actual_kakao_fingerprint" = "$expected_kakao_fingerprint" ] || \
   fail "Kakao Native App Key가 실행 환경과 일치하지 않습니다."
-[ "$OUTPICK_KAKAO_URL_SCHEME" = "kakao$expected_kakao_native_app_key" ] || \
+[ "$OUTPICK_KAKAO_URL_SCHEME" = "kakao$OUTPICK_KAKAO_NATIVE_APP_KEY" ] || \
   fail "Kakao callback scheme이 실행 환경의 Native App Key와 일치하지 않습니다."
 
 if [ "${OUTPICK_VALIDATE_ONLY:-0}" = "1" ]; then
