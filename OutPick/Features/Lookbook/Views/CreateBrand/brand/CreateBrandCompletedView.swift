@@ -12,9 +12,6 @@ struct CreateBrandCompletedView: View {
     let onComplete: () -> Void
 
     private var descriptionText: String {
-        if createdBrand.canDiscoverSeasons {
-            return "브랜드를 만들었습니다. 이어서 시즌을 추가할 수 있습니다."
-        }
         if createdBrand.hasLogoAsset {
             return "브랜드를 만들었고, 로고 준비도 끝났습니다."
         }

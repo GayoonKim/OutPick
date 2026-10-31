@@ -15,12 +15,15 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
 
     static let shared = FirebaseImageStorageRepository()
 
-    private let db = Firestore.firestore()
-    private let storage = Storage.storage()
+    private let db: Firestore
+    private let storage: Storage
     private let transferService: FirebaseStorageTransferRepositoryProtocol
 
-    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared) {
+    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared,
+         db: Firestore = Firestore.firestore(), storage: Storage = Storage.storage()) {
         self.transferService = transferService
+        self.db = db
+        self.storage = storage
     }
 
     // 채팅방 및 프로필 이미지 업로드
@@ -329,6 +332,6 @@ final class FirebaseImageStorageRepository: FirebaseImageStorageRepositoryProtoc
         }
         let bucket = String(resourcePath[resourcePath.index(resourcePath.startIndex, offsetBy: 5)..<separator])
         let path = String(resourcePath[resourcePath.index(after: separator)...])
-        return Storage.storage(url: "gs://\(bucket)").reference(withPath: path)
+        return Storage.storage(app: storage.app, url: "gs://\(bucket)").reference(withPath: path)
     }
 }

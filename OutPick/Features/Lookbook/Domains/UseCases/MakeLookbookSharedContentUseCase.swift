@@ -46,7 +46,9 @@ final class MakeLookbookSharedContentUseCase: MakeLookbookSharedContentUseCasePr
             guard brand.isVisibleToUsers else {
                 throw LookbookContentUnavailableError.brandUnavailable
             }
-            return makeBrandContent(brand)
+            let current = try await brandRepository.fetchBrand(brandID: brand.id)
+            guard current.isVisibleToUsers else { throw LookbookContentUnavailableError.brandUnavailable }
+            return makeBrandContent(current)
 
         case .season(let season):
             guard season.isVisibleToUsers else {
@@ -76,7 +78,7 @@ final class MakeLookbookSharedContentUseCase: MakeLookbookSharedContentUseCasePr
             brandID: brand.id.value,
             titleSnapshot: brand.name,
             subtitleSnapshot: "브랜드",
-            thumbnailPathSnapshot: brand.listLogoPath
+            thumbnailPathSnapshot: nil
         )
     }
 

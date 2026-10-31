@@ -6,8 +6,27 @@ import UIKit
 
 @MainActor
 struct LookbookHomeViewModelInterestTests {
+    @Test func requestEntryRoutesWithAndWithoutSearchResultsAtLimit20() async throws {
+        for hasResults in [true, false] {
+            let brand = homeBrand("mono", moodIDs: [])
+            let search = HomeSearchUseCaseFake(brands: hasResults ? [brand] : [])
+            let model = makeViewModel(mainBrands: [brand], interestUseCase: HomeInterestUseCaseFake(results: []),
+                                      store: CurrentUserStylePreferenceStore(), searchUseCase: search)
+            model.searchText = " Mono "
+            for _ in 0..<100 {
+                if model.canRequestBrand { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            #expect(model.searchPhase == (hasResults ? .results : .empty))
+            #expect(search.limits == [20])
+            let spy = HomeRequestCoordinatorSpy()
+            model.requestBrand(using: spy)
+            #expect(spy.names == ["Mono"])
+        }
+    }
+
     @Test
-    func initialBrandsAppearWhileLogoPrefetchIsBlocked() async {
+    func brandMetadataAppearsWithoutLogoRequests() async {
         let cache = BlockingHomeImageCache()
         let viewModel = makeViewModel(
             mainBrands: [homeBrand("brand-with-logo", moodIDs: [], logoThumbPath: "brands/logo-thumb")],
@@ -17,15 +36,16 @@ struct LookbookHomeViewModelInterestTests {
         )
         await viewModel.loadInitialPageIfNeeded()
         viewModel.updateViewport(indices: [0], searching: false)
-        await cache.waitUntilPrefetchStarted()
+        await Task.yield()
+        #expect(await cache.requestCount == 0)
 
         #expect(viewModel.phase == .ready)
         #expect(viewModel.brands.map(\.id.value) == ["brand-with-logo"])
-        await cache.releasePrefetch()
+
     }
 
     @Test
-    func noStylePreferenceHidesSectionWithoutQuery() async {
+    func noStylePreferenceKeepsUnconfiguredWithoutQuery() async {
         let interestUseCase = HomeInterestUseCaseFake(results: [])
         let viewModel = makeViewModel(
             mainBrands: [homeBrand("all-brand", moodIDs: [])],
@@ -37,7 +57,6 @@ struct LookbookHomeViewModelInterestTests {
 
         #expect(viewModel.phase == .ready)
         #expect(viewModel.interestPhase == .unconfigured)
-        #expect(viewModel.shouldShowInterestedStyleSection == false)
         #expect(interestUseCase.requests.isEmpty)
     }
 
@@ -113,19 +132,19 @@ struct LookbookHomeViewModelInterestTests {
         mainBrands: [Brand],
         interestUseCase: HomeInterestUseCaseFake,
         store: CurrentUserStylePreferenceStore,
-        imageCache: (any BrandImageCacheProtocol)? = nil
+        imageCache: (any BrandImageCacheProtocol)? = nil,
+        searchUseCase: HomeSearchUseCaseFake = HomeSearchUseCaseFake()
     ) -> LookbookHomeViewModel {
         LookbookHomeViewModel(
             repo: HomeBrandRepositoryFake(brands: mainBrands),
-            searchUseCase: HomeSearchUseCaseFake(),
+            searchUseCase: searchUseCase,
             loadInterestedStyleBrandsUseCase: interestUseCase,
             stylePreferenceStore: store,
             brandAdminSessionStore: BrandAdminSessionStore(
                 capabilitiesClient: HomeBrandCapabilitiesClientFake()
             ),
             brandImageCache: imageCache ?? HomeBrandImageCacheFake(),
-            initialBrandLimit: 12,
-            prefetchLogoCount: 0
+            initialBrandLimit: 12
         )
     }
 }
@@ -199,10 +218,21 @@ private final class HomeBrandRepositoryFake: BrandRepositoryProtocol {
     }
 }
 
-private struct HomeSearchUseCaseFake: SearchBrandsUseCaseProtocol {
+private final class HomeSearchUseCaseFake: SearchBrandsUseCaseProtocol {
+    let brands: [Brand]
+    var limits: [Int] = []
+    init(brands: [Brand] = []) { self.brands = brands }
     func execute(query: String, limit: Int) async throws -> [Brand] {
-        []
+        limits.append(limit)
+        return brands
     }
+}
+
+@MainActor
+private final class HomeRequestCoordinatorSpy: BrandRequestRouting {
+    var names: [String] = []
+    func pushBrandRequest(initialBrandName: String) { names.append(initialBrandName) }
+    func pushBrandDetail(brand: Brand) {}
 }
 
 private struct HomeBrandCapabilitiesClientFake: BrandAdminCapabilitiesCalling {
@@ -233,6 +263,7 @@ private struct HomeBrandImageCacheFake: BrandImageCacheProtocol {
 
 private actor BlockingHomeImageCache: BrandImageCacheProtocol {
     private var didStart = false
+    private(set) var requestCount = 0
     private var startWaiter: CheckedContinuation<Void, Never>?
     private var releaseWaiter: CheckedContinuation<Void, Never>?
 
@@ -250,6 +281,7 @@ private actor BlockingHomeImageCache: BrandImageCacheProtocol {
     func storeImageData(_ data: Data, path: String) async throws {}
     func removeImage(path: String) async {}
     func prefetch(items: [(path: String, maxBytes: Int)], concurrency: Int, storePolicy: ImageCacheStorePolicy) async {
+        requestCount += 1
         didStart = true
         startWaiter?.resume()
         startWaiter = nil
@@ -294,6 +326,7 @@ private func homeBrand(
             popularScore: 0
         ),
         deletionStatus: .active,
-        updatedAt: Date(timeIntervalSince1970: 0)
+        updatedAt: Date(timeIntervalSince1970: 0),
+        publicationStatus: "public"
     )
 }

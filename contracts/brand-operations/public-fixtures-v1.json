@@ -1,0 +1,1229 @@
+{
+  "contractVersion": 1,
+  "scope": "public-client",
+  "normalizationCases": [
+    {
+      "id": "N01",
+      "name": "  ＭＯＮＯ　 studio  ",
+      "url": " MONO.EXAMPLE ",
+      "expectedName": "mono studio",
+      "expectedURL": "https://mono.example/"
+    },
+    {
+      "id": "N02",
+      "name": "모노",
+      "url": "https://MONO.EXAMPLE:443/lookbook?q=SS",
+      "expectedName": "모노",
+      "expectedURL": "https://mono.example/lookbook?q=SS"
+    },
+    {
+      "id": "N03",
+      "name": "Mono",
+      "url": "https://www.mono.example/",
+      "expectedName": "mono",
+      "expectedURL": "https://www.mono.example/"
+    }
+  ],
+  "identityCases": [
+    {
+      "id": "I01",
+      "left": {
+        "brandName": " ＭＯＮＯ ",
+        "websiteURL": "MONO.EXAMPLE",
+        "englishBrandName": "Mono"
+      },
+      "right": {
+        "brandName": "mono",
+        "websiteURL": "https://mono.example/",
+        "englishBrandName": null
+      },
+      "same": true
+    },
+    {
+      "id": "I02",
+      "left": {
+        "brandName": "모노",
+        "websiteURL": "https://mono-a.example"
+      },
+      "right": {
+        "brandName": "모노",
+        "websiteURL": "https://mono-b.example"
+      },
+      "same": false
+    },
+    {
+      "id": "I03",
+      "left": {
+        "brandName": "모노",
+        "websiteURL": "https://mono.example"
+      },
+      "right": {
+        "brandName": "모노",
+        "websiteURL": "https://www.mono.example"
+      },
+      "same": false
+    },
+    {
+      "id": "I04",
+      "left": {
+        "brandName": "모노",
+        "websiteURL": "https://mono.example/a"
+      },
+      "right": {
+        "brandName": "모노",
+        "websiteURL": "https://mono.example/b"
+      },
+      "same": false
+    }
+  ],
+  "invalidRequests": [
+    {
+      "id": "R01",
+      "input": {
+        "brandName": "모노"
+      },
+      "field": "websiteURL"
+    },
+    {
+      "id": "R02",
+      "input": {
+        "brandName": " ",
+        "websiteURL": "https://mono.example"
+      },
+      "field": "brandName"
+    },
+    {
+      "id": "R03",
+      "input": {
+        "brandName": "모노",
+        "websiteURL": "ftp://mono.example"
+      },
+      "field": "websiteURL"
+    },
+    {
+      "id": "R04",
+      "input": {
+        "brandName": "모노",
+        "websiteURL": "https://actor:secret@mono.example"
+      },
+      "field": "websiteURL"
+    },
+    {
+      "id": "R05",
+      "input": {
+        "brandName": "모노",
+        "websiteURL": ""
+      },
+      "field": "websiteURL"
+    }
+  ],
+  "searchCases": [
+    {
+      "id": "S01",
+      "query": "모노",
+      "brands": [
+        {
+          "brandID": "brand-a",
+          "name": "모노 스튜디오",
+          "englishName": null
+        },
+        {
+          "brandID": "brand-b",
+          "name": "스튜디오 모노",
+          "englishName": null
+        },
+        {
+          "brandID": "brand-c",
+          "name": "모노",
+          "englishName": null
+        },
+        {
+          "brandID": "brand-d",
+          "name": "모노",
+          "englishName": null
+        },
+        {
+          "brandID": "brand-e",
+          "name": "다른 브랜드",
+          "englishName": "Mono Other"
+        }
+      ],
+      "expectedIDs": [
+        "brand-a",
+        "brand-b",
+        "brand-c",
+        "brand-d"
+      ]
+    },
+    {
+      "id": "S02",
+      "query": "없는 이름",
+      "brands": [
+        {
+          "brandID": "brand-a",
+          "name": "모노",
+          "englishName": "Mono"
+        }
+      ],
+      "expectedIDs": []
+    },
+    {
+      "id": "S03",
+      "query": "mono",
+      "brands": [
+        {
+          "brandID": "brand-a",
+          "name": "모노",
+          "englishName": "Studio Mono"
+        },
+        {
+          "brandID": "brand-b",
+          "name": "다른 브랜드",
+          "englishName": "Other"
+        }
+      ],
+      "expectedIDs": [
+        "brand-a"
+      ]
+    }
+  ],
+  "publicationCases": [
+    {
+      "id": "P01",
+      "contentCount": 10,
+      "readyCount": 10,
+      "reviewComplete": true,
+      "readable": true,
+      "deleted": false,
+      "expected": true
+    },
+    {
+      "id": "P02",
+      "contentCount": 10,
+      "readyCount": 8,
+      "reviewComplete": true,
+      "readable": true,
+      "deleted": false,
+      "expected": false
+    },
+    {
+      "id": "P03",
+      "contentCount": 0,
+      "readyCount": 0,
+      "reviewComplete": true,
+      "readable": true,
+      "deleted": false,
+      "expected": false
+    },
+    {
+      "id": "P04",
+      "contentCount": 10,
+      "readyCount": 10,
+      "reviewComplete": false,
+      "readable": true,
+      "deleted": false,
+      "expected": false
+    },
+    {
+      "id": "P05",
+      "contentCount": 10,
+      "readyCount": 10,
+      "reviewComplete": true,
+      "readable": false,
+      "deleted": false,
+      "expected": false
+    },
+    {
+      "id": "P06",
+      "contentCount": 10,
+      "readyCount": 10,
+      "reviewComplete": true,
+      "readable": true,
+      "deleted": true,
+      "expected": false
+    }
+  ],
+  "publicAPICases": [
+    {
+      "id": "submit-null-destination",
+      "endpoint": "submitBrandRequest",
+      "input": {
+        "brandName": "모노",
+        "websiteURL": "example.invalid"
+      },
+      "expected": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "duplicate-current-completed",
+      "endpoint": "submitBrandRequest",
+      "input": {
+        "brandName": "모노",
+        "websiteURL": "example.invalid",
+        "englishBrandName": "OTHER"
+      },
+      "expected": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "added",
+        "isDuplicate": true,
+        "remainingToday": 4,
+        "resolvedBrandID": "fixture-brand"
+      }
+    },
+    {
+      "id": "completed-current-private",
+      "endpoint": "listMyBrandRequests",
+      "input": {
+        "scope": "history"
+      },
+      "expectedItem": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "brandName": "모노",
+        "englishBrandName": null,
+        "websiteURL": "https://example.invalid/",
+        "status": "added",
+        "resolvedBrandID": null,
+        "rejectionReason": null,
+        "createdAt": "2026-10-15T00:00:00.000Z",
+        "updatedAt": "2026-10-15T00:00:00.000Z"
+      }
+    }
+  ],
+  "wireResponseCases": [
+    {
+      "id": "wire-receipt-submitted",
+      "endpoint": "submitBrandRequest",
+      "valid": true,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-receipt-reviewing",
+      "endpoint": "submitBrandRequest",
+      "valid": true,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "reviewing",
+        "isDuplicate": true,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-receipt-added",
+      "endpoint": "submitBrandRequest",
+      "valid": true,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "added",
+        "isDuplicate": true,
+        "remainingToday": 4,
+        "resolvedBrandID": "fixture-brand"
+      }
+    },
+    {
+      "id": "wire-receipt-rejected",
+      "endpoint": "submitBrandRequest",
+      "valid": true,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "rejected",
+        "isDuplicate": true,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-page-active",
+      "endpoint": "listMyBrandRequests",
+      "valid": true,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-submitted",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "submitted",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          },
+          {
+            "requestID": "fixture-reviewing",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "reviewing",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "active",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-page-history",
+      "endpoint": "listMyBrandRequests",
+      "valid": true,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-added",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          },
+          {
+            "requestID": "fixture-rejected",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "rejected",
+            "resolvedBrandID": null,
+            "rejectionReason": "기타",
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-empty-continue",
+      "endpoint": "listMyBrandRequests",
+      "valid": true,
+      "response": {
+        "requests": [],
+        "scope": "history",
+        "nextCursor": {
+          "createdAt": "2026-10-15T00:00:00.000Z",
+          "requestID": "fixture-request"
+        }
+      }
+    },
+    {
+      "id": "wire-empty-end",
+      "endpoint": "listMyBrandRequests",
+      "valid": true,
+      "response": {
+        "requests": [],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-partial-continue",
+      "endpoint": "listMyBrandRequests",
+      "valid": true,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": {
+          "createdAt": "2026-10-15T00:00:00.000Z",
+          "requestID": "fixture-request"
+        }
+      }
+    },
+    {
+      "id": "wire-missing-requestID",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-missing-groupID",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-missing-status",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-missing-isDuplicate",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-missing-remainingToday",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-missing-resolvedBrandID",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4
+      }
+    },
+    {
+      "id": "wire-null-duplicate",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": null,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-string-count",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": "4",
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-fraction-count",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 0.5,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-over-quota",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 6,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-unknown-status",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "unknown",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": null
+      }
+    },
+    {
+      "id": "wire-non-added-destination",
+      "endpoint": "submitBrandRequest",
+      "valid": false,
+      "response": {
+        "requestID": "fixture-request",
+        "groupID": "fixture-group",
+        "status": "submitted",
+        "isDuplicate": false,
+        "remainingToday": 4,
+        "resolvedBrandID": "fixture-brand"
+      }
+    },
+    {
+      "id": "wire-missing-scope",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-cursor",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [],
+        "scope": "active"
+      }
+    },
+    {
+      "id": "wire-unknown-scope",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "other",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-broken-cursor",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": {
+          "requestID": "x"
+        }
+      }
+    },
+    {
+      "id": "wire-bad-time",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": {
+          "createdAt": "2026-10-15",
+          "requestID": "x"
+        }
+      }
+    },
+    {
+      "id": "wire-wrong-scope-item",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "active",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-requestID",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-groupID",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-brandName",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-englishBrandName",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-websiteURL",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-status",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-resolvedBrandID",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-rejectionReason",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-createdAt",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-missing-item-updatedAt",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-null-time",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": null,
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-invalid-date",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-02-30T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-rejected-no-reason",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "rejected",
+            "resolvedBrandID": null,
+            "rejectionReason": null,
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-reason-on-added",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "added",
+            "resolvedBrandID": null,
+            "rejectionReason": "기타",
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    },
+    {
+      "id": "wire-unknown-reason",
+      "endpoint": "listMyBrandRequests",
+      "valid": false,
+      "response": {
+        "requests": [
+          {
+            "requestID": "fixture-request",
+            "groupID": "fixture-group",
+            "brandName": "모노",
+            "englishBrandName": null,
+            "websiteURL": "https://example.invalid/",
+            "status": "rejected",
+            "resolvedBrandID": null,
+            "rejectionReason": "other",
+            "createdAt": "2026-10-15T00:00:00.000Z",
+            "updatedAt": "2026-10-15T00:00:00.000Z"
+          }
+        ],
+        "scope": "history",
+        "nextCursor": null
+      }
+    }
+  ],
+  "pageInputCases": [
+    {
+      "id": "input-default",
+      "input": {},
+      "expected": {
+        "scope": "active",
+        "limit": 20,
+        "hasCursor": false
+      }
+    },
+    {
+      "id": "input-null-default",
+      "input": {
+        "scope": null,
+        "limit": null,
+        "cursorCreatedAt": null,
+        "cursorRequestID": null
+      },
+      "expected": {
+        "scope": "active",
+        "limit": 20,
+        "hasCursor": false
+      }
+    },
+    {
+      "id": "input-clamp",
+      "input": {
+        "scope": "history",
+        "limit": 100
+      },
+      "expected": {
+        "scope": "history",
+        "limit": 50,
+        "hasCursor": false
+      }
+    },
+    {
+      "id": "input-next",
+      "input": {
+        "scope": "history",
+        "cursorCreatedAt": "2026-10-15T00:00:00.000Z",
+        "cursorRequestID": "fixture-request"
+      },
+      "expected": {
+        "scope": "history",
+        "limit": 20,
+        "hasCursor": true
+      }
+    },
+    {
+      "id": "input-invalid-scope",
+      "input": {
+        "scope": "other"
+      },
+      "reason": "INVALID_INPUT"
+    },
+    {
+      "id": "input-invalid-zero",
+      "input": {
+        "limit": 0
+      },
+      "reason": "INVALID_INPUT"
+    },
+    {
+      "id": "input-invalid-fraction",
+      "input": {
+        "limit": 1.5
+      },
+      "reason": "INVALID_INPUT"
+    },
+    {
+      "id": "input-invalid-string",
+      "input": {
+        "limit": "20"
+      },
+      "reason": "INVALID_INPUT"
+    },
+    {
+      "id": "input-invalid-one-cursor",
+      "input": {
+        "cursorRequestID": "x"
+      },
+      "reason": "INVALID_CURSOR"
+    },
+    {
+      "id": "input-invalid-date-only",
+      "input": {
+        "cursorCreatedAt": "2026-10-15",
+        "cursorRequestID": "x"
+      },
+      "reason": "INVALID_CURSOR"
+    },
+    {
+      "id": "input-invalid-impossible-date",
+      "input": {
+        "cursorCreatedAt": "2026-02-30T00:00:00.000Z",
+        "cursorRequestID": "x"
+      },
+      "reason": "INVALID_CURSOR"
+    },
+    {
+      "id": "input-invalid-bad-id",
+      "input": {
+        "cursorCreatedAt": "2026-10-15T00:00:00.000Z",
+        "cursorRequestID": "a/b"
+      },
+      "reason": "INVALID_CURSOR"
+    }
+  ],
+  "errorCases": [
+    {
+      "id": "error-invalid-input",
+      "code": "invalid-argument",
+      "reason": "INVALID_INPUT"
+    },
+    {
+      "id": "error-invalid-cursor",
+      "code": "invalid-argument",
+      "reason": "INVALID_CURSOR"
+    },
+    {
+      "id": "error-daily-limit",
+      "code": "resource-exhausted",
+      "reason": "DAILY_LIMIT_REACHED"
+    },
+    {
+      "id": "error-request-blocked",
+      "code": "permission-denied",
+      "reason": "REQUEST_BLOCKED"
+    },
+    {
+      "id": "error-query-budget",
+      "code": "resource-exhausted",
+      "reason": "QUERY_BUDGET_EXCEEDED"
+    },
+    {
+      "id": "error-invalid-stored-data",
+      "code": "internal",
+      "reason": "DATA_INVALID"
+    },
+    {
+      "id": "error-signed-out",
+      "code": "unauthenticated",
+      "reason": null
+    },
+    {
+      "id": "error-non-service-identity",
+      "code": "permission-denied",
+      "reason": null
+    },
+    {
+      "id": "error-sdk-unavailable",
+      "code": "unavailable",
+      "reason": null
+    }
+  ]
+}

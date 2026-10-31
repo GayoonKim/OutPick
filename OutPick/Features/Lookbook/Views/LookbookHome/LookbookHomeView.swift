@@ -135,12 +135,10 @@ struct LookbookHomeView: View {
 
     private var brandListContent: some View {
         List {
-            if viewModel.shouldShowInterestedStyleSection {
-                interestSection
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-            }
+            interestSection
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
 
             overallBrandSectionHeader
                 .listRowInsets(EdgeInsets())
@@ -221,6 +219,7 @@ struct LookbookHomeView: View {
                     brandRow(brand)
                         .lookbookItemFrame(brand.id.value, in: "lookbook.home")
                 }
+                brandRequestButton
             }
             .listStyle(.plain)
             .outpickHiddenScrollContentBackground()
@@ -245,9 +244,7 @@ struct LookbookHomeView: View {
                     .multilineTextAlignment(.center)
 
                 Button {
-                    coordinator.pushBrandRequest(
-                        initialBrandName: viewModel.normalizedSearchText
-                    )
+                    viewModel.requestBrand(using: coordinator)
                 } label: {
                     Text("브랜드 요청하기")
                         .font(.system(size: 14, weight: .bold))
@@ -258,6 +255,7 @@ struct LookbookHomeView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("lookbook.brandRequest.entry")
             }
             .padding(.horizontal, 32)
             Spacer()
@@ -276,6 +274,19 @@ struct LookbookHomeView: View {
             .padding(.horizontal, 32)
             Spacer()
         }
+    }
+
+    private var brandRequestButton: some View {
+        Button {
+            viewModel.requestBrand(using: coordinator)
+        } label: {
+            Text("찾는 브랜드가 없나요? 등록 요청")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("lookbook.brandRequest.entry")
     }
 
     private func brandRow(_ brand: Brand) -> some View {
@@ -396,8 +407,7 @@ private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCallin
         stylePreferenceStore: CurrentUserStylePreferenceStore(),
         brandAdminSessionStore: brandAdminSessionStore,
         brandImageCache: provider.brandImageCache,
-        initialBrandLimit: 12,
-        prefetchLogoCount: 4
+        initialBrandLimit: 12
     )
     LookbookHomeView(viewModel: vm, coordinator: coordinator)
         .environmentObject(brandAdminSessionStore)

@@ -863,7 +863,7 @@ class ChatMessageCell: UICollectionViewCell {
         }
         guard !lookbookShareContentView.isHidden,
               let id = representedMessageID,
-              let path = representedLookbookSharedContent?.thumbnailPathSnapshot else { return [] }
+              let path = representedLookbookSharedContent?.displayThumbnailPath else { return [] }
         return [ChatMediaViewportItem(id: id + "#share", path: path,
                                      frame: lookbookShareContentView.thumbnailFrame(in: view),
                                      cacheResource: .sharedContent(path: path))]

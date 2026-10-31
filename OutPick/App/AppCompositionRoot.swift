@@ -42,7 +42,16 @@ enum AppCompositionRoot {
         let currentUserProvider = LoginManagerCurrentUserProvider(
             sessionStore: currentUserSessionStore
         )
-        let cloudFunctionsTransport = FirebaseCloudFunctionsTransport()
+        let cloudFunctionsTransport = FirebaseCloudFunctionsTransport(
+            preservingErrorDetailsForCalls: ["submitBrandRequest", "listMyBrandRequests"]
+        )
+        #if DEBUG
+        let brandRequestEvidenceTransport = DevelopmentBrandRequestEvidenceTransport.makeIfEnabled(
+            base: cloudFunctionsTransport
+        )
+        #else
+        let brandRequestEvidenceTransport: (any CloudFunctionsTransporting)? = nil
+        #endif
         let accountRepository = FirestoreCurrentUserAccountRepository(db: db)
         let moderationRepository = CloudFunctionsCurrentUserModerationRepository(
             transport: cloudFunctionsTransport
@@ -113,6 +122,7 @@ enum AppCompositionRoot {
         )
         let lookbookProvider = LookbookRepositoryProvider.live(
             transport: cloudFunctionsTransport,
+            brandRequestTransport: brandRequestEvidenceTransport,
             userBlockRepository: userBlockRepository,
             importRequestStore: GRDBLookbookImportRequestStore(database: appDatabase),
             currentUserUIDProvider: { currentUserProvider.canonicalUserID }

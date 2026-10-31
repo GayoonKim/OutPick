@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "runTimeoutMs": 180000,
+  "inputs": ["tools/brand-operations", "tools/verification-gate", "verification/brand-operations-device-preparation.json"],
+  "checks": [{
+    "id": "device-runner-protection", "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/brand-operations/device-selection.test.mjs"],
+    "cwd": ".", "timeoutMs": 60000, "kind": "node", "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/brand-operations/device-selection.test.mjs::DUI-P01 장치와 게이트 출력이 없거나 범위 밖이면 빌드 전에 중단한다",
+      "tools/brand-operations/device-selection.test.mjs::DUI-P02 실기기 선택1개와 전용 조건만 전달하고 인증 환경과 원격 갱신을 넘기지 않는다"
+    ]
+  }]
+}

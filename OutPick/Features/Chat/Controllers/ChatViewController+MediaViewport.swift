@@ -8,7 +8,7 @@ extension ChatViewController {
         let groups = messages.map { message -> [String] in
             guard !message.isDeleted else { return [] }
             if message.isLookbookShareMessage {
-                guard let path = message.sharedContent?.thumbnailPathSnapshot else { return [] }
+                guard let path = message.sharedContent?.displayThumbnailPath else { return [] }
                 return [path]
             }
             return message.displayableAttachments.map(\.thumbResourcePath)
@@ -87,7 +87,9 @@ extension ChatViewController {
             guard !message.isDeleted else { continue }
             let attachments = message.displayableAttachments
             if message.isLookbookShareMessage {
-                validIDs.insert(message.ID + "#share")
+                if message.sharedContent?.displayThumbnailPath != nil {
+                    validIDs.insert(message.ID + "#share")
+                }
             } else {
                 validIDs.formUnion(attachments.map { ChatImagePreviewItem.stableID(messageID: message.ID, attachment: $0) })
             }
@@ -102,7 +104,7 @@ extension ChatViewController {
             let frame = attributes.frame
             let isMine = LoginManager.shared.canonicalUserID == message.senderUID
             if message.isLookbookShareMessage {
-                guard let path = message.sharedContent?.thumbnailPathSnapshot else { continue }
+                guard let path = message.sharedContent?.displayThumbnailPath else { continue }
                 let x = isMine ? frame.maxX - 8 - frame.width * 0.72 + 10 : frame.minX + 63
                 candidates.append(ChatMediaViewportItem(id: message.ID + "#share", path: path,
                     frame: CGRect(x: x, y: frame.maxY - 8 - 76 + 10, width: 56, height: 56),

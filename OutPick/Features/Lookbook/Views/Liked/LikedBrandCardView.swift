@@ -13,29 +13,10 @@ struct LikedBrandCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            LookbookAssetImageView(
-                primaryPath: item.brand.logoThumbPath,
-                secondaryPath: item.brand.logoDetailPath ?? item.brand.logoOriginalPath,
-                remoteURL: nil,
-                sourcePageURL: nil,
-                brandImageCache: brandImageCache,
-                maxBytes: 1 * 1024 * 1024
-            )
-            .frame(width: 148, height: 148)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            .background(
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(OutPickTheme.SwiftUIColor.surfaceBase)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 3)
-                    .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
-            }
-
             Text(item.brand.name)
                 .font(.system(size: 17, weight: .semibold, design: .serif))
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-                .lineLimit(1)
+                .lineLimit(2)
 
             HStack(spacing: 7) {
                 Text("BRAND")
@@ -56,7 +37,9 @@ struct LikedBrandCardView: View {
             .font(.caption2)
         }
         .frame(width: 148, alignment: .leading)
+        .padding(.vertical, 16)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("lookbook.likedBrand.card")
     }
 }

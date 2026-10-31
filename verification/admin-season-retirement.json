@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "runTimeoutMs": 1200000,
+  "inputs": [
+    "OutPick",
+    "OutPickTests",
+    "OutPick.xcodeproj",
+    "contracts/brand-operations",
+    "contracts/lookbook-import-queue-v1.json",
+    "tools/brand-operations",
+    "tools/verification-gate",
+    "verification/admin-season-retirement.json",
+    "verification/lookbook-queue-ios.json",
+    "verification/ios-migration-all.json",
+    "verification/ios-migration-map.json"
+  ],
+  "checks": [
+    {
+      "id": "admin-season-retirement-source",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S01 종료21개 호출이 공개 앱의 모든 Swift 소스에서 제거된다",
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S02 전용 UI DI와 원명령 복원 경로가 남지 않는다",
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S03 공개 소비자와 목록 밖 관리자 및 공유 큐 저장을 유지한다",
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S04 기존 큐와 마이그레이션 게이트에 종료된 selector가 남지 않는다"
+      ]
+    },
+    {
+      "id": "admin-season-retirement-preserved-swift",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO",
+        "-only-testing:OutPickTests/LookbookImportQueueContractTests",
+        "-only-testing:OutPickTests/GRDBLookbookImportRequestStoreTests",
+        "-only-testing:OutPickTests/AppDatabaseMigrationTests",
+        "-only-testing:OutPickTests/AccountDeletionLocalDataCleanupTests",
+        "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests",
+        "-only-testing:OutPickTests/AdminLookbookDeletionManagementViewModelTests",
+        "-only-testing:OutPickTests/CloudFunctionsStyleMoodAdminRepositoryTests",
+        "-only-testing:OutPickTests/BrandAdminCapabilitiesCloudFunctionsClientTests",
+        "-only-testing:OutPickTests/CloudFunctionsLookbookDeletionRepositoryTests"
+      ],
+      "cwd": ".",
+      "timeoutMs": 1000000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "LookbookImportQueueContractTests/policyAndStatesMatchSharedFixture()",
+        "LookbookImportQueueContractTests/envelopeValidatesSharedCases()",
+        "LookbookImportQueueContractTests/newAdmissionTimeBoundariesMatchSharedFixture()",
+        "LookbookImportQueueContractTests/oldReceiptEnvelopeRemainsDecodable()",
+        "LookbookImportQueueContractTests/unknownBatchStateIsRejected()",
+        "LookbookImportQueueContractTests/receiptMustMatchRequestBrandAndQueueKind()",
+        "GRDBLookbookImportRequestStoreTests/samePendingPayloadReusesSameIdentityButOtherAccountsStayIsolated()",
+        "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
+        "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
+        "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
+        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
+        "AdminLookbookDeletionManagementViewModelTests/interactivePopIsBlockedForPendingReasonDraft()",
+        "AdminLookbookDeletionManagementViewModelTests/reloadReplacesFirstPageAndStoresNextCursor()",
+        "AdminLookbookDeletionManagementViewModelTests/nextPageAppendRemovesDuplicateRequestIDs()",
+        "AdminLookbookDeletionManagementViewModelTests/retryIsRestrictedToTotalAdminAndFailedStatus()",
+        "AdminLookbookDeletionManagementViewModelTests/concurrentNextPageRequestsCallRepositoryOnce()",
+        "AdminLookbookDeletionManagementViewModelTests/retryDisplayStateCombinesAutomaticManualAndLeaseStates()",
+        "CloudFunctionsStyleMoodAdminRepositoryTests/moodAndSeasonMutationsUseExpectedCallablePayloads()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/loadsCapabilitiesWithEmptyPayload()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/appliesExistingDefaultsForMissingOptionalCapabilityFields()",
+        "CloudFunctionsLookbookDeletionRepositoryTests/coversDeletionCallableContracts()"
+      ]
+    }
+  ]
+}

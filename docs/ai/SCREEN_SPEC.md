@@ -131,12 +131,6 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 - 빈 상태: `아직 참여 중인 채팅방이 없어요. 관심 가는 방에 참여한 뒤 공유해보세요.`
 - 실패 상태: 방 목록 실패는 `채팅방을 불러오지 못했어요`, 전송 실패는 `공유하지 못했어요`.
 
-### Create Brand/Season
-
-- 폴더: `OutPick/Features/Lookbook/Views/CreateBrand`
-- ViewModels: `CreateBrandViewModel`, `CreateSeasonFromURLViewModel`
-- 책임: 브랜드 정보·`브랜드 스타일` 0~5개 생성과 URL 기반 시즌 가져오기. 앱의 수동 시즌 직접 생성 화면은 제거했고 import worker만 시즌 문서를 생성한다.
-
 ### Style Keyword Admin
 
 - 진입: Lookbook 홈 총 관리자 `관리자` → 관리자 콘솔 `스타일 키워드 관리`
@@ -152,6 +146,7 @@ OutPick의 화면 구성과 화면별 책임을 AI 에이전트가 빠르게 확
 
 - 파일: `OutPick/Features/Lookbook/Views/CreateBrand/brand/CreateBrandView.swift`, `CreateBrandFlowView.swift`
 - ViewModel: `CreateBrandViewModel`
+- 책임: 브랜드 정보·`브랜드 스타일` 0~5개 생성. L178에서 URL/후보 시즌 가져오기·자동 탐색·검토·복구의 iOS 진입을 제거했다. 브랜드 생성 뒤 기존 로고 준비/완료 화면과 종료 callback을 사용한다. 관리자 브랜드 생성 자체의 전환은 별도 범위다.
 - 저장 계약: 브랜드 문서를 먼저 한 번 생성한 뒤 선택한 로고의 `thumb.jpg`와 `detail.jpg` 업로드, 두 경로의 서버 패치까지 완료해야 다음 단계로 이동한다.
 - 실패 복구: 로고 업로드 또는 경로 패치 실패 시 일부 업로드 객체를 rollback하고 이미 생성한 브랜드 ID를 보존한다. 입력을 잠근 상태에서 `로고 업로드 다시 시도`를 제공하며 브랜드 문서를 중복 생성하지 않는다.
 

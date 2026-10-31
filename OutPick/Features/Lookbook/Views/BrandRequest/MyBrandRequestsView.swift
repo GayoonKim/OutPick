@@ -26,6 +26,9 @@ struct MyBrandRequestsView: View {
                 .padding(.bottom, 12)
 
             content
+            if let message = viewModel.navigationError {
+                Text(message).font(.footnote).foregroundStyle(OutPickTheme.SwiftUIColor.warning)
+            }
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase.ignoresSafeArea())
         .lookbookNavigationBar(
@@ -37,9 +40,6 @@ struct MyBrandRequestsView: View {
             Task {
                 await viewModel.reload()
             }
-        }
-        .task {
-            await viewModel.loadInitial()
         }
     }
 
@@ -67,21 +67,14 @@ struct MyBrandRequestsView: View {
             Spacer()
 
         case .failed(let message):
-            Spacer()
-            VStack(spacing: 12) {
-                Text("요청을 불러오지 못했어요")
-                    .font(.headline)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-                Button("다시 시도") {
-                    Task { await viewModel.reload() }
-                }
-                .tint(OutPickTheme.SwiftUIColor.accent)
+            if viewModel.requests.isEmpty {
+                Spacer()
+                failureNotice(message)
+                Spacer()
+            } else {
+                requestList
+                failureNotice(message)
             }
-            .padding(.horizontal, 24)
-            Spacer()
 
         case .ready:
             if viewModel.requests.isEmpty {
@@ -98,23 +91,40 @@ struct MyBrandRequestsView: View {
                 .padding(.horizontal, 28)
                 Spacer()
             } else {
-                List {
-                    ForEach(viewModel.requests) { request in
-                        BrandRequestRowView(request: request)
-                            .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-                            .onAppear {
-                                Task {
-                                    await viewModel.loadNextPageIfNeeded(current: request)
-                                }
-                            }
-                    }
+                requestList
+            }
+        }
+    }
+
+    private var requestList: some View {
+        List {
+            ForEach(viewModel.requests) { request in
+                BrandRequestRowView(request: request) {
+                    Task { await viewModel.openCompletedBrand(request, using: coordinator) }
                 }
-                .listStyle(.plain)
-                .refreshable {
-                    await viewModel.reload()
+                .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
+                .onAppear {
+                    guard viewModel.phase == .ready else { return }
+                    Task { await viewModel.loadNextPageIfNeeded(current: request) }
                 }
             }
         }
+        .listStyle(.plain)
+        .refreshable { await viewModel.reload() }
+    }
+
+    private func failureNotice(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Text("요청을 불러오지 못했어요")
+                .font(.headline)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+            Button("다시 시도") { Task { await viewModel.retry() } }
+                .tint(OutPickTheme.SwiftUIColor.accent)
+        }
+        .padding(.horizontal, 24)
     }
 
     private var emptyTitle: String {
@@ -130,6 +140,7 @@ struct MyBrandRequestsView: View {
 
 private struct BrandRequestRowView: View {
     let request: BrandRequest
+    let onOpenBrand: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -150,6 +161,15 @@ private struct BrandRequestRowView: View {
                     .clipShape(Capsule())
             }
 
+            if request.status == .rejected, let reason = request.rejectionReason {
+                Text(reason)
+                    .font(.footnote)
+                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+            }
+            if request.status == .added, request.resolvedBrandID != nil {
+                Button("브랜드 보기", action: onOpenBrand)
+                    .accessibilityIdentifier("lookbook.brandRequest.openBrand")
+            }
             if let updatedAt = request.updatedAt {
                 Text(Self.dateFormatter.string(from: updatedAt))
                     .font(.caption)
@@ -174,8 +194,12 @@ private struct BrandRequestRowView: View {
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy.MM.dd h:mm a"
+        formatter.amSymbol = "AM"
+        formatter.pmSymbol = "PM"
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
         return formatter
     }()
 }

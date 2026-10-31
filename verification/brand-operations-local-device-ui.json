@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": ["OutPick", "OutPickTests", "OutPickUITests", "OutPick.xcodeproj", "tools/brand-operations", "tools/verification-gate", "verification/brand-operations-local-device-ui.json", "output/brand-operations-b5/device-l163/DeviceQA-Info.plist"],
+  "checks": [{
+    "id": "local-device-ui", "command": "node",
+    "args": ["tools/brand-operations/run-device-ui.mjs"],
+    "cwd": ".", "timeoutMs": 850000, "kind": "xcresult", "nodeMajor": 24,
+    "requiredTests": ["BrandLocalUISimulatorTests/testDeviceCompletedRequestAndPublishedImagesWithoutWrites()"]
+  }]
+}

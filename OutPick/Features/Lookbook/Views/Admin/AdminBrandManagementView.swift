@@ -12,7 +12,6 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
     case info
     case managers
     case moods
-    case importSeasons
     case deletion
 
     var id: String { rawValue }
@@ -22,7 +21,6 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         case .info: return "정보"
         case .managers: return "관리자"
         case .moods: return "브랜드 스타일"
-        case .importSeasons: return "시즌 가져오기"
         case .deletion: return "삭제"
         }
     }
@@ -32,7 +30,6 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         case .info: return "브랜드 정보와 로고 수정"
         case .managers: return "브랜드 소유자와 관리자 추가/삭제"
         case .moods: return "브랜드와 시즌에 연결할 스타일 키워드 편집"
-        case .importSeasons: return "시즌 후보 찾기와 가져오기 현황"
         case .deletion: return "브랜드/시즌/포스트 삭제 요청 관리"
         }
     }
@@ -42,7 +39,6 @@ private enum AdminBrandManagementTab: String, CaseIterable, Identifiable {
         case .info: return "info.circle"
         case .managers: return "person.2"
         case .moods: return "sparkles"
-        case .importSeasons: return "square.and.arrow.down"
         case .deletion: return "trash"
         }
     }
@@ -52,17 +48,10 @@ struct AdminBrandManagementView: View {
     @StateObject private var viewModel: AdminBrandManagementViewModel
     private let coordinator: LookbookCoordinator
     private let brandImageCache: any BrandImageCacheProtocol
-    private let seasonAdditionSheetFactory: (Brand, @escaping () -> Void) -> AnyView
-    private let importManagementSheetFactory: (
-        Brand,
-        @escaping () -> Void,
-        @escaping () -> Void
-    ) -> AnyView
     private let deletionManagementFactory: (Brand) -> AnyView
 
     @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var isImagePickerPresented = false
-    @State private var isPresentingSeasonAddition = false
     @State private var selectedMenu: AdminBrandManagementTab?
     @State private var isPresentingMoodEditor = false
     @State private var editingSeason: Season?
@@ -71,19 +60,11 @@ struct AdminBrandManagementView: View {
         viewModel: AdminBrandManagementViewModel,
         coordinator: LookbookCoordinator,
         brandImageCache: any BrandImageCacheProtocol,
-        seasonAdditionSheetFactory: @escaping (Brand, @escaping () -> Void) -> AnyView,
-        importManagementSheetFactory: @escaping (
-            Brand,
-            @escaping () -> Void,
-            @escaping () -> Void
-        ) -> AnyView,
         deletionManagementFactory: @escaping (Brand) -> AnyView
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.coordinator = coordinator
         self.brandImageCache = brandImageCache
-        self.seasonAdditionSheetFactory = seasonAdditionSheetFactory
-        self.importManagementSheetFactory = importManagementSheetFactory
         self.deletionManagementFactory = deletionManagementFactory
     }
 
@@ -131,13 +112,6 @@ struct AdminBrandManagementView: View {
                     return
                 }
                 viewModel.setPickedLogo(image: image, data: data)
-            }
-        }
-        .sheet(isPresented: $isPresentingSeasonAddition) {
-            if let selectedBrand = viewModel.selectedBrand {
-                seasonAdditionSheetFactory(selectedBrand) {
-                    isPresentingSeasonAddition = false
-                }
             }
         }
         .sheet(isPresented: $isPresentingMoodEditor) {
@@ -353,23 +327,9 @@ struct AdminBrandManagementView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 40)
             }
-        case .importSeasons:
-            importTabContent(for: brand)
         case .deletion:
             deletionManagementFactory(brand)
         }
-    }
-
-    @ViewBuilder
-    private func importTabContent(for brand: Brand) -> some View {
-        importManagementSheetFactory(
-            brand,
-            { isPresentingSeasonAddition = true },
-            { selectedMenu = .info }
-        )
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 40)
     }
 
     @ViewBuilder
@@ -393,7 +353,7 @@ struct AdminBrandManagementView: View {
         if brandAdminSessionStore.isTotalAdmin {
             tabs.append(.moods)
         }
-        tabs.append(contentsOf: [.importSeasons, .deletion])
+        tabs.append(.deletion)
         return tabs
     }
 

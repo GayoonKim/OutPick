@@ -10,6 +10,7 @@ import Foundation
 protocol BrandRequestRepositoryProtocol {
     func submitBrandRequest(
         brandName: String,
+        websiteURL: String,
         englishBrandName: String?
     ) async throws -> BrandRequestSubmissionReceipt
 

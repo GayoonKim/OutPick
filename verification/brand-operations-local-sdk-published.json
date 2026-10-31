@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": ["OutPick", "OutPickTests", "OutPick.xcodeproj", "contracts/brand-operations", "tools/brand-operations", "tools/verification-gate", "verification/brand-operations-local-sdk-published.json"],
+  "checks": [{
+    "id": "local-sdk-published", "command": "node", "args": ["tools/brand-operations/run-local-sdk.mjs", "--published"],
+    "cwd": ".", "timeoutMs": 850000, "kind": "xcresult", "nodeMajor": 24,
+    "requiredTests": ["BrandLocalSDKIntegrationTests/testReadAddedHistoryAndOpenCurrentPublicBrandWithRealLocalSDK()"]
+  }]
+}

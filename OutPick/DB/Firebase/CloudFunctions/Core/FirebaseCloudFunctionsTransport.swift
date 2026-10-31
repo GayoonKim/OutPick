@@ -5,9 +5,12 @@ final class FirebaseCloudFunctionsTransport: CloudFunctionsTransporting {
     private static let region = "asia-northeast3"
 
     private let functions: Functions
+    private let preservingErrorDetailsForCalls: Set<String>
 
-    init(functions: Functions = Functions.functions(region: FirebaseCloudFunctionsTransport.region)) {
+    init(functions: Functions = Functions.functions(region: FirebaseCloudFunctionsTransport.region),
+         preservingErrorDetailsForCalls: Set<String> = []) {
         self.functions = functions
+        self.preservingErrorDetailsForCalls = preservingErrorDetailsForCalls
     }
 
     func call(
@@ -17,13 +20,8 @@ final class FirebaseCloudFunctionsTransport: CloudFunctionsTransporting {
         try await withCheckedThrowingContinuation { continuation in
             functions.httpsCallable(name).call(data) { result, error in
                 if let error {
-                    let nsError = error as NSError
-                    if nsError.domain == FunctionsErrorDomain,
-                       nsError.code == FunctionsErrorCode.resourceExhausted.rawValue {
-                        continuation.resume(throwing: CloudFunctionsTransportError.rateLimited)
-                    } else {
-                        continuation.resume(throwing: error)
-                    }
+                    continuation.resume(throwing: Self.mapError(error,
+                        preservingDetails: self.preservingErrorDetailsForCalls.contains(name)))
                     return
                 }
 
@@ -38,5 +36,14 @@ final class FirebaseCloudFunctionsTransport: CloudFunctionsTransporting {
                 }
             }
         }
+    }
+
+    static func mapError(_ error: Error, preservingDetails: Bool) -> Error {
+        let nsError = error as NSError
+        if !preservingDetails, nsError.domain == FunctionsErrorDomain,
+           nsError.code == FunctionsErrorCode.resourceExhausted.rawValue {
+            return CloudFunctionsTransportError.rateLimited
+        }
+        return error
     }
 }

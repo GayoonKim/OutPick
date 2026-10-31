@@ -58,6 +58,10 @@ final class LookbookShareMessageContentView: UIControl {
     }()
 
     private var representedThumbnailPath: String?
+    private var representedContentType: LookbookSharedContent.ContentType?
+    private var textThumbnailLeading: NSLayoutConstraint?
+    private var textNameLeading: NSLayoutConstraint?
+    private var minimumHeight: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -70,6 +74,10 @@ final class LookbookShareMessageContentView: UIControl {
 
     func prepareForReuse() {
         representedThumbnailPath = nil
+        representedContentType = nil
+        textNameLeading?.isActive = false
+        textThumbnailLeading?.isActive = true
+        minimumHeight?.constant = 76
         // SF Symbol의 alignment inset이 썸네일 frame을 바꾸지 않게 한다.
         thumbnailView.image = UIImage(systemName: "photo")?.withAlignmentRectInsets(.zero)
         thumbnailView.contentMode = .center
@@ -84,7 +92,9 @@ final class LookbookShareMessageContentView: UIControl {
     func configure(
         with content: LookbookSharedContent?
     ) {
-        if representedThumbnailPath != content?.thumbnailPathSnapshot { prepareForReuse() }
+        if representedThumbnailPath != content?.displayThumbnailPath || representedContentType != content?.contentType {
+            prepareForReuse()
+        }
 
         guard let content else {
             configureUnavailable()
@@ -93,8 +103,14 @@ final class LookbookShareMessageContentView: UIControl {
 
         titleLabel.text = content.compactDisplayTitle
         subtitleLabel.text = content.compactDisplaySubtitle ?? content.fallbackPreviewText
+        representedContentType = content.contentType
+        let isBrand = content.contentType == .brand
+        thumbnailView.isHidden = isBrand
+        textThumbnailLeading?.isActive = !isBrand
+        textNameLeading?.isActive = isBrand
+        minimumHeight?.constant = isBrand ? 56 : 76
 
-        guard let path = content.thumbnailPathSnapshot, !path.isEmpty else { return }
+        guard let path = content.displayThumbnailPath, !path.isEmpty else { return }
         representedThumbnailPath = path
     }
 
@@ -128,15 +144,17 @@ final class LookbookShareMessageContentView: UIControl {
         addSubview(textStack)
         addSubview(chevronView)
         addSubview(unavailableLabel)
+        textThumbnailLeading = textStack.leadingAnchor.constraint(equalTo: thumbnailView.trailingAnchor, constant: 10)
+        textNameLeading = textStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12)
+        minimumHeight = heightAnchor.constraint(greaterThanOrEqualToConstant: 76)
 
         NSLayoutConstraint.activate([
             thumbnailView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            thumbnailView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            thumbnailView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            thumbnailView.centerYAnchor.constraint(equalTo: centerYAnchor),
             thumbnailView.widthAnchor.constraint(equalToConstant: 56),
             thumbnailView.heightAnchor.constraint(equalToConstant: 56),
 
-            textStack.leadingAnchor.constraint(equalTo: thumbnailView.trailingAnchor, constant: 10),
+            textThumbnailLeading!,
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: chevronView.leadingAnchor, constant: -8),
 
@@ -149,7 +167,7 @@ final class LookbookShareMessageContentView: UIControl {
             unavailableLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             unavailableLabel.trailingAnchor.constraint(lessThanOrEqualTo: chevronView.leadingAnchor, constant: -8),
 
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 76)
+            minimumHeight!
         ])
     }
 

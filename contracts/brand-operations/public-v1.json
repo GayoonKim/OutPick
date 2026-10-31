@@ -1,0 +1,497 @@
+{
+  "contractVersion": 1,
+  "scope": "public-client",
+  "implementationStatus": "partial-server-implementation",
+  "request": {
+    "requiredFields": [
+      "brandName",
+      "websiteURL"
+    ],
+    "optionalFields": [
+      "englishBrandName"
+    ],
+    "identityFields": [
+      "normalizedBrandName",
+      "canonicalWebsiteURL"
+    ],
+    "identityVersion": 2,
+    "englishNameParticipatesInIdentity": false,
+    "uniqueRequesterKey": [
+      "uid",
+      "groupID"
+    ],
+    "dailyLimit": {
+      "count": 5,
+      "timeZone": "Asia/Seoul"
+    },
+    "nameMaxLength": 80,
+    "urlMaxLength": 2048
+  },
+  "normalization": {
+    "name": [
+      "NFKC",
+      "trim",
+      "collapseWhitespace",
+      "lowercase"
+    ],
+    "url": {
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "trim": true,
+      "defaultScheme": "https",
+      "lowercaseHost": true,
+      "rejectUserInfo": true,
+      "mergeWWW": false,
+      "mergePath": false,
+      "mergeQuery": false,
+      "followRedirects": false
+    }
+  },
+  "userStatuses": [
+    {
+      "value": "submitted",
+      "label": "요청 접수"
+    },
+    {
+      "value": "reviewing",
+      "label": "처리 중"
+    },
+    {
+      "value": "added",
+      "label": "등록 완료"
+    },
+    {
+      "value": "rejected",
+      "label": "보류"
+    }
+  ],
+  "holdReasons": [
+    "공식 룩북 확인 필요",
+    "이용 허락 확인 필요",
+    "브랜드 정보 확인 필요",
+    "기타"
+  ],
+  "publication": {
+    "values": [
+      "pending",
+      "public"
+    ],
+    "unknownIsVisible": false,
+    "required": "atLeastOneWholePublishedReadableSeason",
+    "emptySeasonQualifies": false,
+    "partialSeasonQualifies": false,
+    "extractionOnlyQualifies": false,
+    "reviewPendingQualifies": false
+  },
+  "search": {
+    "mode": "contains",
+    "fields": [
+      "name",
+      "englishName"
+    ],
+    "distinctBy": "brandID",
+    "registeredResultDoesNotDisableRequest": true
+  },
+  "images": {
+    "brandCardRepresentative": false,
+    "seasonCover": true,
+    "lookbook": true,
+    "deleteExistingFields": false,
+    "deleteExistingObjects": false
+  },
+  "history": {
+    "authoritativeStatus": "requestGroup",
+    "exposeOtherRequesters": false,
+    "exposeAdminNote": false,
+    "exposeAudit": false,
+    "pushInFirstScope": false,
+    "itemFields": [
+      "requestID",
+      "groupID",
+      "brandName",
+      "englishBrandName",
+      "websiteURL",
+      "status",
+      "resolvedBrandID",
+      "rejectionReason",
+      "createdAt",
+      "updatedAt"
+    ],
+    "pagination": {
+      "default": 20,
+      "max": 50,
+      "candidateMultiplier": 3,
+      "order": [
+        "createdAt:desc",
+        "requestID:desc"
+      ],
+      "cursorFields": [
+        "createdAt",
+        "requestID"
+      ],
+      "cursorInputFields": [
+        "cursorCreatedAt",
+        "cursorRequestID"
+      ],
+      "timestampFormat": "UTC ISO 8601 milliseconds",
+      "advanceBy": "lastConsumedDocument",
+      "emptyWithCursorIsEnd": false,
+      "nullCursorRequiresExhaustion": true
+    },
+    "completedTargetUnavailable": {
+      "keepStatus": true,
+      "resolvedBrandID": null
+    },
+    "inputBoundaries": {
+      "scope": {
+        "omittedOrNull": "active",
+        "values": [
+          "active",
+          "history"
+        ],
+        "otherValue": "INVALID_INPUT"
+      },
+      "limit": {
+        "omittedOrNull": 20,
+        "positiveSafeInteger": true,
+        "clampAbove": 50,
+        "zeroNegativeFractionString": "INVALID_INPUT"
+      },
+      "cursor": {
+        "keys": [
+          "cursorCreatedAt",
+          "cursorRequestID"
+        ],
+        "bothOmittedOrNull": "firstPage",
+        "exactlyOneNonNull": "INVALID_CURSOR",
+        "bothNonNull": "strictUTCISOWithMillisecondsAndOpaqueNonEmptyDocumentID",
+        "responseToInput": {
+          "createdAt": "cursorCreatedAt",
+          "requestID": "cursorRequestID"
+        },
+        "changesRequireFirstPage": [
+          "scope",
+          "account"
+        ],
+        "documentNeedNotStillExist": true
+      },
+      "unknownInputFields": "INVALID_INPUT"
+    }
+  },
+  "errors": [
+    "invalid-argument",
+    "unauthenticated",
+    "permission-denied",
+    "failed-precondition",
+    "not-found",
+    "unavailable",
+    "resource-exhausted",
+    "internal"
+  ],
+  "endpoints": [
+    {
+      "name": "submitBrandRequest",
+      "requiredFields": [
+        "brandName",
+        "websiteURL"
+      ],
+      "optionalFields": [
+        "englishBrandName"
+      ],
+      "responseFields": [
+        "requestID",
+        "groupID",
+        "status",
+        "isDuplicate",
+        "remainingToday",
+        "resolvedBrandID"
+      ]
+    },
+    {
+      "name": "listMyBrandRequests",
+      "requiredFields": [],
+      "optionalFields": [
+        "scope",
+        "limit",
+        "cursorCreatedAt",
+        "cursorRequestID"
+      ],
+      "responseFields": [
+        "requests",
+        "nextCursor",
+        "scope"
+      ]
+    }
+  ],
+  "submissionResponse": {
+    "requiredFields": [
+      "requestID",
+      "groupID",
+      "status",
+      "isDuplicate",
+      "remainingToday",
+      "resolvedBrandID"
+    ],
+    "resolvedBrandID": "currentlyPublicBrandIDOrExplicitNull",
+    "isDuplicate": "existingPersonalRequestForSameUserAndGroup",
+    "remainingToday": "currentRemainingCount0Through5",
+    "duplicateIncrements": 0,
+    "duplicateRechecksFulfillment": false,
+    "retry": "manualSameInput"
+  },
+  "implementedEndpoints": [
+    "submitBrandRequest",
+    "listMyBrandRequests"
+  ],
+  "wireTypes": {
+    "revision": "L151",
+    "requiredMeans": "keyMustExistEvenWhenNullable",
+    "nullDoesNotMeanMissing": true,
+    "submission": {
+      "requestID": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1,
+        "opaque": true
+      },
+      "groupID": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1,
+        "opaque": true
+      },
+      "status": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "enum": [
+          "submitted",
+          "reviewing",
+          "added",
+          "rejected"
+        ]
+      },
+      "isDuplicate": {
+        "type": "boolean",
+        "required": true,
+        "nullable": false
+      },
+      "remainingToday": {
+        "type": "integer",
+        "required": true,
+        "nullable": false,
+        "minimum": 0,
+        "maximum": 5
+      },
+      "resolvedBrandID": {
+        "type": "string",
+        "required": true,
+        "nullable": true,
+        "minLength": 1,
+        "opaque": true
+      }
+    },
+    "requestItem": {
+      "requestID": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1,
+        "opaque": true
+      },
+      "groupID": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1,
+        "opaque": true
+      },
+      "brandName": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1
+      },
+      "englishBrandName": {
+        "type": "string",
+        "required": true,
+        "nullable": true,
+        "minLength": 1
+      },
+      "websiteURL": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "format": "canonicalHTTPURL"
+      },
+      "status": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "enum": [
+          "submitted",
+          "reviewing",
+          "added",
+          "rejected"
+        ]
+      },
+      "resolvedBrandID": {
+        "type": "string",
+        "required": true,
+        "nullable": true,
+        "minLength": 1,
+        "opaque": true
+      },
+      "rejectionReason": {
+        "type": "string",
+        "required": true,
+        "nullable": true,
+        "enum": [
+          "공식 룩북 확인 필요",
+          "이용 허락 확인 필요",
+          "브랜드 정보 확인 필요",
+          "기타"
+        ]
+      },
+      "createdAt": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "format": "UTC-ISO8601-milliseconds"
+      },
+      "updatedAt": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "format": "UTC-ISO8601-milliseconds"
+      }
+    },
+    "historyPage": {
+      "requests": {
+        "type": "array",
+        "required": true,
+        "nullable": false,
+        "items": "requestItem",
+        "maximumLength": 50
+      },
+      "scope": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "enum": [
+          "active",
+          "history"
+        ]
+      },
+      "nextCursor": {
+        "type": "object",
+        "required": true,
+        "nullable": true,
+        "shape": "historyCursor"
+      }
+    },
+    "historyCursor": {
+      "createdAt": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "format": "UTC-ISO8601-milliseconds"
+      },
+      "requestID": {
+        "type": "string",
+        "required": true,
+        "nullable": false,
+        "minLength": 1,
+        "opaque": true
+      }
+    },
+    "invariants": {
+      "destinationOnlyForAdded": true,
+      "addedMayHaveNullDestination": true,
+      "rejectionReasonOnlyForRejected": true,
+      "rejectedReasonRequiredAndNonNull": true,
+      "activeStatuses": [
+        "submitted",
+        "reviewing"
+      ],
+      "historyStatuses": [
+        "added",
+        "rejected"
+      ],
+      "responseScopeEqualsEffectiveInput": true,
+      "itemCreatedAt": "originalPersonalSubmissionTime",
+      "itemUpdatedAt": "currentGroupUpdatedTime",
+      "nameLimits": "inputUTF16Max80AndNormalizedCodePointsMax80;StoredCanonicalMayExceed80UTF16",
+      "timestampExample": "2026-10-15T00:00:00.000Z"
+    },
+    "invalidResponse": {
+      "missingRequiredKey": "protocolError",
+      "nullForNonNullable": "protocolError",
+      "wrongTypeOrUnknownEnum": "protocolError",
+      "malformedCursor": "protocolError",
+      "fallbackToSuccessOrEnd": false
+    },
+    "consumerExtensionFields": "notSpecified;ServerEmitsOnlyDeclaredKeys"
+  },
+  "errorContract": {
+    "firebaseCodeSpelling": "withoutFunctionsPrefix;SDKMayAddFunctionsPrefix",
+    "messageIsStableContract": false,
+    "detailsReasonRequired": false,
+    "detailsField": "optionalString",
+    "publicNotCommittedMarker": false,
+    "cases": [
+      {
+        "id": "invalid-input",
+        "code": "invalid-argument",
+        "reason": "INVALID_INPUT"
+      },
+      {
+        "id": "invalid-cursor",
+        "code": "invalid-argument",
+        "reason": "INVALID_CURSOR"
+      },
+      {
+        "id": "daily-limit",
+        "code": "resource-exhausted",
+        "reason": "DAILY_LIMIT_REACHED"
+      },
+      {
+        "id": "request-blocked",
+        "code": "permission-denied",
+        "reason": "REQUEST_BLOCKED"
+      },
+      {
+        "id": "query-budget",
+        "code": "resource-exhausted",
+        "reason": "QUERY_BUDGET_EXCEEDED"
+      },
+      {
+        "id": "invalid-stored-data",
+        "code": "internal",
+        "reason": "DATA_INVALID"
+      },
+      {
+        "id": "signed-out",
+        "code": "unauthenticated",
+        "reason": null
+      },
+      {
+        "id": "non-service-identity",
+        "code": "permission-denied",
+        "reason": null
+      },
+      {
+        "id": "sdk-unavailable",
+        "code": "unavailable",
+        "reason": null
+      }
+    ],
+    "transportFailureOrMalformedReceipt": "submissionOutcomeUnknown;DoNotSynthesizeSuccessOrNull;KeepInputAndCheckHistory;ManualSameInputRetry",
+    "pageFailure": "keepReceivedRowsAndLastSuccessfulCursor;DoNotTreatAsEnd",
+    "nullableDestinationLookupFailure": "propagateError;DoNotSynthesizeNull"
+  }
+}

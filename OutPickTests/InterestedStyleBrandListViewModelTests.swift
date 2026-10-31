@@ -270,6 +270,7 @@ private func listBrand(_ id: String, likeCount: Int) -> Brand {
             popularScore: 0
         ),
         deletionStatus: .active,
-        updatedAt: Date(timeIntervalSince1970: 0)
+        updatedAt: Date(timeIntervalSince1970: 0),
+        publicationStatus: "public"
     )
 }

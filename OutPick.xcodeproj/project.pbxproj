@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		C5EA00000000000000000001 /* chat-search in Resources */ = {isa = PBXBuildFile; fileRef = C5EA00000000000000000002 /* chat-search */; };
 		054C946B2E28F3C100FD364C /* KakaoSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 054C946A2E28F3C100FD364C /* KakaoSDK */; };
 		054C946E2E28F45C00FD364C /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 054C946D2E28F45C00FD364C /* FirebaseDatabase */; };
 		054C94702E28F47700FD364C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 054C946F2E28F47700FD364C /* FirebaseAuth */; };
@@ -23,6 +22,7 @@
 		0A1B2C3D4E5F678901234569 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F678901234568 /* FirebaseMessaging */; };
 		0A1B2C3D4E5F67890123456B /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F67890123456A /* FirebaseAppCheck */; };
 		0A1B2C3D4E5F67890123456D /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 0A1B2C3D4E5F67890123456C /* FirebaseRemoteConfig */; };
+		C5EA00000000000000000001 /* contracts/chat-search in Resources */ = {isa = PBXBuildFile; fileRef = C5EA00000000000000000002 /* contracts/chat-search */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,7 +43,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		C5EA00000000000000000002 /* chat-search */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "contracts/chat-search"; sourceTree = SOURCE_ROOT; };
 		054C937E2E28F0C200FD364C /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		05E4F8A12E214B05000079C2 /* OutPick.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OutPick.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		05E4F8B72E214B06000079C2 /* OutPickTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OutPickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -51,6 +50,7 @@
 		0C0A00012F30000000000001 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		0C0A00012F30000000000002 /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Development.xcconfig; sourceTree = "<group>"; };
 		0C0A00012F30000000000003 /* Production.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Production.xcconfig; sourceTree = "<group>"; };
+		C5EA00000000000000000002 /* contracts/chat-search */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "contracts/chat-search"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -140,7 +140,7 @@
 		05E4F8982E214B05000079C2 = {
 			isa = PBXGroup;
 			children = (
-				C5EA00000000000000000002 /* chat-search */,
+				C5EA00000000000000000002 /* contracts/chat-search */,
 				054C937E2E28F0C200FD364C /* .gitignore */,
 				0C0A00012F30000000000010 /* Configurations */,
 				05E4F8A32E214B05000079C2 /* OutPick */,
@@ -322,7 +322,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C5EA00000000000000000001 /* chat-search in Resources */,
+				C5EA00000000000000000001 /* contracts/chat-search in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -410,7 +410,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3YZYVZ7VUF;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = OutPick/Info.plist;
+				INFOPLIST_FILE = "$(OUTPICK_DEBUG_INFOPLIST_FILE)";
+				OUTPICK_DEBUG_INFOPLIST_FILE = OutPick/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;

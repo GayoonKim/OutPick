@@ -9,7 +9,9 @@
     "contracts",
     "OutPick/Features/Chat/Domain/Models/ChatSearchUnicodeData.swift",
     "OutPick/Resources/ChatSearchUnicode-LICENSE.txt",
-    "verification/repository-integrity.json"
+    "verification/repository-integrity.json",
+    "contracts/brand-operations",
+    "tools/brand-operations"
   ],
   "checks": [
     {
@@ -59,6 +61,18 @@
       ],
       "cwd": ".",
       "timeoutMs": 60000,
+      "kind": "command",
+      "nodeMajor": 24
+    },
+    {
+      "id": "brand-public-integrity",
+      "command": "node",
+      "args": [
+        "tools/repository-integrity/check.mjs",
+        "contracts/brand-operations/public-consumer-manifest.json"
+      ],
+      "cwd": ".",
+      "timeoutMs": 30000,
       "kind": "command",
       "nodeMajor": 24
     }

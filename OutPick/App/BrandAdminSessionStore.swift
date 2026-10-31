@@ -21,17 +21,25 @@ final class BrandAdminSessionStore: ObservableObject {
     @Published private(set) var isWritableBrandsLoaded: Bool = false
 
     private let capabilitiesClient: any BrandAdminCapabilitiesCalling
+    private let currentUserProvider: (any CurrentUserProviding)?
     private var loadedIdentityKey: String?
     private var loadedWritableBrandsIdentityKey: String?
 
     init(
-        capabilitiesClient: any BrandAdminCapabilitiesCalling
+        capabilitiesClient: any BrandAdminCapabilitiesCalling,
+        currentUserProvider: (any CurrentUserProviding)? = nil
     ) {
         self.capabilitiesClient = capabilitiesClient
+        self.currentUserProvider = currentUserProvider
+    }
+
+    // 기본 로그인 신원의 기존 지연 접근을 유지하고 격리 조립에서만 주입한다.
+    private var currentIdentityKey: String {
+        currentUserProvider?.canonicalUserID ?? LoginManager.shared.canonicalUserID
     }
 
     func refreshCurrentSession(force: Bool = false) async {
-        let identityKey = LoginManager.shared.canonicalUserID
+        let identityKey = currentIdentityKey
         await refresh(identityKey: identityKey, force: force)
     }
 
@@ -96,7 +104,7 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func refreshWritableBrands(force: Bool = false) async {
-        let identityKey = LoginManager.shared.canonicalUserID
+        let identityKey = currentIdentityKey
         let normalizedIdentityKey = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !normalizedIdentityKey.isEmpty else {
@@ -149,7 +157,7 @@ final class BrandAdminSessionStore: ObservableObject {
     }
 
     func ensureWritableBrandsLoaded() async {
-        let identityKey = LoginManager.shared.canonicalUserID
+        let identityKey = currentIdentityKey
         let normalizedIdentityKey = identityKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !normalizedIdentityKey.isEmpty else {
@@ -185,7 +193,7 @@ final class BrandAdminSessionStore: ObservableObject {
         ownedBrandIDs = brandIDs
         adminBrandIDs = []
         writableBrandIDs = brandIDs
-        loadedWritableBrandsIdentityKey = LoginManager.shared.canonicalUserID
+        loadedWritableBrandsIdentityKey = currentIdentityKey
         isWritableBrandsLoaded = true
     }
     #endif

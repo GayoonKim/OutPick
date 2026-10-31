@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "runTimeoutMs": 600000,
+  "inputs": [
+    "OutPick",
+    "OutPickTests",
+    "OutPickUITests",
+    "OutPick.xcodeproj",
+    "Configurations",
+    "scripts/build",
+    "LocalSecrets/Firebase/Development/GoogleService-Info.plist",
+    "LocalSecrets/Kakao/Development.xcconfig",
+    "contracts/brand-operations",
+    "tools/brand-operations",
+    "tools/verification-gate",
+    "verification/brand-operations-ui.json"
+  ],
+  "checks": [
+    {
+      "id": "brand-operations-ui-swift",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO",
+        "-only-testing:OutPickTests/BrandOperationsTests/receiptRejectsMissingUnknownAndMalformedValues()",
+        "-only-testing:OutPickTests/BrandOperationsTests/lostOrInvalidResponseKeepsInputsAndOnlyManualRetrySendsAgain()",
+        "-only-testing:OutPickTests/BrandOperationsTests/submissionErrorsHideTechnicalDetailsAndDismissWithoutLosingDraft()",
+        "-only-testing:OutPickTests/BrandOperationsTests/submissionLimitAndRestrictionKeepActionableMessages()",
+        "-only-testing:OutPickUITests/BrandOperationsUITests/testSubmissionFailureShowsSingleFriendlyAlertAndKeepsInput",
+        "-only-testing:OutPickUITests/BrandOperationsUITests/testInterestRetryCentersButtonAndReplacesErrorWithLoading",
+        "-only-testing:OutPickUITests/BrandOperationsUITests/testRequestEntryWithoutResultsAndFourStatusHistory"
+      ],
+      "cwd": ".",
+      "timeoutMs": 540000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "BrandOperationsTests/receiptRejectsMissingUnknownAndMalformedValues()",
+        "BrandOperationsTests/lostOrInvalidResponseKeepsInputsAndOnlyManualRetrySendsAgain()",
+        "BrandOperationsTests/submissionErrorsHideTechnicalDetailsAndDismissWithoutLosingDraft()",
+        "BrandOperationsTests/submissionLimitAndRestrictionKeepActionableMessages()",
+        "BrandOperationsUITests/testSubmissionFailureShowsSingleFriendlyAlertAndKeepsInput()",
+        "BrandOperationsUITests/testInterestRetryCentersButtonAndReplacesErrorWithLoading()",
+        "BrandOperationsUITests/testRequestEntryWithoutResultsAndFourStatusHistory()"
+      ]
+    }
+  ]
+}

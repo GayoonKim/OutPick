@@ -13,6 +13,8 @@
     "contracts/chat-search/unicode/ReadMe.txt": "0d2da782ead4e85630d510f50808355e8c3355e670841d257dd1e6fbd40db9fa",
     "contracts/chat-search/unicode/UnicodeData.txt": "2fc713e6a31a87c4850a37fe2caffa4218180fadb5de86b43a143ddb4581fb86",
     "contracts/chat-search/unicode/manifest.json": "9b0fa47f1376ce23331c17ac673343cf0ca829a5dffe2d113c69841108650a54",
-    "contracts/lookbook-import-queue-v1.json": "c9efe1a68594eafe17e41da1ab0c1ce145de860df17a7d1b40a3a035b264b1fc"
+    "contracts/lookbook-import-queue-v1.json": "c9efe1a68594eafe17e41da1ab0c1ce145de860df17a7d1b40a3a035b264b1fc",
+    "contracts/brand-operations/public-v1.json": "dc3ab4a423297b54c802dbb9a1fd75c95e2e5b02333b39cb8c9bb2b7829bd514",
+    "contracts/brand-operations/public-fixtures-v1.json": "447648e8b8482befd70aaeb5c876f888c609d483fcfd958f8c66929468f8b719"
   }
 }

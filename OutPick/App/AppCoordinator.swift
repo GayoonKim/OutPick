@@ -767,7 +767,9 @@ final class AppCoordinator {
                 updatedAt: Date()
             )
         )
-        currentUserStylePreferenceStore.replace(selectedMoodIDs: ["minimal"])
+        let hasNoStylePreference = shouldUseFixture &&
+            processInfo.arguments.contains("--uitest-lookbook-no-style-preference")
+        currentUserStylePreferenceStore.replace(selectedMoodIDs: hasNoStylePreference ? [] : ["minimal"])
 
         if shouldUseFixture {
             let fixtureProvider = LookbookUITestFixtureRepositoryProviderFactory.makeProvider()

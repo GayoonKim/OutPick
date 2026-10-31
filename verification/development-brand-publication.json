@@ -1,0 +1,24 @@
+{
+  "version": 1, "runTimeoutMs": 120000,
+  "inputs": ["OutPick", "tools/development-consumer", "tools/verification-gate", "contracts/brand-operations", "verification/development-brand-publication.json"],
+  "checks": [{
+    "id": "publication-evidence-validator-selftests", "kind": "node", "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/development-consumer/publication.test.mjs", "tools/development-consumer/image-metrics.test.mjs", "tools/development-consumer/publication-images.test.mjs"],
+    "cwd": ".", "timeoutMs": 30000, "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/development-consumer/publication.test.mjs::DPH-P01 같은 요청의 게시 후 added 대상과 양쪽 명시 null 커서를 대조한다",
+      "tools/development-consumer/publication.test.mjs::DPH-P02 다른 요청 브랜드 상태 손상 커서 mapper와 한 범위 누락을 거절한다",
+      "tools/development-consumer/publication.test.mjs::DPH-P03 이전 응답 재사용 실제0건 새접수 실패와 과거 기록 변조를 거절한다",
+      "tools/development-consumer/image-metrics.test.mjs::DIM-P01 기존 이미지 계측에서 승인 게시 경로 hash의 허용 값만 수집한다",
+      "tools/development-consumer/image-metrics.test.mjs::DIM-P02 다른 이미지 임의 콘솔 개인정보 문자열과 손상 숫자를 기록하지 않는다",
+      "tools/development-consumer/publication-images.test.mjs::DPI-P01 게시24개 썸네일 원본과 커버 성공을 확인하되 화면 Storage 원문 증명과 구분한다",
+      "tools/development-consumer/publication-images.test.mjs::DPI-P02 이미지0건 원본 누락 실패 및 UI 할당 없는 선행 로딩을 거절한다"
+    ]
+  }, {
+    "id": "actual-sdk-published-history", "kind": "command", "command": "node",
+    "args": ["tools/development-consumer/check-publication.mjs"], "cwd": ".", "timeoutMs": 30000
+  }, {
+    "id": "actual-image-pipeline", "kind": "command", "command": "node",
+    "args": ["tools/development-consumer/check-publication-images.mjs"], "cwd": ".", "timeoutMs": 30000
+  }]
+}

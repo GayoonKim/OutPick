@@ -9,7 +9,13 @@ import SwiftUI
 import UIKit
 
 @MainActor
-final class LookbookCoordinator {
+protocol BrandRequestRouting: AnyObject {
+    func pushBrandRequest(initialBrandName: String)
+    func pushBrandDetail(brand: Brand)
+}
+
+@MainActor
+final class LookbookCoordinator: BrandRequestRouting {
     private let container: LookbookContainer
     private weak var navigationController: UINavigationController?
 
@@ -70,8 +76,10 @@ final class LookbookCoordinator {
         push(
             makeBrandRequestView(
                 initialBrandName: initialBrandName,
-                onSubmitted: { [weak self] in
-                    self?.replaceTopWithMyBrandRequests(initialScope: .active)
+                onSubmitted: { [weak self] receipt in
+                    let scope: BrandRequestListScope = receipt.status == .added || receipt.status == .rejected
+                        ? .history : .active
+                    self?.replaceTopWithMyBrandRequests(initialScope: scope)
                 }
             ),
             policy: .stateful
@@ -129,46 +137,6 @@ final class LookbookCoordinator {
         )
     }
 
-    func pushLookbookExtractionReview(
-        brandID: BrandID,
-        jobID: String
-    ) {
-        push(
-            container.makeLookbookExtractionReviewView(
-                brandID: brandID,
-                jobID: jobID,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
-
-    func pushSeasonDiscoveryReview(job: SeasonCandidateDiscoveryResult) {
-        push(
-            container.makeSeasonDiscoveryReviewView(
-                job: job,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
-
-    func pushLookbookSeasonRepair(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        sourceImportJobID: String
-    ) {
-        push(
-            container.makeLookbookSeasonRepairView(
-                brandID: brandID,
-                seasonID: seasonID,
-                sourceImportJobID: sourceImportJobID,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
-
     func pop() {
         guard let navigationController else {
             assertionFailure("LookbookCoordinator requires an attached UINavigationController.")
@@ -198,7 +166,7 @@ final class LookbookCoordinator {
 
     func makeBrandRequestView(
         initialBrandName: String,
-        onSubmitted: @escaping () -> Void
+        onSubmitted: @escaping (BrandRequestSubmissionReceipt) -> Void
     ) -> BrandRequestView {
         container.makeBrandRequestView(
             initialBrandName: initialBrandName,

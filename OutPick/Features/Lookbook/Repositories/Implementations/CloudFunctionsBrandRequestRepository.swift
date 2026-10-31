@@ -10,25 +10,20 @@ import Foundation
 final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol {
     private let transport: any CloudFunctionsTransporting
 
-    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport()) {
+    init(transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(
+        preservingErrorDetailsForCalls: ["submitBrandRequest", "listMyBrandRequests"])) {
         self.transport = transport
     }
 
     func submitBrandRequest(
         brandName: String,
+        websiteURL: String,
         englishBrandName: String?
     ) async throws -> BrandRequestSubmissionReceipt {
-        var data: [String: Any] = ["brandName": brandName]
+        var data: [String: Any] = ["brandName": brandName, "websiteURL": websiteURL]
         if let englishBrandName { data["englishBrandName"] = englishBrandName }
-        let response = try await transport.call("submitBrandRequest", data: data)
-        let decoder = CloudFunctionResponseDecoder(dictionary: response)
-        return BrandRequestSubmissionReceipt(
-            requestID: try decoder.string("requestID"),
-            groupID: decoder.optionalString("groupID"),
-            status: BrandRequestStatus(rawValue: try decoder.string("status")) ?? .submitted,
-            isDuplicate: decoder.optionalBool("isDuplicate") ?? false,
-            remainingToday: decoder.optionalInt("remainingToday") ?? 0
-        )
+        let response = try await publicCall("submitBrandRequest", data: data)
+        return try BrandRequestCloudFunctionsMapper.submissionReceipt(response)
     }
 
     func listMyBrandRequests(
@@ -41,23 +36,16 @@ final class CloudFunctionsBrandRequestRepository: BrandRequestRepositoryProtocol
             data["cursorCreatedAt"] = cursor.createdAt
             data["cursorRequestID"] = cursor.requestID
         }
-        let response = try await transport.call("listMyBrandRequests", data: data)
-        let decoder = CloudFunctionResponseDecoder(dictionary: response)
-        let nextCursor: BrandRequestPage.Cursor?
-        if let raw = response["nextCursor"] as? [String: Any],
-           let createdAt = raw["createdAt"] as? String,
-           let requestID = raw["requestID"] as? String {
-            nextCursor = .init(createdAt: createdAt, requestID: requestID)
-        } else {
-            nextCursor = nil
+        let response = try await publicCall("listMyBrandRequests", data: data)
+        return try BrandRequestCloudFunctionsMapper.historyPage(response, scope: scope)
+    }
+
+    private func publicCall(_ name: String, data: [String: Any]) async throws -> [String: Any] {
+        do { return try await transport.call(name, data: data) }
+        catch {
+            if let failure = BrandRequestCloudFunctionsMapper.failure(error) { throw failure }
+            throw error
         }
-        return BrandRequestPage(
-            requests: try decoder.dictionaries("requests").map(BrandRequestCloudFunctionsMapper.request),
-            nextCursor: nextCursor,
-            scope: BrandRequestListScope(
-                rawValue: decoder.optionalString("scope") ?? scope.rawValue
-            ) ?? scope
-        )
     }
 
     func listBrandRequestGroups(

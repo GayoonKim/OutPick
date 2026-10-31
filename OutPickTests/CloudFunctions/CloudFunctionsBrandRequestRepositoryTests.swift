@@ -8,11 +8,12 @@ struct CloudFunctionsBrandRequestRepositoryTests {
         transport.responses = [
             [
                 "requestID": "request-1", "groupID": "group-1",
-                "status": "submitted", "isDuplicate": false, "remainingToday": 4
+                "status": "submitted", "isDuplicate": false, "remainingToday": 4,
+                "resolvedBrandID": NSNull()
             ],
             [
                 "requests": [Self.requestDictionary],
-                "nextCursor": ["createdAt": "2026-07-13T00:00:00Z", "requestID": "request-1"],
+                "nextCursor": ["createdAt": "2026-07-13T00:00:00.000Z", "requestID": "request-1"],
                 "scope": "active"
             ],
             [
@@ -27,6 +28,7 @@ struct CloudFunctionsBrandRequestRepositoryTests {
 
         _ = try await repository.submitBrandRequest(
             brandName: "Brand",
+            websiteURL: "https://brand.example",
             englishBrandName: nil
         )
         _ = try await repository.listMyBrandRequests(
@@ -62,6 +64,7 @@ struct CloudFunctionsBrandRequestRepositoryTests {
             "markBrandRequestGroupBrandCreated"
         ])
         #expect(transport.calls[0].data["englishBrandName"] == nil)
+        #expect(transport.calls[0].data["websiteURL"] as? String == "https://brand.example")
         #expect(transport.calls[1].data["cursorCreatedAt"] as? String == "cursor-date")
         #expect(transport.calls[2].data["processedScope"] as? String == "recent")
         #expect(transport.calls[3].data["adminNote"] as? String == "note")
@@ -71,7 +74,9 @@ struct CloudFunctionsBrandRequestRepositoryTests {
     }
 
     private static var requestDictionary: [String: Any] {
-        ["requestID": "request-1", "brandName": "Brand", "status": "submitted"]
+        ["requestID": "request-1", "groupID": "group-1", "brandName": "Brand", "englishBrandName": NSNull(),
+         "websiteURL": "https://brand.example/", "status": "submitted", "resolvedBrandID": NSNull(),
+         "rejectionReason": NSNull(), "createdAt": "2026-07-13T00:00:00.000Z", "updatedAt": "2026-07-13T00:00:00.000Z"]
     }
 
     private static var groupDictionary: [String: Any] {

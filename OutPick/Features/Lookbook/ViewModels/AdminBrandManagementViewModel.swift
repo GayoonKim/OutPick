@@ -191,7 +191,7 @@ final class AdminBrandManagementViewModel: ObservableObject {
         do {
             let results = try await searchUseCase.execute(query: query, limit: 20)
             guard !Task.isCancelled else { return }
-            searchResults = await verifiedVisibleBrands(results)
+            searchResults = try await verifiedVisibleBrands(results)
         } catch {
             guard !Task.isCancelled else { return }
             searchResults = []
@@ -199,15 +199,15 @@ final class AdminBrandManagementViewModel: ObservableObject {
         }
     }
 
-    private func verifiedVisibleBrands(_ brands: [Brand]) async -> [Brand] {
+    private func verifiedVisibleBrands(_ brands: [Brand]) async throws -> [Brand] {
         var visibleBrands: [Brand] = []
         visibleBrands.reserveCapacity(brands.count)
 
-        for brand in brands where brand.isVisibleToUsers {
+        for brand in brands {
             do {
                 let fetched = try await brandRepository.fetchBrand(brandID: brand.id)
-                visibleBrands.append(fetched)
-            } catch {
+                if fetched.isVisibleToUsers { visibleBrands.append(fetched) }
+            } catch LookbookContentUnavailableError.brandUnavailable {
                 continue
             }
         }

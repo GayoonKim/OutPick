@@ -352,7 +352,8 @@ struct LookbookChatShareUseCaseTests {
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
             deletionStatus: .active,
-            updatedAt: Date(timeIntervalSince1970: 0)
+            updatedAt: Date(timeIntervalSince1970: 0),
+            publicationStatus: "public"
         )
     }
 

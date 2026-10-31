@@ -53,7 +53,6 @@ final class LookbookHomeViewModel: ObservableObject {
     private let stylePreferenceStore: CurrentUserStylePreferenceStore
     private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
-    private let viewportPrefetch: LookbookImagePrefetchController
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
     private var interestLoadGeneration = 0
@@ -68,12 +67,6 @@ final class LookbookHomeViewModel: ObservableObject {
 
     /// 최초 로딩 시 가져올 브랜드 수
     private let initialBrandLimit: Int
-    /// 첫 화면용 로고 프리패치 개수
-    private let prefetchLogoCount: Int
-    /// 프리패치 동시성
-    private let prefetchConcurrency: Int
-    /// 썸네일 다운로드 최대 바이트(목록 전용)
-    private let thumbMaxBytes: Int
     private let searchLimit: Int
 
     init(
@@ -84,9 +77,6 @@ final class LookbookHomeViewModel: ObservableObject {
         brandAdminSessionStore: BrandAdminSessionStore,
         brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
-        prefetchLogoCount: Int = 4,
-        prefetchConcurrency: Int = 4,
-        thumbMaxBytes: Int = 1 * 1024 * 1024,
         searchLimit: Int = 20
     ) {
         self.repo = repo
@@ -95,13 +85,7 @@ final class LookbookHomeViewModel: ObservableObject {
         self.stylePreferenceStore = stylePreferenceStore
         self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
-        self.viewportPrefetch = LookbookImagePrefetchController { [brandImageCache] request in
-            await brandImageCache.prefetchAssets(items: [request], concurrency: 1, storePolicy: .memoryAndDisk)
-        }
         self.initialBrandLimit = initialBrandLimit
-        self.prefetchLogoCount = prefetchLogoCount
-        self.prefetchConcurrency = prefetchConcurrency
-        self.thumbMaxBytes = thumbMaxBytes
         self.searchLimit = searchLimit
         self.canOpenAdminConsole = brandAdminSessionStore.canOpenAdminConsole
         bindBrandAdminSessionStore()
@@ -137,7 +121,6 @@ final class LookbookHomeViewModel: ObservableObject {
     }
 
     func retry() async {
-        viewportPrefetch.clear()
         didLoadInitialPage = false
         lastBrandDocument = nil
         brands = []
@@ -149,32 +132,26 @@ final class LookbookHomeViewModel: ObservableObject {
         normalizedSearchText.isEmpty == false
     }
 
-    var shouldShowInterestedStyleSection: Bool {
-        interestPhase != .unconfigured
-    }
-
     var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var canRequestBrand: Bool {
+        !normalizedSearchText.isEmpty && (searchPhase == .results || searchPhase == .empty)
+    }
+
+    func requestBrand(using coordinator: any BrandRequestRouting) {
+        guard canRequestBrand else { return }
+        coordinator.pushBrandRequest(initialBrandName: normalizedSearchText)
     }
 
     func clearSearch() {
         searchText = ""
     }
 
-    func updateViewport(indices: [Int], searching: Bool) {
-        let source = searching ? searchResults : brands
-        let requests = indices.compactMap { index -> LookbookAssetImageRequest? in
-            guard source.indices.contains(index), let path = source[index].listLogoPath,
-                  !path.isEmpty else { return nil }
-            return LookbookAssetImageRequest(
-                primaryPath: path, secondaryPath: nil, remoteURL: nil,
-                sourcePageURL: nil, maxBytes: thumbMaxBytes
-            )
-        }
-        viewportPrefetch.update(requests)
-    }
+    func updateViewport(indices: [Int], searching: Bool) {}
 
-    func clearViewport() { viewportPrefetch.clear() }
+    func clearViewport() {}
 
     func refreshKeepingVisibleContent() async {
         guard phase == .ready else {
@@ -197,7 +174,6 @@ final class LookbookHomeViewModel: ObservableObject {
             lastBrandDocument = page.last
             didLoadInitialPage = true
             phase = .ready
-            viewportPrefetch.clear()
             await reloadInterestedStyleBrands(keepsExistingContentOnFailure: true)
         } catch {
             // 한국어 주석: 당겨서 새로고침 실패 시에는 기존 목록을 유지해 화면이 갑자기 비지 않도록 합니다.
@@ -235,14 +211,12 @@ final class LookbookHomeViewModel: ObservableObject {
             interestedStyleBrands = page.items
             interestedStyleNextCursor = page.nextCursor
             interestPhase = page.items.isEmpty ? .empty : .ready
-            schedulePrefetch(
-                items: makePrefetchTargets(
-                    from: page.items,
-                    count: page.items.count
-                )
-            )
         } catch {
             guard generation == interestLoadGeneration else { return }
+            #if DEBUG
+            let diagnostic = error as NSError
+            print("[LookbookHomeViewModel] 관심 스타일 조회 실패: domain=\(diagnostic.domain), code=\(diagnostic.code)")
+            #endif
             if keepsExistingContentOnFailure, interestedStyleBrands.isEmpty == false {
                 interestPhase = .ready
             } else {
@@ -253,14 +227,13 @@ final class LookbookHomeViewModel: ObservableObject {
         }
     }
 
-    /// 브랜드 생성 직후 로고 경로가 백그라운드 patch로 늦게 들어오는 경우를 보정합니다.
-    /// - Note: 새 브랜드가 첫 페이지에 없더라도 홈에서 바로 보이게 하기 위해, 없으면 임시로 목록 앞에 삽입합니다.
+    /// 구 등록 흐름의 완료 뒤 현재 공개 브랜드만 홈에 반영한다. 실제 종료는 L77 전환 조건을 따른다.
     func syncCreatedBrand(brandID: BrandID) async {
         for attempt in 0..<6 {
             do {
                 let brand = try await repo.fetchBrand(brandID: brandID)
                 upsertBrand(brand)
-                if await isBrandReadyForDisplay(brand) {
+                if brand.isVisibleToUsers {
                     break
                 }
             } catch {
@@ -282,7 +255,6 @@ final class LookbookHomeViewModel: ObservableObject {
             return
         }
         upsertBrand(brand)
-        prefetchIfNeeded(for: brand)
     }
 
     /// 스크롤 바닥에서 다음 페이지 로드
@@ -308,31 +280,6 @@ final class LookbookHomeViewModel: ObservableObject {
         }
     }
 
-    private func makePrefetchTargets(
-        from brands: [Brand],
-        count: Int
-    ) -> [(path: String, maxBytes: Int)] {
-
-        let slice = brands.prefix(max(count, 0))
-
-        return slice.compactMap { brand in
-            // 목록에서는 썸네일 -> detail -> original 순으로 폴백
-            let resolved = brand.listLogoPath
-            guard let path = resolved, !path.isEmpty else { return nil }
-
-            return (path: path, maxBytes: thumbMaxBytes)
-        }
-    }
-
-    private func schedulePrefetch(items: [(path: String, maxBytes: Int)]) {
-        guard !items.isEmpty else { return }
-        let brandImageCache = self.brandImageCache
-        let concurrency = self.prefetchConcurrency
-        Task(priority: .utility) {
-            await brandImageCache.prefetch(items: items, concurrency: concurrency)
-        }
-    }
-
     private func upsertBrand(_ brand: Brand) {
         guard brand.isVisibleToUsers else {
             brands.removeAll { $0.id == brand.id }
@@ -346,31 +293,6 @@ final class LookbookHomeViewModel: ObservableObject {
         }
 
         brands.insert(brand, at: 0)
-    }
-
-    private func prefetchIfNeeded(for brand: Brand) {
-        guard let path = brand.listLogoPath else { return }
-        schedulePrefetch(items: [(path: path, maxBytes: thumbMaxBytes)])
-    }
-
-    private func hasRenderableLogo(_ brand: Brand) -> Bool {
-        guard let path = brand.listLogoPath else { return false }
-        return path.isEmpty == false
-    }
-
-    private func isBrandReadyForDisplay(_ brand: Brand) async -> Bool {
-        guard hasRenderableLogo(brand) else { return false }
-        guard let path = brand.listLogoPath else { return false }
-
-        do {
-            _ = try await brandImageCache.loadImage(
-                path: path,
-                maxBytes: thumbMaxBytes
-            )
-            return true
-        } catch {
-            return false
-        }
     }
 
     private func bindBrandAdminSessionStore() {
@@ -435,26 +357,28 @@ final class LookbookHomeViewModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
 
-            let visibleResults = await verifiedVisibleSearchResults(results)
+            let visibleResults = try await verifiedVisibleSearchResults(results)
+            guard !Task.isCancelled, normalizedSearchText == query else { return }
             searchResults = visibleResults
             searchPhase = visibleResults.isEmpty ? .empty : .results
 
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, normalizedSearchText == query else { return }
             searchResults = []
             searchPhase = .failed(error.localizedDescription)
         }
     }
 
-    private func verifiedVisibleSearchResults(_ results: [Brand]) async -> [Brand] {
+    private func verifiedVisibleSearchResults(_ results: [Brand]) async throws -> [Brand] {
         var visibleResults: [Brand] = []
         visibleResults.reserveCapacity(results.count)
 
-        for result in results where result.isVisibleToUsers {
+        for result in results {
             do {
                 let brand = try await repo.fetchBrand(brandID: result.id)
-                visibleResults.append(brand)
-            } catch {
+                guard !Task.isCancelled else { throw CancellationError() }
+                if brand.isVisibleToUsers { visibleResults.append(brand) }
+            } catch LookbookContentUnavailableError.brandUnavailable {
                 continue
             }
         }

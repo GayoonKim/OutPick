@@ -24,6 +24,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        #if DEBUG && (targetEnvironment(simulator) || OUTPICK_BRAND_LOCAL_DEVICE)
+        if BrandLocalIntegrationMode.isEnabled { return true }
+        #endif
         let firebaseConfiguration: FirebaseClientConfiguration
         do {
             let runtimeConfiguration = try AppRuntimeConfiguration.load()

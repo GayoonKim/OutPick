@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "runTimeoutMs": 300000,
+  "inputs": [
+    "contracts/brand-operations",
+    "tools/brand-operations",
+    "tools/verification-gate",
+    "tools/repository-integrity",
+    "verification/brand-operations-preparation.json"
+  ],
+  "checks": [
+    {
+      "id": "public-contract",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/brand-operations/public-contract.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/brand-operations/public-contract.test.mjs::B1-P11 상세 응답 타입과 필수 null 시각 범위 및 손상 커서 예제를 대조한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P12 공개 입력 커서 경계와 오류 reason 및 결과 불명 예제를 고정한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P09 공개 접수 예제는 필수 결과와 현재 목적지 null 및 중복 의미를 고정한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P10 공개 내역은 소비 커서와 중간 빈 계속 및 완료 후 대상 부재를 구분한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P01 공개 계약은 필수 입력과 네 사용자 상태를 고정한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P02 공통 이름 URL 정규화 예제는 동일한 기대 결과를 갖는다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P03 이름 URL identity는 영문명과 무관하고 다른 URL을 합치지 않는다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P04 필수 URL 누락과 빈 이름 및 잘못된 URL 예제를 거부한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P05 포함 검색 예제는 동명 브랜드 ID를 각각 보존한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P06 전체 시즌 게시 예제는 빈 결과 부분 실패와 검토 대기를 제외한다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P07 공개 계약은 운영 비공개 필드와 관리자 진입점을 포함하지 않는다",
+        "tools/brand-operations/public-contract.test.mjs::B1-P08 공통 예제 ID는 비어 있지 않고 중복되지 않는다"
+      ]
+    },
+    {
+      "id": "gate-selftest",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/verification-gate/gate.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/verification-gate/gate.test.mjs::정상 명령은 실행 상태와 원본 로그를 기록한다",
+        "tools/verification-gate/gate.test.mjs::실패한 독립 검사 이후 검사도 실행하고 실패를 보존한다",
+        "tools/verification-gate/gate.test.mjs::없는 실행 파일과 시간 초과는 차단한다",
+        "tools/verification-gate/gate.test.mjs::설정 오류는 외부 명령 실행 전에 거절한다",
+        "tools/verification-gate/gate.test.mjs::검사 중 입력이 변하면 결과를 차단한다",
+        "tools/verification-gate/gate.test.mjs::Node 구조화 결과에서 필수 실행을 검증한다",
+        "tools/verification-gate/gate.test.mjs::실제 Node assertion 실패를 게이트 실패로 반환한다",
+        "tools/verification-gate/gate.test.mjs::검사 전 정상적으로 삭제한 추적 파일도 입력으로 식별한다",
+        "tools/verification-gate/gate.test.mjs::명시한 ignored 입력 파일도 변경을 감지하고 내용은 요약에 노출하지 않는다",
+        "tools/verification-gate/gate.test.mjs::시간 초과 시 SIGTERM을 무시하는 자손도 정리한다",
+        "tools/verification-gate/gate.test.mjs::Node 주 버전이 다르면 실행하지 않고 차단한다",
+        "tools/verification-gate/gate.test.mjs::skip, 0개, 손상, 중복 결과를 차단하고 실제 실패를 기록한다",
+        "tools/verification-gate/gate.test.mjs::Xcode 필수 테스트의 assertion 실패와 누락·skip을 구분한다"
+      ]
+    },
+    {
+      "id": "public-copy-integrity",
+      "command": "node",
+      "args": [
+        "tools/repository-integrity/check.mjs",
+        "contracts/brand-operations/public-consumer-manifest.json"
+      ],
+      "cwd": ".",
+      "timeoutMs": 30000,
+      "kind": "command",
+      "nodeMajor": 24
+    }
+  ]
+}

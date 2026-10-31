@@ -12,27 +12,20 @@ struct CreateBrandFlowView: View {
         case form
         case finishing
         case completed
-        case discovering
-        case candidateSelection
     }
 
     private enum Step: Equatable {
         case form
         case finishing(CreateBrandViewModel.CreatedBrand)
         case completed(CreateBrandViewModel.CreatedBrand)
-        case discovering(CreateBrandViewModel.CreatedBrand)
-        case candidateSelection(CreateBrandViewModel.CreatedBrand)
     }
 
     @Environment(\.dismiss) private var dismiss
 
-    @StateObject private var discoveryViewModel: CreateBrandDiscoveryViewModel
     @State private var step: Step = .form
     @State private var latestCreatedBrand: CreateBrandViewModel.CreatedBrand?
     @State private var logoPreparationTask: Task<Void, Never>?
     @State private var isShowingCloseConfirmation: Bool = false
-    @State private var isToolbarCloseVisible: Bool = true
-    @State private var discoveryErrorMessage: String?
 
     private let provider: LookbookRepositoryProvider
     private let initialBrandName: String?
@@ -46,9 +39,6 @@ struct CreateBrandFlowView: View {
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
-        _discoveryViewModel = StateObject(wrappedValue: CreateBrandDiscoveryViewModel(
-            repository: provider.seasonCandidateDiscoveryRepository
-        ))
         self.initialBrandName = initialBrandName
         self.initialEnglishName = initialEnglishName
         self.onFinished = onFinished
@@ -60,9 +50,6 @@ struct CreateBrandFlowView: View {
         onFinished: @escaping (BrandID?) -> Void = { _ in }
     ) {
         self.provider = provider
-        _discoveryViewModel = StateObject(wrappedValue: CreateBrandDiscoveryViewModel(
-            repository: provider.seasonCandidateDiscoveryRepository
-        ))
         self.initialBrandName = nil
         self.initialEnglishName = nil
         self.onFinished = onFinished
@@ -94,12 +81,6 @@ struct CreateBrandFlowView: View {
                 )
             ))
             _latestCreatedBrand = State(initialValue: previewBrand)
-        case .discovering:
-            _step = State(initialValue: .discovering(previewBrand))
-            _latestCreatedBrand = State(initialValue: previewBrand)
-        case .candidateSelection:
-            _step = State(initialValue: .candidateSelection(previewBrand))
-            _latestCreatedBrand = State(initialValue: previewBrand)
         }
     }
 
@@ -116,13 +97,9 @@ struct CreateBrandFlowView: View {
                         Image(systemName: "xmark")
                             .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
                     }
-                    .opacity(isToolbarCloseVisible ? 1 : 0)
-                    .disabled(isToolbarCloseVisible == false)
-                    .accessibilityHidden(isToolbarCloseVisible == false)
                     .accessibilityLabel("브랜드 등록 닫기")
                 }
             }
-            .navigationBarHidden(isToolbarCloseVisible == false)
             .alert(
                 closeConfirmationTitle,
                 isPresented: $isShowingCloseConfirmation
@@ -135,19 +112,7 @@ struct CreateBrandFlowView: View {
                 Text(closeConfirmationMessage)
             }
             .onDisappear {
-                discoveryViewModel.stopObserving()
                 logoPreparationTask?.cancel()
-            }
-            .onChange(of: discoveryViewModel.result) { result in
-                guard result != nil,
-                      let createdBrand = latestCreatedBrand else { return }
-                step = .candidateSelection(createdBrand)
-            }
-            .onChange(of: discoveryViewModel.errorMessage) { errorMessage in
-                guard let errorMessage,
-                      let createdBrand = latestCreatedBrand else { return }
-                discoveryErrorMessage = errorMessage
-                step = .candidateSelection(createdBrand)
             }
     }
 }
@@ -180,62 +145,16 @@ private extension CreateBrandFlowView {
                 }
             )
 
-        case .discovering(let createdBrand):
-            CreateBrandDiscoveringView(
-                createdBrand: createdBrand,
-                onSkip: {
-                    discoveryViewModel.stopObserving()
-                    step = .candidateSelection(createdBrand)
-                }
-            )
-
-        case .candidateSelection(let createdBrand):
-            CreateBrandCandidateSelectionView(
-                createdBrand: createdBrand,
-                loadSelectableSeasonCandidatesUseCase: LoadSelectableSeasonCandidatesUseCase(
-                    candidateRepository: provider.seasonCandidateRepository,
-                    seasonImportJobRepository: provider.seasonImportJobRepository
-                ),
-                startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
-                    importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
-                    requestStore: provider.importRequestStore,
-                    ownerUIDProvider: provider.currentUserUIDProvider
-                ),
-                discoveryErrorMessage: discoveryErrorMessage,
-                emptySelectionButtonTitle: "브랜드 등록 마치기",
-                onToolbarCloseVisibilityChange: { isVisible in
-                    isToolbarCloseVisible = isVisible
-                },
-                onComplete: {
-                    closeFlow()
-                }
-            )
         }
     }
 
     func advanceAfterBrandCreation(_ createdBrand: CreateBrandViewModel.CreatedBrand) {
-        if createdBrand.canDiscoverSeasons {
-            step = .discovering(createdBrand)
-            startSeasonCandidateDiscovery(for: createdBrand)
-            return
-        }
-
-        discoveryViewModel.stopObserving()
-
         if createdBrand.hasLogoAsset {
             step = .finishing(createdBrand)
             scheduleLogoPreparationTransition(for: createdBrand)
         } else {
             step = .completed(createdBrand)
         }
-    }
-
-    func startSeasonCandidateDiscovery(for createdBrand: CreateBrandViewModel.CreatedBrand) {
-        discoveryErrorMessage = nil
-        discoveryViewModel.start(
-            brandID: createdBrand.id,
-            existingJobID: createdBrand.discoveryJobID
-        )
     }
 
     func scheduleLogoPreparationTransition(for createdBrand: CreateBrandViewModel.CreatedBrand) {
@@ -299,7 +218,7 @@ private extension CreateBrandFlowView {
 
     var closeConfirmationMessage: String {
         if let latestCreatedBrand {
-            return "\(latestCreatedBrand.name) 브랜드는 이미 생성된 상태로 유지됩니다. 시즌 선택은 나중에 다시 진행할 수 있습니다."
+            return "\(latestCreatedBrand.name) 브랜드는 이미 생성된 상태로 유지됩니다."
         }
 
         return "지금 닫으면 입력 중인 브랜드 정보는 저장되지 않습니다."
@@ -325,17 +244,5 @@ private extension CreateBrandFlowView {
 #Preview("Brand Flow Completed") {
     NavigationView {
         CreateBrandFlowView(previewStep: .completed)
-    }
-}
-
-#Preview("Brand Flow Discovering") {
-    NavigationView {
-        CreateBrandFlowView(previewStep: .discovering)
-    }
-}
-
-#Preview("Brand Flow Candidate Selection") {
-    NavigationView {
-        CreateBrandFlowView(previewStep: .candidateSelection)
     }
 }

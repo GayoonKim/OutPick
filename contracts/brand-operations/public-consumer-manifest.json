@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "source": "OutPick-Backend 브랜드 B 저장 조회와 공개 접근 계약",
+  "files": {
+    "contracts/brand-operations/public-v1.json": "dc3ab4a423297b54c802dbb9a1fd75c95e2e5b02333b39cb8c9bb2b7829bd514",
+    "contracts/brand-operations/public-fixtures-v1.json": "447648e8b8482befd70aaeb5c876f888c609d483fcfd958f8c66929468f8b719",
+    "tools/brand-operations/contract-support.mjs": "eeb007e41560b554d82e76cbf6ce20d5e7c54c55a133d24b13f1ac80b0ecc9c7",
+    "tools/brand-operations/public-contract.test.mjs": "b2363d7ea832b9a4a9d18838108f7e0e65fad4aa46199dfcce48d7dcbfffe0a1"
+  }
+}

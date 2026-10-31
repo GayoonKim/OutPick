@@ -54,6 +54,7 @@ struct LookbookAssetImageView: View {
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
+                        .accessibilityIdentifier("lookbook.asset.loaded")
                         .onAppear { ImageCacheMetrics.shared.mark("ui.asset.imageBranchAppeared", key: loadKey) }
                 }
             } else if isLoading {
