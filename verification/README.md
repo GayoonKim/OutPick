@@ -40,7 +40,7 @@ Backend 소유 로컬 회차의 실제 Firebase SDK 검사는 `brand-operations-
 
 브랜드 운영의 문구·정렬·날짜 표시처럼 제한된 UI 보완은 `node tools/verification-gate/gate.mjs --project . --config verification/brand-operations-ui.json`으로 해당 Swift4/UI3 selector만 검사한다. 사용자 2026-10-15 지시로 이번 UI 보완에서 ios-migration-all/100만 건 검사는 실행하지 않는다. 이 범위의 통과를 전체 B5/회귀/실제 서버 연동 통과로 확대하지 않는다. 호출·데이터·공개 조건 변경은 해당 기능의 전체 필수 범위를 다시 검토한다.
 
-B5는 `node tools/verification-gate/gate.mjs --project . --config verification/brand-operations.json`으로 검사한다. 실제 SDK 쿼리 소스 조건3개와 앱·테스트 빌드를 포함한 Swift/Simulator selector를 requiredTests로 연결한다. fake/spy의 입력·상태·이동·이미지 경계와 fixture UITest를 검사하며 실제 Firestore Rules/인덱스·Development 연동 및 수동 QA를 대신하지 않는다. 대응과 미검증은 docs/ai/tasks/admin-web-brand-operations의 B5 기록을 따른다.
+B5는 `node tools/verification-gate/gate.mjs --project . --config verification/brand-operations.json`으로 검사한다. 실제 SDK 쿼리 소스 조건3개와 앱·테스트 빌드를 포함한 Swift/Simulator selector를 requiredTests로 연결한다. fake/spy의 입력·상태·이동·이미지 경계와 fixture UITest를 검사하며 실제 Firestore Rules/인덱스·Development 연동 및 수동 QA를 대신하지 않는다. 대응과 미검증은 docs/ai/tasks/admin-web-brand-operations의 B5 기록을 따른다. 삭제된 관리자 편집 검사는 기존 전면 제거 소스 검사 3개로 대체하고, 공개 요청 내역을 떠난 뒤의 지연 응답이 이동·오류를 만들지 않는 경계도 확인한다.
 
 브랜드 B1 공개 계약 준비는 Node 24에서 `node tools/verification-gate/gate.mjs --project . --config verification/brand-operations-preparation.json`으로 실행한다. JSON 사본·공통 명세 예제·게이트 selftest·해시를 검사하며 repository-integrity와 secrets를 함께 실행한다. 이 단계는 Swift/UI를 변경하지 않아 Xcode 기능 검사를 새로 실행하지 않는다. 실제 요청/조회/카드 변경은 B5의 필수 Swift 게이트로 검증한다.
 

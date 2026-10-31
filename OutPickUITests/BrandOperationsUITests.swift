@@ -125,6 +125,34 @@ final class BrandOperationsUITests: XCTestCase {
         XCTAssertFalse(url.exists)
     }
 
+    func testLeavingHistoryDuringBrandLoadDoesNotOpenDetail() {
+        let app = LookbookUITestSupport.launchApp(failureArgument: "--uitest-brand-history-delayed-navigation")
+        let search = app.textFields["브랜드 검색"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap()
+        search.typeText("없는브랜드")
+        LookbookUITestSupport.firstElement(in: app, identifier: "lookbook.brandRequest.entry").tap()
+        let url = LookbookUITestSupport.firstElement(in: app, identifier: "lookbook.brandRequest.websiteURL")
+        XCTAssertTrue(url.waitForExistence(timeout: 5))
+        url.tap()
+        url.typeText("https://newbrand.example\n")
+        let submit = app.buttons["요청하기"]
+        if !submit.isHittable { app.swipeUp() }
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["브랜드 요청 상황"].waitForExistence(timeout: 5))
+        app.buttons["이전 요청"].tap()
+        XCTAssertTrue(app.buttons["브랜드 보기"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["브랜드 보기"].firstMatch.tap()
+        app.buttons["뒤로 가기"].firstMatch.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let detail = LookbookUITestSupport.firstElement(in: app, identifier: "lookbook.season.card")
+        let unexpectedNavigation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in detail.exists }, object: nil)
+        unexpectedNavigation.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [unexpectedNavigation], timeout: 6), .completed)
+        XCTAssertTrue(search.exists)
+    }
+
     func testHistoryPageFailureKeepsRowsAndRetriesFromLastCursor() {
         let app = LookbookUITestSupport.launchApp(failureArgument: "--uitest-brand-history-page-failure")
         let search = app.textFields["브랜드 검색"]

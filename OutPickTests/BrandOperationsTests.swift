@@ -134,6 +134,24 @@ struct BrandOperationsTests {
         #expect(transport.calls.map { $0.data["scope"] as? String } == ["active", "history"])
     }
 
+    @Test func leavingHistoryDiscardsLateBrandAndAllowsNewNavigation() async {
+        for fails in [false, true] {
+            let loader = BrandOperationsDelayedBrandLoader()
+            let model = MyBrandRequestsViewModel(listUseCase: BrandOperationsHistoryFake(), loadBrandUseCase: loader)
+            let router = BrandOperationsCoordinatorSpy()
+            let completed = request("completed", status: .added, brandID: "public-brand")
+            let pending = Task { await model.openCompletedBrand(completed, using: router) }
+            await loader.waitForStart()
+            model.cancelPendingNavigation()
+            #expect(model.openingRequestID == nil)
+            await model.openCompletedBrand(completed, using: router)
+            #expect(router.brands.count == 1)
+            loader.finish(fails ? .failure(URLError(.timedOut)) : .success(publicBrand()))
+            await pending.value
+            #expect(router.brands.count == 1 && model.navigationError == nil && model.openingRequestID == nil)
+        }
+    }
+
     @Test func repositoryPaginationRetriesTheSameCursorWithoutLosingLoadedRows() async throws {
         func row(_ id: String) -> [String: Any] {
             wireRequest(id)
@@ -673,6 +691,30 @@ private final class BrandOperationsRepositoryFake: BrandRepositoryProtocol {
     func fetchBrands(sort: BrandSort?, limit: Int, after: DocumentSnapshot?) async throws -> BrandPage { .init(items: [brand], last: nil) }
     func fetchFeaturedBrands(sort: BrandSort?, limit: Int, after: DocumentSnapshot?) async throws -> BrandPage { .init(items: [brand], last: nil) }
     func fetchInterestedStyleBrands(moodIDs: [String], limit: Int, after: InterestedStyleBrandCursor?) async throws -> InterestedStyleBrandPage { .init(items: [brand], nextCursor: nil) }
+}
+
+@MainActor
+private final class BrandOperationsDelayedBrandLoader: LoadPublicBrandUseCaseProtocol {
+    private var continuation: CheckedContinuation<Brand, any Error>?
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var started = false
+    func waitForStart() async {
+        if started { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+    func finish(_ result: Result<Brand, any Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+    func execute(brandID: BrandID) async throws -> Brand {
+        if started { return publicBrand() }
+        started = true
+        return try await withCheckedThrowingContinuation {
+            continuation = $0
+            startWaiter?.resume()
+            startWaiter = nil
+        }
+    }
 }
 
 private struct BrandOperationsSeasonFake: SeasonRepositoryProtocol {

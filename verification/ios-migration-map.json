@@ -184,7 +184,6 @@
     "ChatVideoPlaybackSessionTests/testRefreshFailureWaitsForManualRetry()",
     "ChatVideoPlaybackSessionTests/testSeekWithExpiredURLPreservesTargetAndPausedState()",
     "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
-    "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
     "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
     "GRDBChatDeletionSyncStoreTests/repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState()",
     "GRDBChatDeletionSyncStoreTests/revisionGapRollsBackScrubAndCursor()",
@@ -1005,8 +1004,7 @@
         "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
         "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
-        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
-        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()"
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()"
       ]
     }
   ],
@@ -1056,6 +1054,23 @@
       "retiredSelectorsAndTests": [
         "BrandLocalUIPreparationTests/injectedBlankIdentityNeverInitializesDefaultLoginManager()",
         "BrandLocalUIPreparationTests/injectedGeneralIdentityLoadsOnceWithoutGrantingAdmin()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
+    },
+    {
+      "source": "verification/brand-operations.json (B5)",
+      "reason": "2026-10-30 사용자 iOS 관리자 전면 제거 지시에 따라 삭제된 관리자 편집 테스트를 종료한다. 공개 검색·요청 검사는 유지하고 관리자 화면·권한·callable 부재는 기존 전면 제거 소스 검사로 대체한다.",
+      "retiredSelectorsAndTests": [
+        "-only-testing:OutPickTests/AdminBrandManagementViewModelTests",
+        "AdminBrandManagementViewModelTests/canSaveBrandRequiresActualBrandInfoChange()",
+        "AdminBrandManagementViewModelTests/featuredChangeOnlyCountsForTotalAdminSavePermission()",
+        "AdminBrandManagementViewModelTests/moodChangeOnlyCountsForTotalAdminSavePermission()",
+        "AdminBrandManagementViewModelTests/clearSearchClearsSelectedBrandAndDraftInputs()",
+        "AdminBrandManagementViewModelTests/directBrandModeWithInitialBrandStartsReadyWithoutFetchLoading()",
+        "AdminBrandManagementViewModelTests/directBrandModeKeepsInitialBrandAfterSearchBindingEmitsEmptyQuery()",
+        "AdminBrandManagementViewModelTests/directBrandModeWithOnlyBrandIDStartsInInitialLoadingState()",
+        "AdminBrandManagementViewModelTests/seasonStyleSearchMatchesDisplaySourceYearAndTerm()",
+        "AdminBrandManagementViewModelTests/logoUploadFailureHidesInternalError()"
       ],
       "replacementConfig": "verification/ios-admin-full-retirement-source.json"
     }

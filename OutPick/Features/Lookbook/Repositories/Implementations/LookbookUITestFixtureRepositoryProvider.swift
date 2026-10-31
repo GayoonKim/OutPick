@@ -258,7 +258,12 @@ private final class LookbookUITestFixtureStore:
         )
     }
 
-    func fetchBrand(brandID: BrandID) async throws -> Brand { brand }
+    func fetchBrand(brandID: BrandID) async throws -> Brand {
+        if ProcessInfo.processInfo.arguments.contains("--uitest-brand-history-delayed-navigation") {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        return brand
+    }
 
     func fetchBrands(
         sort: BrandSort?,

@@ -41,6 +41,7 @@ struct MyBrandRequestsView: View {
                 await viewModel.reload()
             }
         }
+        .onDisappear { viewModel.cancelPendingNavigation() }
     }
 
     private var scopePicker: some View {

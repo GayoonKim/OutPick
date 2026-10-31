@@ -34,14 +34,11 @@ test('B5-S02 브랜드 카드와 상세의 로고 요청은0이며 시즌 이미
   assert.match(source(base + 'Services/ImageLoading/BrandImageCache.swift'), /loadImage\(/);
 });
 
-test('B5-S03 공개 검색20과 조건별 요청 진입을 연결하고 구 관리자 제거는 전환 뒤 적용한다', () => {
+test('B5-S03 공개 검색20과 조건별 요청 진입을 연결한다', () => {
   const home = source(base + 'ViewModels/LookbookHomeViewModel.swift');
   assert.match(home, /searchLimit: Int = 20/);
   assert.match(home, /searchPhase == \.results \|\| searchPhase == \.empty/);
   const view = source(base + 'Views/LookbookHome/LookbookHomeView.swift');
   assert.match(view.split('case .results:')[1].split('case .empty:')[0], /brandRequestButton/);
   assert.match(view.split('case .empty:')[1].split('case .failed')[0], /requestBrand\(using: coordinator\)/);
-  for (const endpoint of ['addBrandManager', 'removeBrandManager', 'createBrand', 'updateBrand', 'updateBrandLogoPaths']) {
-    assert.ok(source(base + 'Repositories/Implementations/CloudFunctionsBrandStore.swift').includes(endpoint));
-  }
 });

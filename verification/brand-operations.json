@@ -33,7 +33,7 @@
       "requiredTests": [
         "tools/brand-operations/ios-source.test.mjs::B5-S01 세 브랜드 목록의 SDK 쿼리에 명시 public 조건을 유지한다",
         "tools/brand-operations/ios-source.test.mjs::B5-S02 브랜드 카드와 상세의 로고 요청은0이며 시즌 이미지 경로를 보존한다",
-        "tools/brand-operations/ios-source.test.mjs::B5-S03 공개 검색20과 조건별 요청 진입을 연결하고 구 관리자 제거는 전환 뒤 적용한다",
+        "tools/brand-operations/ios-source.test.mjs::B5-S03 공개 검색20과 조건별 요청 진입을 연결한다",
         "tools/brand-operations/ios-source.test.mjs::B5-S04 브랜드 공유의 저장 스냅샷을 보존하며 화면과 프리패치에서 이미지를 제외한다"
       ]
     },
@@ -62,7 +62,6 @@
         "-only-testing:OutPickTests/InterestedStyleBrandListViewModelTests",
         "-only-testing:OutPickTests/BrandDetailViewModelTests",
         "-only-testing:OutPickTests/LikedViewModelTests",
-        "-only-testing:OutPickTests/AdminBrandManagementViewModelTests",
         "-only-testing:OutPickTests/BrandEngagementInteractionUseCaseTests",
         "-only-testing:OutPickTests/LookbookInteractionStoreTests",
         "-only-testing:OutPickTests/LookbookChatShareUseCaseTests",
@@ -76,6 +75,7 @@
       "timeoutMs": 1800000,
       "kind": "xcresult",
       "requiredTests": [
+        "BrandOperationsUITests/testLeavingHistoryDuringBrandLoadDoesNotOpenDetail()",
         "BrandOperationsL151Tests/publicResponseFixtures42PassThroughRepositoryAndRejectDamage()",
         "BrandOperationsL151Tests/requiredTypesDatesReasonsAndScopeAreStrict()",
         "BrandOperationsL151Tests/publicErrorFixtures9UseCodeAndOptionalReasonWithoutLosingDraft()",
@@ -132,15 +132,6 @@
         "LikedViewModelTests/likeInvalidationInsertsNewBrandWithoutReload()",
         "LikedViewModelTests/unlikeInvalidationRemovesSeasonFromList()",
         "LikedViewModelTests/refreshForActivationDoesNotReloadAfterInitialLoad()",
-        "AdminBrandManagementViewModelTests/canSaveBrandRequiresActualBrandInfoChange()",
-        "AdminBrandManagementViewModelTests/featuredChangeOnlyCountsForTotalAdminSavePermission()",
-        "AdminBrandManagementViewModelTests/moodChangeOnlyCountsForTotalAdminSavePermission()",
-        "AdminBrandManagementViewModelTests/clearSearchClearsSelectedBrandAndDraftInputs()",
-        "AdminBrandManagementViewModelTests/directBrandModeWithInitialBrandStartsReadyWithoutFetchLoading()",
-        "AdminBrandManagementViewModelTests/directBrandModeKeepsInitialBrandAfterSearchBindingEmitsEmptyQuery()",
-        "AdminBrandManagementViewModelTests/directBrandModeWithOnlyBrandIDStartsInInitialLoadingState()",
-        "AdminBrandManagementViewModelTests/seasonStyleSearchMatchesDisplaySourceYearAndTerm()",
-        "AdminBrandManagementViewModelTests/logoUploadFailureHidesInternalError()",
         "BrandEngagementInteractionUseCaseTests/rapidTapsConvergeToLastStateWithoutExtraServerCall()",
         "BrandEngagementInteractionUseCaseTests/failureRestoresConfirmedBrandLikeState()",
         "LookbookInteractionStoreTests/pinAwareCacheEvictsUnpinnedLRUButKeepsPinnedEntry()",
@@ -177,7 +168,28 @@
         "BrandOperationsTests/newAndExistingBrandSharesHaveNoDisplayImageAndKeepStoredSnapshot()",
         "ChatMediaViewportSurfaceTests/testShareCardPreservesImageOnReconfigureAndRejectsOldPath()",
         "ChatMediaViewportSurfaceTests/testBrandShareHidesStoredThumbnailAndRejectsLateImage()",
-        "ChatMediaViewportSurfaceTests/testBrandSharedMessageCreatesNoViewportDemandButSeasonDoes()"
+        "ChatMediaViewportSurfaceTests/testBrandSharedMessageCreatesNoViewportDemandButSeasonDoes()",
+        "BrandOperationsTests/leavingHistoryDiscardsLateBrandAndAllowsNewNavigation()"
+      ]
+    },
+    {
+      "id": "full-admin-retirement-source",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 60000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S01 공개 앱에 관리자 화면 세션 조립과 진입점이 없다",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S02 공개 앱이 기존 관리자 callable을 호출하지 않는다",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S03 공개 요청 내역 스타일 조회와 본인 댓글 흐름은 남는다"
       ]
     }
   ]

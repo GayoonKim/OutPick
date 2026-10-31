@@ -221,7 +221,6 @@
         "ChatVideoPlaybackSessionTests/testRefreshFailureWaitsForManualRetry()",
         "ChatVideoPlaybackSessionTests/testSeekWithExpiredURLPreservesTargetAndPausedState()",
         "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
-        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
         "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
         "GRDBChatDeletionSyncStoreTests/repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState()",
         "GRDBChatDeletionSyncStoreTests/revisionGapRollsBackScrubAndCursor()",

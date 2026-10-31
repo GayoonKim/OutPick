@@ -20,6 +20,7 @@ final class MyBrandRequestsViewModel: ObservableObject {
     private var nextCursor: BrandRequestPage.Cursor?
     private var isLoading = false
     private var generation = 0
+    private var navigationGeneration = 0
     private var loadTask: Task<Void, Never>?
 
     init(scope: BrandRequestListScope = .active,
@@ -41,6 +42,7 @@ final class MyBrandRequestsViewModel: ObservableObject {
     }
 
     func reload() async {
+        cancelPendingNavigation()
         generation += 1
         loadTask?.cancel()
         nextCursor = nil
@@ -114,19 +116,29 @@ final class MyBrandRequestsViewModel: ObservableObject {
         await task.value
     }
 
+    func cancelPendingNavigation() {
+        navigationGeneration += 1
+        openingRequestID = nil
+    }
+
     func openCompletedBrand(_ request: BrandRequest, using coordinator: any BrandRequestRouting) async {
         guard request.status == .added, let id = request.resolvedBrandID,
               openingRequestID == nil else { return }
         let requestedGeneration = generation
+        let requestedNavigationGeneration = navigationGeneration
         openingRequestID = request.id
         navigationError = nil
-        defer { openingRequestID = nil }
+        defer {
+            if requestedNavigationGeneration == navigationGeneration { openingRequestID = nil }
+        }
         do {
             let brand = try await loadBrandUseCase.execute(brandID: id)
-            guard !Task.isCancelled, requestedGeneration == generation else { return }
+            guard !Task.isCancelled, requestedGeneration == generation,
+                  requestedNavigationGeneration == navigationGeneration else { return }
             coordinator.pushBrandDetail(brand: brand)
         } catch {
-            guard requestedGeneration == generation else { return }
+            guard !Task.isCancelled, requestedGeneration == generation,
+                  requestedNavigationGeneration == navigationGeneration else { return }
             navigationError = error.localizedDescription
         }
     }
