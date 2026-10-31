@@ -97,45 +97,10 @@ final class LookbookCoordinator: BrandRequestRouting {
         )
     }
 
-    func pushAdminHome(onCreatedBrand: @escaping (BrandID) -> Void) {
-        push(makeAdminHomeView(onCreatedBrand: onCreatedBrand), policy: .browse)
-    }
 
-    func pushAdminBrandRequestGroups() {
-        push(makeAdminBrandRequestGroupsView(), policy: .browse)
-    }
 
-    func pushStyleMoodManagement() {
-        push(
-            container.makeStyleMoodManagementView(coordinator: self),
-            policy: .browse
-        )
-    }
 
-    func pushAdminBrandManagement(
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) {
-        push(
-            makeAdminBrandManagementView(
-                initialBrand: initialBrand,
-                initialBrandID: initialBrandID,
-                onUpdatedBrand: onUpdatedBrand
-            ),
-            policy: .stateful
-        )
-    }
 
-    func pushAdminLookbookDeletionManagement(initialBrand: Brand? = nil) {
-        push(
-            makeAdminLookbookDeletionManagementView(
-                initialBrand: initialBrand,
-                allowsDeletionSelection: initialBrand != nil
-            ),
-            policy: .stateful
-        )
-    }
 
     func pop() {
         guard let navigationController else {
@@ -184,42 +149,9 @@ final class LookbookCoordinator: BrandRequestRouting {
         )
     }
 
-    func makeAdminHomeView(
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> LookbookAdminHomeView {
-        container.makeAdminHomeView(
-            coordinator: self,
-            onCreatedBrand: onCreatedBrand
-        )
-    }
 
-    func makeAdminBrandRequestGroupsView() -> AdminBrandRequestGroupsView {
-        container.makeAdminBrandRequestGroupsView(coordinator: self)
-    }
 
-    func makeAdminBrandManagementView(
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) -> AdminBrandManagementView {
-        container.makeAdminBrandManagementView(
-            coordinator: self,
-            initialBrand: initialBrand,
-            initialBrandID: initialBrandID,
-            onUpdatedBrand: onUpdatedBrand
-        )
-    }
 
-    func makeAdminLookbookDeletionManagementView(
-        initialBrand: Brand? = nil,
-        allowsDeletionSelection: Bool = true
-    ) -> AdminLookbookDeletionManagementView {
-        container.makeAdminLookbookDeletionManagementView(
-            coordinator: self,
-            initialBrand: initialBrand,
-            allowsDeletionSelection: allowsDeletionSelection
-        )
-    }
 
     func makePostDetailView(post: LookbookPost) -> PostDetailView {
         container.makePostDetailView(
@@ -227,18 +159,6 @@ final class LookbookCoordinator: BrandRequestRouting {
             seasonID: post.seasonID,
             postID: post.id,
             coordinator: self
-        )
-    }
-
-    func makeCreateBrandFlow(
-        initialBrandName: String? = nil,
-        initialEnglishName: String? = nil,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> some View {
-        container.makeCreateBrandFlow(
-            initialBrandName: initialBrandName,
-            initialEnglishName: initialEnglishName,
-            onCreatedBrand: onCreatedBrand
         )
     }
 
@@ -320,7 +240,6 @@ final class LookbookCoordinator: BrandRequestRouting {
         )
         let rootView = view
             .environment(\.repositoryProvider, container.provider)
-            .environmentObject(container.brandAdminSessionStore)
             .environment(\.lookbookInteractivePopState, interactivePopState)
 
         return LookbookHostingController(

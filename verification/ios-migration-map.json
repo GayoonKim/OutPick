@@ -183,7 +183,7 @@
     "ChatVideoPlaybackSessionTests/testPausedURLExpiryRenewsOnResumeAndPreservesPosition()",
     "ChatVideoPlaybackSessionTests/testRefreshFailureWaitsForManualRetry()",
     "ChatVideoPlaybackSessionTests/testSeekWithExpiredURLPreservesTargetAndPausedState()",
-    "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+    "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
     "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
     "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
     "GRDBChatDeletionSyncStoreTests/repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState()",
@@ -1005,7 +1005,7 @@
         "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
         "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
-        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
         "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()"
       ]
     }
@@ -1026,6 +1026,38 @@
         "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()"
       ],
       "replacementConfig": "verification/admin-season-retirement.json"
+    },
+    {
+      "source": "2026-10-30 사용자 iOS 관리자 전면 제거 지시",
+      "reason": "삭제된 관리자 기능 검사를 종료하고 공개 검색 검사를 분리 보존한다. 경로 부재는 전면 제거 소스 게이트로 검증한다.",
+      "retiredSelectorsAndTests": [
+        "-only-testing:OutPickTests/AdminLookbookDeletionManagementViewModelTests",
+        "-only-testing:OutPickTests/CloudFunctionsStyleMoodAdminRepositoryTests",
+        "-only-testing:OutPickTests/BrandAdminCapabilitiesCloudFunctionsClientTests",
+        "-only-testing:OutPickTests/CloudFunctionsLookbookDeletionRepositoryTests",
+        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
+        "AdminLookbookDeletionManagementViewModelTests/interactivePopIsBlockedForPendingReasonDraft()",
+        "AdminLookbookDeletionManagementViewModelTests/reloadReplacesFirstPageAndStoresNextCursor()",
+        "AdminLookbookDeletionManagementViewModelTests/nextPageAppendRemovesDuplicateRequestIDs()",
+        "AdminLookbookDeletionManagementViewModelTests/retryIsRestrictedToTotalAdminAndFailedStatus()",
+        "AdminLookbookDeletionManagementViewModelTests/concurrentNextPageRequestsCallRepositoryOnce()",
+        "AdminLookbookDeletionManagementViewModelTests/retryDisplayStateCombinesAutomaticManualAndLeaseStates()",
+        "CloudFunctionsStyleMoodAdminRepositoryTests/moodAndSeasonMutationsUseExpectedCallablePayloads()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/loadsCapabilitiesWithEmptyPayload()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/appliesExistingDefaultsForMissingOptionalCapabilityFields()",
+        "CloudFunctionsLookbookDeletionRepositoryTests/coversDeletionCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
+    },
+    {
+      "source": "2026-10-30 사용자 iOS 관리자 전면 제거 지시",
+      "reason": "관리자 Store 삭제로 두 검사를 종료한다. 기본 SDK 미초기화와 공개 로컬 조립 검사는 유지한다.",
+      "retiredSelectorsAndTests": [
+        "BrandLocalUIPreparationTests/injectedBlankIdentityNeverInitializesDefaultLoginManager()",
+        "BrandLocalUIPreparationTests/injectedGeneralIdentityLoadsOnceWithoutGrantingAdmin()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
     }
   ]
 }

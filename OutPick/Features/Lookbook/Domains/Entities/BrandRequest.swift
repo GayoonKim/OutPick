@@ -51,63 +51,6 @@ enum BrandRequestFailure: LocalizedError, Equatable {
     }
 }
 
-enum ProcessedRequestScope: String, Codable, CaseIterable, Equatable, Identifiable {
-    case recent
-    case history
-
-    var id: String { rawValue }
-
-    var displayTitle: String {
-        switch self {
-        case .recent:
-            return "최근 14일"
-        case .history:
-            return "이전"
-        }
-    }
-}
-
-enum BrandRequestAdminStage: String, Codable, CaseIterable, Equatable {
-    case requested
-    case processing
-    case completed
-    case rejected
-
-    var displayTitle: String {
-        switch self {
-        case .requested:
-            return "요청됨"
-        case .processing:
-            return "처리 중"
-        case .completed:
-            return "완료"
-        case .rejected:
-            return "보류"
-        }
-    }
-
-    var isProcessed: Bool {
-        self == .completed || self == .rejected
-    }
-}
-
-enum BrandRequestRejectionReason: String, Codable, CaseIterable, Equatable {
-    case unavailable
-    case spam
-    case other
-
-    var displayTitle: String {
-        switch self {
-        case .unavailable:
-            return "룩북 확인 불가"
-        case .spam:
-            return "스팸"
-        case .other:
-            return "기타"
-        }
-    }
-}
-
 struct BrandRequest: Identifiable, Equatable {
     let id: String
     let brandName: String
@@ -148,45 +91,3 @@ struct BrandRequestPage: Equatable {
     let scope: BrandRequestListScope
 }
 
-struct AdminBrandRequestGroup: Identifiable, Equatable {
-    let id: String
-    let dedupeKey: String
-    let dedupeKeySource: String
-    let displayNameSnapshot: String
-    let normalizedBrandName: String
-    let englishBrandName: String?
-    let normalizedEnglishBrandName: String?
-    let requestCount: Int
-    let adminStage: BrandRequestAdminStage
-    let status: BrandRequestStatus
-    let rejectionReason: BrandRequestRejectionReason?
-    let resolvedBrandID: BrandID?
-    let createdBrandID: BrandID?
-    let brandCreatedAt: Date?
-    let brandCreatedBy: String?
-    let adminNote: String?
-    let lastRequestID: String?
-    let lastRequestedAt: Date?
-    let createdAt: Date?
-    let updatedAt: Date?
-    let reviewedAt: Date?
-    let resolvedAt: Date?
-    let rejectedAt: Date?
-}
-
-struct AdminBrandRequestGroupPage: Equatable {
-    struct Cursor: Equatable {
-        let updatedAt: String
-        let groupID: String
-    }
-
-    let groups: [AdminBrandRequestGroup]
-    let nextCursor: Cursor?
-}
-
-struct AdminBrandRequestGroupStageUpdateReceipt: Equatable {
-    let groupID: String
-    let status: BrandRequestStatus
-    let adminStage: BrandRequestAdminStage
-    let updatedRequestCount: Int
-}

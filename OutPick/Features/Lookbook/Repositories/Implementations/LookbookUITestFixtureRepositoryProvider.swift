@@ -27,9 +27,7 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
             brandRepository: fixture,
             brandSearchRepository: fixture,
             brandRequestRepository: fixture,
-            lookbookDeletionRepository: fixture,
             brandEngagementRepository: fixture,
-            brandStore: fixture,
             seasonRepository: fixture,
             seasonEngagementRepository: fixture,
             seasonUserStateRepository: fixture,
@@ -99,9 +97,7 @@ private final class LookbookUITestFixtureStore:
     BrandRepositoryProtocol,
     BrandSearchRepositoryProtocol,
     BrandRequestRepositoryProtocol,
-    LookbookDeletionRepositoryProtocol,
     BrandEngagementRepositoryProtocol,
-    BrandStoringRepository,
     SeasonRepositoryProtocol,
     SeasonEngagementRepositoryProtocol,
     SeasonUserStateRepositoryProtocol,
@@ -304,40 +300,10 @@ private final class LookbookUITestFixtureStore:
         brand.name.lowercased().contains(query.lowercased()) ? [brand] : []
     }
 
-    func createBrand(
-        name: String,
-        englishName: String?,
-        isFeatured: Bool,
-        websiteURL: String?,
-        lookbookArchiveURL: String?,
-        moodIDs: [String]
-    ) async throws -> BrandCreationReceipt {
-        BrandCreationReceipt(brandID: brand.id.value, discoveryJobID: nil)
-    }
 
-    func updateBrand(
-        brandID: BrandID,
-        name: String,
-        englishName: String?,
-        websiteURL: String?,
-        lookbookArchiveURL: String?,
-        isFeatured: Bool?,
-        moodIDs: [String]?
-    ) async throws -> Brand { brand }
 
-    func updateLogoPaths(docID: String, logoThumbPath: String?, logoDetailPath: String?) async throws {}
 
-    func addBrandManager(
-        brandID: BrandID,
-        email: String,
-        role: BrandManagerRole
-    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
 
-    func removeBrandManager(
-        brandID: BrandID,
-        email: String,
-        role: BrandManagerRole
-    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
 
     func submitBrandRequest(
         brandName: String,
@@ -384,87 +350,19 @@ private final class LookbookUITestFixtureStore:
         return .init(requests: rows, nextCursor: nil, scope: scope)
     }
 
-    func listBrandRequestGroups(
-        adminStage: BrandRequestAdminStage?,
-        processedScope: ProcessedRequestScope?,
-        limit: Int,
-        cursor: AdminBrandRequestGroupPage.Cursor?
-    ) async throws -> AdminBrandRequestGroupPage { throw FixtureError.unsupported }
 
-    func updateBrandRequestGroupStage(
-        groupID: String,
-        adminStage: BrandRequestAdminStage,
-        rejectionReason: BrandRequestRejectionReason?,
-        adminNote: String?
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
 
-    func resolveBrandRequestGroup(
-        groupID: String,
-        resolvedBrandID: BrandID,
-        adminNote: String?
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
 
-    func markBrandRequestGroupBrandCreated(
-        groupID: String,
-        createdBrandID: BrandID
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
 
-    func requestBrandDeletion(
-        brandID: BrandID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func cancelBrandDeletion(brandID: BrandID) async throws -> LookbookDeletionMutationReceipt {
-        throw FixtureError.unsupported
-    }
 
-    func softDeleteSeason(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func batchSoftDeleteSeasons(
-        brandID: BrandID,
-        seasonIDs: [SeasonID],
-        reason: String?
-    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
 
-    func restoreSeason(
-        brandID: BrandID,
-        seasonID: SeasonID
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func softDeletePost(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func batchSoftDeletePosts(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postIDs: [PostID],
-        reason: String?
-    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
 
-    func restorePost(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func listDeletionRequests(
-        targetType: LookbookDeletionTargetType?,
-        brandID: BrandID?,
-        limit: Int,
-        cursor: LookbookDeletionRequestPage.Cursor?
-    ) async throws -> LookbookDeletionRequestPage { throw FixtureError.unsupported }
 
-    func retryFailedPurge(requestID: String) async throws -> LookbookDeletionRetryReceipt {
-        throw FixtureError.unsupported
-    }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season { season }
 

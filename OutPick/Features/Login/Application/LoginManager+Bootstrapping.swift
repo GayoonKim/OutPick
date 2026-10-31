@@ -13,8 +13,7 @@ extension LoginManager: LoginBootstrappingProtocol {
     /// 호출 위치: AppCoordinator에서 Main(Tab) 라우팅 직후
     func bootstrapAfterLogin(
         joinedRoomsStore: JoinedRoomsSessionStoring,
-        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling,
-        brandAdminSessionStore: BrandAdminSessionStore
+        joinedRoomsRuntime: JoinedRoomsSessionRuntimeHandling
     ) async throws {
         // 0) 세션 사용자 문서 확정
         _ = try await ensureUserDocumentID()
@@ -30,10 +29,6 @@ extension LoginManager: LoginBootstrappingProtocol {
             joinedRoomsRuntime.replaceJoinedRooms(Set(joinedRoomIDs))
         }
 
-        // 2) 브랜드 권한 선로딩
-        await brandAdminSessionStore.refreshCurrentSession(force: true)
-        await brandAdminSessionStore.refreshWritableBrands(force: true)
-
-        // 3) 소켓 연결은 AppSessionRuntime이 인증 세션 시작 시 담당한다.
+        // 2) 소켓 연결은 AppSessionRuntime이 인증 세션 시작 시 담당한다.
     }
 }

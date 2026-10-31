@@ -220,7 +220,7 @@
         "ChatVideoPlaybackSessionTests/testPausedURLExpiryRenewsOnResumeAndPreservesPosition()",
         "ChatVideoPlaybackSessionTests/testRefreshFailureWaitsForManualRetry()",
         "ChatVideoPlaybackSessionTests/testSeekWithExpiredURLPreservesTargetAndPausedState()",
-        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
         "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
         "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
         "GRDBChatDeletionSyncStoreTests/repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState()",
@@ -274,24 +274,6 @@
         "UserBlockSessionControllerTests/successfulMutationUpdatesMemoryAndAccountSnapshot()",
         "VideoSaveLifetimeTests/testChatCloseAfterSubmissionSuccess()"
       ]
-    }
-  ],
-  "retirements": [
-    {
-      "source": "L178 admin-season-api-handoff",
-      "reason": "웹 관리자 전용 시즌21개 호출과 iOS 전용 소비자 제거로 해당 성공/복원 검사를 종료한다. 검사를 skip 처리하지 않고 admin-season-retirement의 소스 부재·유지 기능 검사로 대체한다.",
-      "retiredSelectorsAndTests": [
-        "-only-testing:OutPickTests/CloudFunctionsSeasonImportRepositoryTests",
-        "-only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests",
-        "-only-testing:OutPickTests/StartSeasonImportExtractionUseCaseTests",
-        "CloudFunctionsSeasonImportRepositoryTests/coversExtractionReviewCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonRepairCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved()",
-        "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()",
-        "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()"
-      ],
-      "replacementConfig": "verification/admin-season-retirement.json"
     }
   ]
 }

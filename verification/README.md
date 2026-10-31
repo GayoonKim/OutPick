@@ -1,5 +1,7 @@
 # iOS 프로그램적 검증
 
+2026-10-30 관리자 전면 제거는 `ios-admin-full-retirement-source.json`의 Node3, `admin-season-retirement.json`의 Node4/Swift30, `ios-admin-full-retirement-ui.json`의 모의 UI6으로 검사한다. 관리 테스트 종료와 공개 검색 분리는 `ios-migration-map.json`의 retirements를 따른다. UI6은 실제 로그인/SDK 검사가 아니다. 현재 실행·원본 반영·서버 상태는 [진입점](../docs/ai/ENTRYPOINTS.md)의 제품 적용 상태로 연결한다. 아래 L178의 유지 조건과 검사 수는 당시 기록이다.
+
 최신 정상 기기빌드는 `brand-request-normal-device-build.json`(기존프로파일/캐시패키지·정상Development build1), `brand-request-normal-device-artifact.json`(서명/환경·지정기기/프로파일10항목1명령)으로 검증한다. 후자는 `OUTPICK_QA_DEVICE_UDID`를 런타임만 주입하며 프로파일 내용·식별자는 출력하지 않는다. 실제접수는 기존 `development-brand-request-sdk.json`의 strict receipt/동일행·원본1명령으로 판정하고 실제SDK성공/사용자화면/이전동일입력fake UI를 분리한다. 해칭룸의현재범위/신규3게이트·기존7검사동일digest·한계는 docs/ai/tasks/admin-web-brand-operations/hatchingroom-device-qa-20261020.md와 output/brand-operations-b5/hatchingroom-device-qa-20261020/result.json을 따른다. 실패를 만들려고 실제 요청을 추가 전송하지 않는다.
 
 관심 스타일의 `verification/development-interest-recheck.json`은 DIR-P01/P02(허용오류만수집/미설정·미관측·미래시각·실패거절)2개와 사용자관찰/실행/오류 일관성 명령1개다. `OUTPICK_INTEREST_QA_OUTPUT`(고정된 console capture/OS launch 근거)와 `OUTPICK_INTEREST_QA_OBSERVATION`(사용자 실기기 관찰)을 주입한다. Node24를 사용하고 원시콘솔/인증정보를 저장하지 않는다. SDK 성공응답/화면을 프로그램이 직접 검사한 것이 아니며 독립 SDK통과/과거code9원인 확정으로 기록하지 않는다. 원문은 docs/ai/tasks/admin-web-brand-operations/interest-style-recheck-20261020.md다.

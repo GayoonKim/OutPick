@@ -24,17 +24,7 @@ final class LookbookRepositoryProvider {
             currentUserUIDProvider: currentUserUIDProvider,
             brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
             brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: brandRequestTransport ?? transport),
-            lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
             brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
-            brandStore: CloudFunctionsBrandStore(
-                transport: transport,
-                requestStore: importRequestStore,
-                currentUserUIDProvider: currentUserUIDProvider
-            ),
-            styleMoodAdminRepository:
-                CloudFunctionsStyleMoodAdminRepository(transport: transport),
-            seasonMoodAdminRepository:
-                CloudFunctionsSeasonMoodAdminRepository(transport: transport),
             seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
             postEngagementRepository: CloudFunctionsPostEngagementRepository(transport: transport),
             commentWritingRepository: CloudFunctionsCommentWritingRepository(transport: transport),
@@ -49,11 +39,8 @@ final class LookbookRepositoryProvider {
     let brandRepository: BrandRepositoryProtocol
     let brandSearchRepository: BrandSearchRepositoryProtocol
     let brandRequestRepository: BrandRequestRepositoryProtocol
-    let lookbookDeletionRepository: LookbookDeletionRepositoryProtocol
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
     let styleMoodRepository: StyleMoodRepositoryProtocol
-    let styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol
-    let seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
     let seasonEngagementRepository: SeasonEngagementRepositoryProtocol
@@ -83,7 +70,6 @@ final class LookbookRepositoryProvider {
     /// - Note: View/VM에서 `BrandImageCache()`를 새로 만들지 말고, provider의 이 인스턴스를 주입해 사용합니다.
     let brandImageCache: any BrandImageCacheProtocol
 
-    let brandStore: BrandStoringRepository
     let storageService: StorageServiceProtocol
     let thumbnailer: ImageThumbnailing
     let imageCachePipeline: ImageCachePipeline
@@ -94,15 +80,9 @@ final class LookbookRepositoryProvider {
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
         brandSearchRepository: BrandSearchRepositoryProtocol = CloudFunctionsBrandSearchRepository(),
         brandRequestRepository: BrandRequestRepositoryProtocol = CloudFunctionsBrandRequestRepository(),
-        lookbookDeletionRepository: LookbookDeletionRepositoryProtocol = CloudFunctionsLookbookDeletionRepository(),
         brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
-        brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
         styleMoodRepository: StyleMoodRepositoryProtocol =
             FirestoreStyleMoodRepository(db: .firestore()),
-        styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol =
-            CloudFunctionsStyleMoodAdminRepository(),
-        seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol =
-            CloudFunctionsSeasonMoodAdminRepository(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonEngagementRepository: SeasonEngagementRepositoryProtocol = CloudFunctionsSeasonEngagementRepository(),
@@ -151,11 +131,8 @@ final class LookbookRepositoryProvider {
         self.brandRepository = brandRepository
         self.brandSearchRepository = brandSearchRepository
         self.brandRequestRepository = brandRequestRepository
-        self.lookbookDeletionRepository = lookbookDeletionRepository
         self.brandEngagementRepository = brandEngagementRepository
         self.styleMoodRepository = styleMoodRepository
-        self.styleMoodAdminRepository = styleMoodAdminRepository
-        self.seasonMoodAdminRepository = seasonMoodAdminRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository
         self.seasonEngagementRepository = seasonEngagementRepository
@@ -176,6 +153,5 @@ final class LookbookRepositoryProvider {
         self.seasonRepository = seasonRepository
             ?? FirestoreSeasonRepository()
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
-        self.brandStore = brandStore
     }
 }

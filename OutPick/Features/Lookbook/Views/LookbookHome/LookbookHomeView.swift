@@ -15,7 +15,6 @@ struct LookbookHomeView: View {
     @State private var viewportFrames: [String: CGRect] = [:]
     @State private var viewportHeight: CGFloat = 0
 
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
 
     private let coordinator: LookbookCoordinator
 
@@ -28,20 +27,7 @@ struct LookbookHomeView: View {
 
     var body: some View {
         mainContent
-            .lookbookNavigationBar(title: "OutPick") {
-                if brandAdminSessionStore.isTotalAdmin {
-                    LookbookNavigationTextButton(
-                        title: "관리자",
-                        accessibilityLabel: "Lookbook 관리자"
-                    ) {
-                        coordinator.pushAdminHome { createdBrandID in
-                            Task {
-                                await handleCreatedBrand(createdBrandID)
-                            }
-                        }
-                    }
-                }
-            }
+            .lookbookNavigationBar(title: "OutPick")
             .tint(OutPickTheme.SwiftUIColor.accent)
             .outpickDismissKeyboardOnTap()
             .task {
@@ -343,15 +329,7 @@ struct LookbookHomeView: View {
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
     }
 
-    private func handleCreatedBrand(_ createdBrandID: Brand.ID) async {
-        await brandAdminSessionStore.refreshWritableBrands(force: true)
-        await viewModel.retry()
-        await viewModel.syncCreatedBrand(brandID: createdBrandID)
 
-        if let createdBrand = viewModel.brands.first(where: { $0.id == createdBrandID }) {
-            coordinator.pushBrandDetail(brand: createdBrand)
-        }
-    }
 }
 
 private extension View {
@@ -373,25 +351,11 @@ private final class PreviewAvatarImageManager: AvatarImageManaging {
     func removeCachedAvatar(for path: String) async {}
 }
 
-private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCalling {
-    func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
-        BrandAdminCapabilitiesResponse(
-            isTotalAdmin: false,
-            roles: [],
-            ownedBrandIDs: [],
-            adminBrandIDs: []
-        )
-    }
-}
 
 #Preview {
     let provider = LookbookRepositoryProvider.shared
-    let brandAdminSessionStore = BrandAdminSessionStore(
-        capabilitiesClient: PreviewBrandAdminCapabilitiesClient()
-    )
     let container = LookbookContainer(
         provider: provider,
-        brandAdminSessionStore: brandAdminSessionStore,
         stylePreferenceStore: CurrentUserStylePreferenceStore(),
         avatarImageManager: PreviewAvatarImageManager()
     )
@@ -405,10 +369,8 @@ private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCallin
             repository: provider.brandRepository
         ),
         stylePreferenceStore: CurrentUserStylePreferenceStore(),
-        brandAdminSessionStore: brandAdminSessionStore,
         brandImageCache: provider.brandImageCache,
         initialBrandLimit: 12
     )
     LookbookHomeView(viewModel: vm, coordinator: coordinator)
-        .environmentObject(brandAdminSessionStore)
 }

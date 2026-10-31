@@ -106,26 +106,15 @@ test('L178-S02 전용 UI DI와 원명령 복원 경로가 남지 않는다', () 
   for (const {path, text} of app) {
     for (const name of retiredTypes) assert.ok(!text.includes(name), path + ': ' + name);
   }
-  const base = 'OutPick/Features/Lookbook/';
-  assert.doesNotMatch(read(base + 'Views/Admin/AdminBrandManagementView.swift'), /importSeasons|seasonAddition|importManagement/);
-  const flow = read(base + 'Views/CreateBrand/brand/CreateBrandFlowView.swift');
-  assert.doesNotMatch(flow, /discovering|candidateSelection|discoveryViewModel/);
-  assert.match(flow, /CreateBrandCompletedView\(/);
-  assert.match(flow, /onFinished\(latestCreatedBrand\?\.id\)/);
 });
 
-test('L178-S03 공개 소비자와 목록 밖 관리자 및 공유 큐 저장을 유지한다', () => {
+test('L178-S03 공개 소비자와 공유 큐 저장을 유지한다', () => {
   const text = app.map(item => item.text).join('\n');
-  for (const endpoint of ['submitBrandRequest', 'listMyBrandRequests', 'searchBrands',
-    'getBrandAdminCapabilities', 'addBrandManager', 'removeBrandManager', 'updateSeasonMoods',
-    'createBrand', 'updateBrand', 'softDeleteSeason', 'restoreSeason']) {
+  for (const endpoint of ['submitBrandRequest', 'listMyBrandRequests', 'searchBrands']) {
     assert.ok(text.includes('"' + endpoint + '"'), endpoint);
   }
   const provider = read('OutPick/Features/Lookbook/Repositories/LookbookRepositoryProvider.swift');
-  for (const property of ['seasonRepository', 'brandImageCache', 'seasonMoodAdminRepository',
-    'lookbookDeletionRepository', 'importRequestStore']) assert.ok(provider.includes(property), property);
-  assert.match(read('OutPick/Features/Lookbook/Repositories/Implementations/CloudFunctionsBrandStore.swift'),
-    /LookbookImportQueueRequestCoordinator/);
+  for (const property of ['seasonRepository', 'brandImageCache', 'importRequestStore']) assert.ok(provider.includes(property), property);
   assert.ok(existsSync('OutPick/Features/Lookbook/Domains/Entities/LookbookImportRequest.swift'));
 });
 
@@ -133,6 +122,7 @@ test('L178-S04 기존 큐와 마이그레이션 게이트에 종료된 selector�
   const active = [];
   for (const path of ['verification/lookbook-queue-ios.json', 'verification/ios-migration-all.json']) {
     const config = JSON.parse(read(path));
+    assert.ok(Object.keys(config).every(key => ["version", "runTimeoutMs", "inputs", "checks"].includes(key)), path);
     for (const check of config.checks) active.push(...check.args, ...(check.requiredTests ?? []));
   }
   const map = JSON.parse(read('verification/ios-migration-map.json'));

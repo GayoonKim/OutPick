@@ -16,7 +16,6 @@ final class LookbookContainer {
     }
 
     let provider: LookbookRepositoryProvider
-    let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
     let interactionStore: LookbookInteractionStore
     let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
@@ -47,10 +46,6 @@ final class LookbookContainer {
     private let submitBrandRequestUseCase: any SubmitBrandRequestUseCaseProtocol
     private let loadPublicBrandUseCase: any LoadPublicBrandUseCaseProtocol
     private let listMyBrandRequestsUseCase: any ListMyBrandRequestsUseCaseProtocol
-    private let listBrandRequestGroupsUseCase: any ListBrandRequestGroupsUseCaseProtocol
-    private let updateBrandRequestGroupStageUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
-    private let resolveBrandRequestGroupUseCase: any ResolveBrandRequestGroupUseCaseProtocol
-    private let markBrandRequestGroupBrandCreatedUseCase: any MarkBrandRequestGroupBrandCreatedUseCaseProtocol
     private var loadShareableJoinedRoomsUseCase: (any LoadShareableJoinedRoomsUseCaseProtocol)?
     private var shareLookbookContentToChatUseCase: (any ShareLookbookContentToChatUseCaseProtocol)?
     private var roomImageManager: (any RoomImageManaging)?
@@ -58,7 +53,6 @@ final class LookbookContainer {
 
     init(
         provider: LookbookRepositoryProvider,
-        brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         stylePreferenceStore: CurrentUserStylePreferenceStore,
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
@@ -70,7 +64,6 @@ final class LookbookContainer {
     ) {
         self.provider = provider
         self.loadPublicBrandUseCase = LoadPublicBrandUseCase(repository: provider.brandRepository)
-        self.brandAdminSessionStore = brandAdminSessionStore
         self.interactionStore = LookbookInteractionStore()
         self.debugFailureInjectionStore = LookbookDebugFailureInjectionStore()
         #if DEBUG
@@ -152,24 +145,11 @@ final class LookbookContainer {
         self.listMyBrandRequestsUseCase = ListMyBrandRequestsUseCase(
             repository: provider.brandRequestRepository
         )
-        self.listBrandRequestGroupsUseCase = ListBrandRequestGroupsUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.updateBrandRequestGroupStageUseCase = UpdateBrandRequestGroupStageUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.resolveBrandRequestGroupUseCase = ResolveBrandRequestGroupUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.markBrandRequestGroupBrandCreatedUseCase = MarkBrandRequestGroupBrandCreatedUseCase(
-            repository: provider.brandRequestRepository
-        )
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             searchUseCase: searchBrandsUseCase,
             loadInterestedStyleBrandsUseCase: loadInterestedStyleBrandsUseCase,
             stylePreferenceStore: stylePreferenceStore,
-            brandAdminSessionStore: brandAdminSessionStore,
             brandImageCache: provider.brandImageCache,
             initialBrandLimit: 12
         )
@@ -300,113 +280,10 @@ final class LookbookContainer {
         )
     }
 
-    func makeAdminHomeView(
-        coordinator: LookbookCoordinator,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> LookbookAdminHomeView {
-        LookbookAdminHomeView(
-            coordinator: coordinator,
-            createBrandFlowFactory: { [self] onCreatedBrand in
-                AnyView(self.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand))
-            },
-            onCreatedBrand: onCreatedBrand
-        )
-    }
 
-    func makeAdminBrandRequestGroupsView(
-        coordinator: LookbookCoordinator
-    ) -> AdminBrandRequestGroupsView {
-        AdminBrandRequestGroupsView(
-            viewModel: AdminBrandRequestGroupsViewModel(
-                listUseCase: listBrandRequestGroupsUseCase,
-                updateUseCase: updateBrandRequestGroupStageUseCase,
-                resolveUseCase: resolveBrandRequestGroupUseCase,
-                markCreatedUseCase: markBrandRequestGroupBrandCreatedUseCase
-            ),
-            createBrandFlowFactory: { [self] initialBrandName, initialEnglishName, onCreatedBrand in
-                AnyView(self.makeCreateBrandFlow(
-                    initialBrandName: initialBrandName,
-                    initialEnglishName: initialEnglishName,
-                    onCreatedBrand: onCreatedBrand
-                ))
-            },
-            coordinator: coordinator
-        )
-    }
 
-    func makeStyleMoodManagementView(
-        coordinator: LookbookCoordinator
-    ) -> StyleMoodManagementView {
-        StyleMoodManagementView(
-            viewModel: StyleMoodManagementViewModel(
-                moodRepository: provider.styleMoodRepository,
-                adminRepository: provider.styleMoodAdminRepository
-            ),
-            coordinator: coordinator
-        )
-    }
 
-    func makeAdminBrandManagementView(
-        coordinator: LookbookCoordinator,
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) -> AdminBrandManagementView {
-        AdminBrandManagementView(
-            viewModel: AdminBrandManagementViewModel(
-                initialBrand: initialBrand,
-                initialBrandID: initialBrandID,
-                brandRepository: provider.brandRepository,
-                searchUseCase: searchBrandsUseCase,
-                brandStore: provider.brandStore,
-                storageService: provider.storageService,
-                brandImageCache: provider.brandImageCache,
-                thumbnailer: provider.thumbnailer,
-                moodRepository: provider.styleMoodRepository,
-                moodAdminRepository: provider.styleMoodAdminRepository,
-                seasonRepository: provider.seasonRepository,
-                seasonMoodAdminRepository: provider.seasonMoodAdminRepository,
-                onBrandUpdated: { [weak self] brand in
-                    self?.lookbookHomeViewModel.applyUpdatedBrand(brand)
-                    onUpdatedBrand?(brand)
-                }
-            ),
-            coordinator: coordinator,
-            brandImageCache: provider.brandImageCache,
-            deletionManagementFactory: { [self] brand in
-                AnyView(
-                    self.makeAdminLookbookDeletionManagementView(
-                        coordinator: coordinator,
-                        initialBrand: brand,
-                        showsNavigationBar: false,
-                        allowsDeletionSelection: true
-                    )
-                )
-            }
-        )
-    }
 
-    func makeAdminLookbookDeletionManagementView(
-        coordinator: LookbookCoordinator,
-        initialBrand: Brand? = nil,
-        showsNavigationBar: Bool = true,
-        allowsDeletionSelection: Bool = true
-    ) -> AdminLookbookDeletionManagementView {
-        AdminLookbookDeletionManagementView(
-            viewModel: AdminLookbookDeletionManagementViewModel(
-                initialBrand: initialBrand,
-                brandRepository: provider.brandRepository,
-                searchUseCase: searchBrandsUseCase,
-                seasonRepository: provider.seasonRepository,
-                postRepository: provider.postRepository,
-                deletionRepository: provider.lookbookDeletionRepository
-            ),
-            coordinator: coordinator,
-            brandImageCache: provider.brandImageCache,
-            showsNavigationBar: showsNavigationBar,
-            allowsDeletionSelection: allowsDeletionSelection
-        )
-    }
 
     func makePostDetailView(
         brandID: BrandID,
@@ -442,21 +319,6 @@ final class LookbookContainer {
         )
     }
 
-    func makeCreateBrandFlow(
-        initialBrandName: String? = nil,
-        initialEnglishName: String? = nil,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> some View {
-        CreateBrandFlowView(
-            provider: provider,
-            initialBrandName: initialBrandName,
-            initialEnglishName: initialEnglishName,
-            onFinished: { createdBrandID in
-                guard let createdBrandID else { return }
-                onCreatedBrand(createdBrandID)
-            }
-        )
-    }
 
     func makeBrandDetailViewModel() -> BrandDetailViewModel {
         BrandDetailViewModel(

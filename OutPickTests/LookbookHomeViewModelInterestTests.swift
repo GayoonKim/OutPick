@@ -140,9 +140,6 @@ struct LookbookHomeViewModelInterestTests {
             searchUseCase: searchUseCase,
             loadInterestedStyleBrandsUseCase: interestUseCase,
             stylePreferenceStore: store,
-            brandAdminSessionStore: BrandAdminSessionStore(
-                capabilitiesClient: HomeBrandCapabilitiesClientFake()
-            ),
             brandImageCache: imageCache ?? HomeBrandImageCacheFake(),
             initialBrandLimit: 12
         )
@@ -233,17 +230,6 @@ private final class HomeRequestCoordinatorSpy: BrandRequestRouting {
     var names: [String] = []
     func pushBrandRequest(initialBrandName: String) { names.append(initialBrandName) }
     func pushBrandDetail(brand: Brand) {}
-}
-
-private struct HomeBrandCapabilitiesClientFake: BrandAdminCapabilitiesCalling {
-    func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
-        BrandAdminCapabilitiesResponse(
-            isTotalAdmin: false,
-            roles: [],
-            ownedBrandIDs: [],
-            adminBrandIDs: []
-        )
-    }
 }
 
 private struct HomeBrandImageCacheFake: BrandImageCacheProtocol {

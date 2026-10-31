@@ -136,11 +136,6 @@ enum AppCompositionRoot {
             userBlockVisibilityStore: userBlockVisibilityStore
         )
         let joinedRoomsStore = JoinedRoomsSessionStore()
-        let brandAdminSessionStore = BrandAdminSessionStore(
-            capabilitiesClient: BrandAdminCapabilitiesCloudFunctionsClient(
-                transport: cloudFunctionsTransport
-            )
-        )
         let appSessionRuntime = AppSessionRuntime(
             realtimeSocketService: realtimeSocketService,
             currentUserProvider: currentUserProvider
@@ -168,7 +163,6 @@ enum AppCompositionRoot {
             accountDeletionLocalDataScrubber: accountDeletionLocalDataScrubber,
             accountRepository: accountRepository,
             joinedRoomsStore: joinedRoomsStore,
-            brandAdminSessionStore: brandAdminSessionStore,
             socialAuthRepository: socialAuthRepository,
             currentUserSessionStore: currentUserSessionStore,
             currentUserStylePreferenceStore: currentUserStylePreferenceStore,

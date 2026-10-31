@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": [
+    "OutPick",
+    "OutPickTests",
+    "OutPickUITests",
+    "OutPick.xcodeproj",
+    "Configurations",
+    "scripts/build",
+    "tools/verification-gate",
+    "verification/ios-admin-full-retirement-ui.json"
+  ],
+  "checks": [
+    {
+      "id": "admin-retirement-public-fixture-ui",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-quiet",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=NO",
+        "-disableAutomaticPackageResolution",
+        "-only-testing:OutPickUITests/AdminRetirementUITests",
+        "-only-testing:OutPickUITests/BrandOperationsUITests/testRequestEntryWithResultsURLFormHistoryAndCompletedNavigation",
+        "-only-testing:OutPickUITests/BrandOperationsUITests/testInterestUnconfiguredEmptyAndFailureAreDistinct"
+      ],
+      "cwd": ".",
+      "timeoutMs": 850000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "AdminRetirementUITests/testPublicBrowsingHasNoAdminEntry()",
+        "AdminRetirementUITests/testOtherAuthorsCommentHasReportAndBlockWithoutDelete()",
+        "AdminRetirementUITests/testOwnCommentStillDeletes()",
+        "AdminRetirementUITests/testOwnReplyStillDeletes()",
+        "BrandOperationsUITests/testRequestEntryWithResultsURLFormHistoryAndCompletedNavigation()",
+        "BrandOperationsUITests/testInterestUnconfiguredEmptyAndFailureAreDistinct()"
+      ]
+    }
+  ]
+}

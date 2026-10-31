@@ -131,32 +131,6 @@ struct BrandLocalUIPreparationTests {
         #expect(FirebaseApp.app() == nil)
     }
 
-    @Test func injectedBlankIdentityNeverInitializesDefaultLoginManager() async {
-        let client = BrandLocalCapabilitiesSpy()
-        let store = BrandAdminSessionStore(capabilitiesClient: client,
-            currentUserProvider: BrandLocalUserStub(canonicalUserID: " "))
-        await store.refreshCurrentSession()
-        await store.refreshWritableBrands()
-        await store.ensureWritableBrandsLoaded()
-        #expect(client.calls == 0)
-        #expect(!store.canOpenAdminConsole)
-        #expect(FirebaseApp.app() == nil)
-    }
-
-    @Test func injectedGeneralIdentityLoadsOnceWithoutGrantingAdmin() async {
-        let client = BrandLocalCapabilitiesSpy()
-        let store = BrandAdminSessionStore(capabilitiesClient: client,
-            currentUserProvider: BrandLocalUserStub(canonicalUserID: "local-general-user"))
-        await store.ensureWritableBrandsLoaded()
-        await store.ensureWritableBrandsLoaded()
-        await store.refreshCurrentSession()
-        #expect(client.calls == 1)
-        #expect(store.isWritableBrandsLoaded)
-        #expect(!store.canOpenAdminConsole)
-        #expect(store.writableBrandIDs.isEmpty)
-        #expect(FirebaseApp.app() == nil)
-    }
-
     @Test func unregisteredEnvironmentStopsBeforeDefaultSDKCreation() {
         #expect(throws: BrandLocalIntegrationError.self) {
             try BrandLocalRepositoryEnvironment().installedProvider()
@@ -221,19 +195,4 @@ struct BrandLocalUIPreparationTests {
     }
 }
 
-private struct BrandLocalUserStub: CurrentUserProviding {
-    let canonicalUserID: String
-    var email: String { "" }
-    var nickname: String? { nil }
-    var avatarPath: String? { nil }
-    var profile: UserPublicProfile? { nil }
-}
-
-private final class BrandLocalCapabilitiesSpy: BrandAdminCapabilitiesCalling {
-    var calls = 0
-    func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
-        calls += 1
-        return .init(isTotalAdmin: false, roles: [], ownedBrandIDs: [], adminBrandIDs: [])
-    }
-}
 #endif

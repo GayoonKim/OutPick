@@ -41,7 +41,6 @@ final class LookbookHomeViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published private(set) var searchPhase: SearchPhase = .idle
     @Published private(set) var searchResults: [Brand] = []
-    @Published private(set) var canOpenAdminConsole: Bool = false
     @Published private(set) var interestPhase: InterestPhase = .idle
     @Published private(set) var interestedStyleBrands: [Brand] = []
     @Published private(set) var interestedStyleNextCursor: InterestedStyleBrandCursor?
@@ -51,7 +50,6 @@ final class LookbookHomeViewModel: ObservableObject {
     private let searchUseCase: any SearchBrandsUseCaseProtocol
     private let loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol
     private let stylePreferenceStore: CurrentUserStylePreferenceStore
-    private let brandAdminSessionStore: BrandAdminSessionStore
     let brandImageCache: any BrandImageCacheProtocol
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
@@ -74,7 +72,6 @@ final class LookbookHomeViewModel: ObservableObject {
         searchUseCase: any SearchBrandsUseCaseProtocol,
         loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol,
         stylePreferenceStore: CurrentUserStylePreferenceStore,
-        brandAdminSessionStore: BrandAdminSessionStore,
         brandImageCache: any BrandImageCacheProtocol,
         initialBrandLimit: Int = 12,
         searchLimit: Int = 20
@@ -83,12 +80,9 @@ final class LookbookHomeViewModel: ObservableObject {
         self.searchUseCase = searchUseCase
         self.loadInterestedStyleBrandsUseCase = loadInterestedStyleBrandsUseCase
         self.stylePreferenceStore = stylePreferenceStore
-        self.brandAdminSessionStore = brandAdminSessionStore
         self.brandImageCache = brandImageCache
         self.initialBrandLimit = initialBrandLimit
         self.searchLimit = searchLimit
-        self.canOpenAdminConsole = brandAdminSessionStore.canOpenAdminConsole
-        bindBrandAdminSessionStore()
         bindSearchText()
         bindStylePreferenceStore()
     }
@@ -295,20 +289,6 @@ final class LookbookHomeViewModel: ObservableObject {
         brands.insert(brand, at: 0)
     }
 
-    private func bindBrandAdminSessionStore() {
-        Publishers.CombineLatest(
-            brandAdminSessionStore.$isTotalAdmin,
-            brandAdminSessionStore.$writableBrandIDs
-        )
-            .map { isTotalAdmin, writableBrandIDs in
-                isTotalAdmin || writableBrandIDs.isEmpty == false
-            }
-            .removeDuplicates()
-            .sink { [weak self] canOpenAdminConsole in
-                self?.canOpenAdminConsole = canOpenAdminConsole
-            }
-            .store(in: &cancellables)
-    }
 
     private func bindSearchText() {
         $searchText

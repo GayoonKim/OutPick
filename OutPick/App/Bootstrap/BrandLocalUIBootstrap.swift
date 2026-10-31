@@ -296,7 +296,6 @@ final class BrandLocalUIBootstrap: NSObject, UINavigationControllerDelegate {
             evidence.record("environment.local-provider", [
                 "sameInjectedProvider": EnvironmentValues().repositoryProvider === provider,
                 "defaultAppCreated": FirebaseApp.app() != nil])
-            let blocked = BrandLocalReadOnlyTransport(base: context.transport, evidence: evidence)
             let imageRepository = FirebaseImageStorageRepository(transferService: BrandLocalBlockedTransfers(), db: context.db, storage: storage)
             let firebase = FirebaseRepositoryProvider(userProfileRepository: UserProfileRepository(db: context.db),
                 chatRoomRepository: FirebaseChatRoomRepository(db: context.db), imageStorageRepository: imageRepository,
@@ -306,8 +305,6 @@ final class BrandLocalUIBootstrap: NSObject, UINavigationControllerDelegate {
                 announcementRepository: FirebaseAnnouncementRepository(db: context.db))
             let currentUser = BrandLocalCurrentUser(canonicalUserID: result.user.uid)
             let container = LookbookContainer(provider: provider,
-                brandAdminSessionStore: BrandAdminSessionStore(capabilitiesClient: BrandAdminCapabilitiesCloudFunctionsClient(transport: blocked),
-                    currentUserProvider: currentUser),
                 currentUserProvider: currentUser,
                 stylePreferenceStore: CurrentUserStylePreferenceStore(), firebaseRepositories: firebase,
                 publicProfileRepository: FirestoreUserPublicProfileRepository(db: context.db),
@@ -374,11 +371,8 @@ final class BrandLocalUIBootstrap: NSObject, UINavigationControllerDelegate {
         return LookbookRepositoryProvider(currentUserUIDProvider: { context.auth.currentUser?.uid ?? "" },
             brandRepository: context.brands, brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
             brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: transport),
-            lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
             brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
-            brandStore: CloudFunctionsBrandStore(transport: transport), styleMoodRepository: FirestoreStyleMoodRepository(db: db),
-            styleMoodAdminRepository: CloudFunctionsStyleMoodAdminRepository(transport: transport),
-            seasonMoodAdminRepository: CloudFunctionsSeasonMoodAdminRepository(transport: transport),
+            styleMoodRepository: FirestoreStyleMoodRepository(db: db),
             seasonRepository: FirestoreSeasonRepository(db: db), seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
             seasonUserStateRepository: FirestoreSeasonUserStateRepository(db: db),
             postRepository: FirestorePostRepository(db: db), postEngagementRepository: CloudFunctionsPostEngagementRepository(transport: transport),

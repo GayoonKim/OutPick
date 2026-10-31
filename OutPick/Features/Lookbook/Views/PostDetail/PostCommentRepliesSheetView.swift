@@ -15,7 +15,6 @@ struct PostCommentRepliesSheetView: View {
     private let blockUserUseCase: any BlockUserUseCaseProtocol
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var avatarRefreshID = 0
     @State private var profileAuthor: CommentAuthorDisplay?
     @State private var pendingDeleteItem: CommentDisplayItem?
@@ -56,7 +55,6 @@ struct PostCommentRepliesSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
-            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
         .sheet(isPresented: profileSheetBinding) {
             profileSheet
@@ -219,10 +217,7 @@ struct PostCommentRepliesSheetView: View {
     }
 
     private func deleteAction(for item: CommentDisplayItem) -> (() -> Void)? {
-        guard viewModel.canDelete(
-            item.comment,
-            isBrandWritable: brandAdminSessionStore.canWrite(brandID: viewModel.currentBrandID)
-        ) else {
+        guard viewModel.canDelete(item.comment) else {
             return nil
         }
 

@@ -10,4 +10,4 @@ View는 Firebase/Repository/UseCase를 직접 생성하지 않는다. ViewModel�
 
 브랜드 요청/내역은 기존 UseCase·Repository와 Container 조립을 유지한다. 완료 이동은 LoadPublicBrandUseCase로 현재 명시 public을 확인한 뒤 Coordinator로 전달한다. 목록3쿼리는 public 조건을 SDK query에 포함하고 직접 get도 상태를 확인한다. 검색의 기존20/30 계약에 필드를 임의 추가하지 않고 현재 단건 조회를 재사용한다. 내 요청 탭 전환은 소유 Task를 취소하고 세대/scope를 대조해 늦은 응답을 폐기한다. 새 영속 receipt·확인 API·범용 cache는 추가하지 않는다.
 
-브랜드 카드/상세/공유는 이름 중심으로 표시한다. LookbookSharedContent의 저장 thumbnail 스냅샷을 보존하고 displayThumbnailPath로 브랜드의 이미지 수요만 제외한다. 시즌·포스트 공유 이미지와 공유 캐시는 유지한다. L178 사용자 승인으로 웹 전용 시즌21개 API의 iOS 전용 UI/DI/Repository·원명령 자동복원을 제거했다. 공유 큐 원기록/마이그레이션과 공개 시즌·이미지·목록 밖 권한/스타일·삭제/복구는 유지한다. 나머지 구 브랜드 UI/writer 종료는 L77의 전환 조건과 별도 적용 대상으로 남으며 소스 제거를 실제 Cloud 배포/운영 전환 완료로 읽지 않는다.
+브랜드 카드/상세/공유는 이름 중심으로 표시한다. LookbookSharedContent의 저장 thumbnail 스냅샷을 보존하고 displayThumbnailPath로 브랜드의 이미지 수요만 제외한다. 시즌·포스트 공유 이미지와 공유 캐시는 유지한다. LookbookContainer/Coordinator/Provider와 로그인 조립에는 관리자 세션·관리 factory·관리 Repository가 없다. 브랜드 요청 계약은 제출/본인 내역만 제공하고 댓글 ViewModel은 본인 작성 여부로 삭제 메뉴를 결정한다. 공개 시즌·이미지와 과거 공유 큐 기록/마이그레이션은 유지한다. [현재 요구/검사 상태](ENTRYPOINTS.md)를 따르며 소스 제거를 실제 Cloud 배포 완료로 해석하지 않는다.

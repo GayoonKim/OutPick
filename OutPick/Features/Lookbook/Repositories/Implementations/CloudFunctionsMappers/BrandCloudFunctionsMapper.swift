@@ -36,18 +36,4 @@ enum BrandCloudFunctionsMapper {
         )
     }
 
-    static func managerReceipt(
-        _ dictionary: [String: Any],
-        fallbackRemoved: Bool
-    ) throws -> BrandManagerMutationReceipt {
-        let decoder = CloudFunctionResponseDecoder(dictionary: dictionary)
-        return BrandManagerMutationReceipt(
-            brandID: BrandID(value: try decoder.string("brandID")),
-            userID: UserID(value: try decoder.string("uid")),
-            email: try decoder.string("email"),
-            role: BrandManagerRole(rawValue: try decoder.string("role")) ?? .admin,
-            duplicate: decoder.optionalBool("duplicate") ?? false,
-            removed: decoder.optionalBool("removed") ?? fallbackRemoved
-        )
-    }
 }

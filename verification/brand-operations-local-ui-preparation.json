@@ -76,8 +76,6 @@
         "BrandLocalUIPreparationTests/onlyHistoryCallablePassesAndMutationsNeverReachSDK()",
         "BrandLocalUIPreparationTests/historyErrorsAreNotReplacedBySuccessfulEmptyRows()",
         "BrandLocalUIPreparationTests/unregisteredEnvironmentStopsBeforeDefaultSDKCreation()",
-        "BrandLocalUIPreparationTests/injectedBlankIdentityNeverInitializesDefaultLoginManager()",
-        "BrandLocalUIPreparationTests/injectedGeneralIdentityLoadsOnceWithoutGrantingAdmin()",
         "BrandLocalUIPreparationTests/approvedDeviceRelayMapsFourServicesWithoutChangingLoopbackParser()",
         "BrandLocalUIPreparationTests/deviceRelayRejectsWrongScopePeerRoundSourceTenantAndDigest()",
         "BrandLocalUIPreparationTests/deviceRelayRejectsRemoteLoopbackMalformedAndOverlappingEndpoints()",

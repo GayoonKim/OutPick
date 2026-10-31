@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "runTimeoutMs": 120000,
+  "inputs": ["OutPick", "tools/brand-operations/ios-admin-full-retirement.test.mjs", "tools/verification-gate", "verification/ios-admin-full-retirement-source.json"],
+  "checks": [{
+    "id": "full-admin-retirement-source",
+    "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/brand-operations/ios-admin-full-retirement.test.mjs"],
+    "cwd": ".", "timeoutMs": 60000, "kind": "node", "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S01 공개 앱에 관리자 화면 세션 조립과 진입점이 없다",
+      "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S02 공개 앱이 기존 관리자 callable을 호출하지 않는다",
+      "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S03 공개 요청 내역 스타일 조회와 본인 댓글 흐름은 남는다"
+    ]
+  }]
+}

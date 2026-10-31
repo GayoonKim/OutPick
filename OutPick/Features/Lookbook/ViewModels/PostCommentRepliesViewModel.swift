@@ -169,8 +169,8 @@ final class PostCommentRepliesViewModel: ObservableObject {
         submissionErrorMessage = nil
     }
 
-    func canDelete(_ comment: Comment, isBrandWritable: Bool) -> Bool {
-        isCurrentUser(comment.userID) || isBrandWritable
+    func canDelete(_ comment: Comment) -> Bool {
+        isCurrentUser(comment.userID)
     }
 
     func canReportOrBlock(_ comment: Comment) -> Bool {

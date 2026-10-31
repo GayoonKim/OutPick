@@ -32,7 +32,7 @@
       "requiredTests": [
         "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S01 종료21개 호출이 공개 앱의 모든 Swift 소스에서 제거된다",
         "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S02 전용 UI DI와 원명령 복원 경로가 남지 않는다",
-        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S03 공개 소비자와 목록 밖 관리자 및 공유 큐 저장을 유지한다",
+        "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S03 공개 소비자와 공유 큐 저장을 유지한다",
         "tools/brand-operations/ios-admin-season-retirement.test.mjs::L178-S04 기존 큐와 마이그레이션 게이트에 종료된 selector가 남지 않는다"
       ]
     },
@@ -41,6 +41,7 @@
       "command": "xcodebuild",
       "args": [
         "test",
+        "-quiet",
         "-project",
         "OutPick.xcodeproj",
         "-scheme",
@@ -57,10 +58,11 @@
         "-only-testing:OutPickTests/AppDatabaseMigrationTests",
         "-only-testing:OutPickTests/AccountDeletionLocalDataCleanupTests",
         "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests",
-        "-only-testing:OutPickTests/AdminLookbookDeletionManagementViewModelTests",
-        "-only-testing:OutPickTests/CloudFunctionsStyleMoodAdminRepositoryTests",
-        "-only-testing:OutPickTests/BrandAdminCapabilitiesCloudFunctionsClientTests",
-        "-only-testing:OutPickTests/CloudFunctionsLookbookDeletionRepositoryTests"
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) OUTPICK_BRAND_LOCAL_INTEGRATION",
+        "-disableAutomaticPackageResolution",
+        "-only-testing:OutPickTests/CloudFunctionsBrandRequestRepositoryTests",
+        "-only-testing:OutPickTests/LookbookHomeViewModelInterestTests",
+        "-only-testing:OutPickTests/BrandLocalUIPreparationTests"
       ],
       "cwd": ".",
       "timeoutMs": 1000000,
@@ -76,18 +78,10 @@
         "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
         "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
-        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
-        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
-        "AdminLookbookDeletionManagementViewModelTests/interactivePopIsBlockedForPendingReasonDraft()",
-        "AdminLookbookDeletionManagementViewModelTests/reloadReplacesFirstPageAndStoresNextCursor()",
-        "AdminLookbookDeletionManagementViewModelTests/nextPageAppendRemovesDuplicateRequestIDs()",
-        "AdminLookbookDeletionManagementViewModelTests/retryIsRestrictedToTotalAdminAndFailedStatus()",
-        "AdminLookbookDeletionManagementViewModelTests/concurrentNextPageRequestsCallRepositoryOnce()",
-        "AdminLookbookDeletionManagementViewModelTests/retryDisplayStateCombinesAutomaticManualAndLeaseStates()",
-        "CloudFunctionsStyleMoodAdminRepositoryTests/moodAndSeasonMutationsUseExpectedCallablePayloads()",
-        "BrandAdminCapabilitiesCloudFunctionsClientTests/loadsCapabilitiesWithEmptyPayload()",
-        "BrandAdminCapabilitiesCloudFunctionsClientTests/appliesExistingDefaultsForMissingOptionalCapabilityFields()",
-        "CloudFunctionsLookbookDeletionRepositoryTests/coversDeletionCallableContracts()"
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
+        "CloudFunctionsBrandRequestRepositoryTests/coversBrandRequestCallableContracts()",
+        "LookbookHomeViewModelInterestTests/preferenceChangeReloadsInterestedBrands()",
+        "BrandLocalUIPreparationTests/unregisteredEnvironmentStopsBeforeDefaultSDKCreation()"
       ]
     }
   ]
