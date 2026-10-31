@@ -16,7 +16,6 @@ final class LookbookContainer {
     }
 
     let provider: LookbookRepositoryProvider
-    let brandAdminSessionStore: BrandAdminSessionStore
     let lookbookHomeViewModel: LookbookHomeViewModel
     let interactionStore: LookbookInteractionStore
     let debugFailureInjectionStore: LookbookDebugFailureInjectionStore
@@ -26,7 +25,6 @@ final class LookbookContainer {
     private var avatarImageManager: AvatarImageManaging
     private let firebaseRepositories: any FirebaseRepositoryProviding
     private let publicProfileRepository: UserPublicProfileRepositoryProtocol
-    private let remotePreviewImageLoader: any LookbookRemotePreviewImageLoading
 
     private let loadPostCommentsUseCase: any LoadPostCommentsUseCaseProtocol
     private let loadCommentRepliesUseCase: any LoadCommentRepliesUseCaseProtocol
@@ -46,11 +44,8 @@ final class LookbookContainer {
     private let searchBrandsUseCase: any SearchBrandsUseCaseProtocol
     private let loadInterestedStyleBrandsUseCase: any LoadInterestedStyleBrandsUseCaseProtocol
     private let submitBrandRequestUseCase: any SubmitBrandRequestUseCaseProtocol
+    private let loadPublicBrandUseCase: any LoadPublicBrandUseCaseProtocol
     private let listMyBrandRequestsUseCase: any ListMyBrandRequestsUseCaseProtocol
-    private let listBrandRequestGroupsUseCase: any ListBrandRequestGroupsUseCaseProtocol
-    private let updateBrandRequestGroupStageUseCase: any UpdateBrandRequestGroupStageUseCaseProtocol
-    private let resolveBrandRequestGroupUseCase: any ResolveBrandRequestGroupUseCaseProtocol
-    private let markBrandRequestGroupBrandCreatedUseCase: any MarkBrandRequestGroupBrandCreatedUseCaseProtocol
     private var loadShareableJoinedRoomsUseCase: (any LoadShareableJoinedRoomsUseCaseProtocol)?
     private var shareLookbookContentToChatUseCase: (any ShareLookbookContentToChatUseCaseProtocol)?
     private var roomImageManager: (any RoomImageManaging)?
@@ -58,7 +53,6 @@ final class LookbookContainer {
 
     init(
         provider: LookbookRepositoryProvider,
-        brandAdminSessionStore: BrandAdminSessionStore,
         currentUserProvider: any CurrentUserProviding = LoginManagerCurrentUserProvider(),
         stylePreferenceStore: CurrentUserStylePreferenceStore,
         firebaseRepositories: any FirebaseRepositoryProviding = FirebaseRepositoryProvider.shared,
@@ -66,12 +60,10 @@ final class LookbookContainer {
             FirestoreUserPublicProfileRepository(db: .firestore()),
         avatarImageManager: AvatarImageManaging,
         blockSessionSynchronizer: (any UserBlockSessionSynchronizing)? = nil,
-        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil,
-        remotePreviewImageLoader: any LookbookRemotePreviewImageLoading =
-            LookbookRemotePreviewImageLoader()
+        userBlockVisibilityStore: (any UserBlockVisibilityChecking)? = nil
     ) {
         self.provider = provider
-        self.brandAdminSessionStore = brandAdminSessionStore
+        self.loadPublicBrandUseCase = LoadPublicBrandUseCase(repository: provider.brandRepository)
         self.interactionStore = LookbookInteractionStore()
         self.debugFailureInjectionStore = LookbookDebugFailureInjectionStore()
         #if DEBUG
@@ -83,7 +75,6 @@ final class LookbookContainer {
         self.firebaseRepositories = firebaseRepositories
         self.publicProfileRepository = publicProfileRepository
         self.avatarImageManager = avatarImageManager
-        self.remotePreviewImageLoader = remotePreviewImageLoader
         self.loadPostCommentsUseCase = LoadPostCommentsUseCase(
             commentRepository: provider.commentRepository
         )
@@ -154,27 +145,13 @@ final class LookbookContainer {
         self.listMyBrandRequestsUseCase = ListMyBrandRequestsUseCase(
             repository: provider.brandRequestRepository
         )
-        self.listBrandRequestGroupsUseCase = ListBrandRequestGroupsUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.updateBrandRequestGroupStageUseCase = UpdateBrandRequestGroupStageUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.resolveBrandRequestGroupUseCase = ResolveBrandRequestGroupUseCase(
-            repository: provider.brandRequestRepository
-        )
-        self.markBrandRequestGroupBrandCreatedUseCase = MarkBrandRequestGroupBrandCreatedUseCase(
-            repository: provider.brandRequestRepository
-        )
         self.lookbookHomeViewModel = LookbookHomeViewModel(
             repo: provider.brandRepository,
             searchUseCase: searchBrandsUseCase,
             loadInterestedStyleBrandsUseCase: loadInterestedStyleBrandsUseCase,
             stylePreferenceStore: stylePreferenceStore,
-            brandAdminSessionStore: brandAdminSessionStore,
             brandImageCache: provider.brandImageCache,
-            initialBrandLimit: 12,
-            prefetchLogoCount: 4
+            initialBrandLimit: 12
         )
     }
 
@@ -275,13 +252,14 @@ final class LookbookContainer {
 
     func makeBrandRequestView(
         initialBrandName: String,
-        onSubmitted: @escaping () -> Void,
+        onSubmitted: @escaping (BrandRequestSubmissionReceipt) -> Void,
         coordinator: LookbookCoordinator
     ) -> BrandRequestView {
         BrandRequestView(
             viewModel: BrandRequestViewModel(
                 initialBrandName: initialBrandName,
-                submitUseCase: submitBrandRequestUseCase
+                submitUseCase: submitBrandRequestUseCase,
+                loadBrandUseCase: loadPublicBrandUseCase
             ),
             onSubmitted: onSubmitted,
             coordinator: coordinator
@@ -295,138 +273,17 @@ final class LookbookContainer {
         MyBrandRequestsView(
             viewModel: MyBrandRequestsViewModel(
                 scope: initialScope,
-                listUseCase: listMyBrandRequestsUseCase
+                listUseCase: listMyBrandRequestsUseCase,
+                loadBrandUseCase: loadPublicBrandUseCase
             ),
             coordinator: coordinator
         )
     }
 
-    func makeAdminHomeView(
-        coordinator: LookbookCoordinator,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> LookbookAdminHomeView {
-        LookbookAdminHomeView(
-            coordinator: coordinator,
-            createBrandFlowFactory: { [self] onCreatedBrand in
-                AnyView(self.makeCreateBrandFlow(onCreatedBrand: onCreatedBrand))
-            },
-            onCreatedBrand: onCreatedBrand
-        )
-    }
 
-    func makeAdminBrandRequestGroupsView(
-        coordinator: LookbookCoordinator
-    ) -> AdminBrandRequestGroupsView {
-        AdminBrandRequestGroupsView(
-            viewModel: AdminBrandRequestGroupsViewModel(
-                listUseCase: listBrandRequestGroupsUseCase,
-                updateUseCase: updateBrandRequestGroupStageUseCase,
-                resolveUseCase: resolveBrandRequestGroupUseCase,
-                markCreatedUseCase: markBrandRequestGroupBrandCreatedUseCase
-            ),
-            createBrandFlowFactory: { [self] initialBrandName, initialEnglishName, onCreatedBrand in
-                AnyView(self.makeCreateBrandFlow(
-                    initialBrandName: initialBrandName,
-                    initialEnglishName: initialEnglishName,
-                    onCreatedBrand: onCreatedBrand
-                ))
-            },
-            coordinator: coordinator
-        )
-    }
 
-    func makeStyleMoodManagementView(
-        coordinator: LookbookCoordinator
-    ) -> StyleMoodManagementView {
-        StyleMoodManagementView(
-            viewModel: StyleMoodManagementViewModel(
-                moodRepository: provider.styleMoodRepository,
-                adminRepository: provider.styleMoodAdminRepository
-            ),
-            coordinator: coordinator
-        )
-    }
 
-    func makeAdminBrandManagementView(
-        coordinator: LookbookCoordinator,
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) -> AdminBrandManagementView {
-        AdminBrandManagementView(
-            viewModel: AdminBrandManagementViewModel(
-                initialBrand: initialBrand,
-                initialBrandID: initialBrandID,
-                brandRepository: provider.brandRepository,
-                searchUseCase: searchBrandsUseCase,
-                brandStore: provider.brandStore,
-                storageService: provider.storageService,
-                brandImageCache: provider.brandImageCache,
-                thumbnailer: provider.thumbnailer,
-                moodRepository: provider.styleMoodRepository,
-                moodAdminRepository: provider.styleMoodAdminRepository,
-                seasonRepository: provider.seasonRepository,
-                seasonMoodAdminRepository: provider.seasonMoodAdminRepository,
-                onBrandUpdated: { [weak self] brand in
-                    self?.lookbookHomeViewModel.applyUpdatedBrand(brand)
-                    onUpdatedBrand?(brand)
-                }
-            ),
-            coordinator: coordinator,
-            brandImageCache: provider.brandImageCache,
-            seasonAdditionSheetFactory: { [self] brand, onDismiss in
-                AnyView(
-                    self.makeSeasonAdditionSheet(
-                        brand: brand,
-                        onDismiss: onDismiss
-                    )
-                )
-            },
-            importManagementSheetFactory: { [self] brand, onSelect, onUpdateURL in
-                AnyView(
-                    self.makeSeasonImportManagementView(
-                        brand: brand,
-                        showsNavigationChrome: false,
-                        coordinator: coordinator,
-                        onSelectCandidates: onSelect,
-                        onUpdateSourceURL: onUpdateURL
-                    )
-                )
-            },
-            deletionManagementFactory: { [self] brand in
-                AnyView(
-                    self.makeAdminLookbookDeletionManagementView(
-                        coordinator: coordinator,
-                        initialBrand: brand,
-                        showsNavigationBar: false,
-                        allowsDeletionSelection: true
-                    )
-                )
-            }
-        )
-    }
 
-    func makeAdminLookbookDeletionManagementView(
-        coordinator: LookbookCoordinator,
-        initialBrand: Brand? = nil,
-        showsNavigationBar: Bool = true,
-        allowsDeletionSelection: Bool = true
-    ) -> AdminLookbookDeletionManagementView {
-        AdminLookbookDeletionManagementView(
-            viewModel: AdminLookbookDeletionManagementViewModel(
-                initialBrand: initialBrand,
-                brandRepository: provider.brandRepository,
-                searchUseCase: searchBrandsUseCase,
-                seasonRepository: provider.seasonRepository,
-                postRepository: provider.postRepository,
-                deletionRepository: provider.lookbookDeletionRepository
-            ),
-            coordinator: coordinator,
-            brandImageCache: provider.brandImageCache,
-            showsNavigationBar: showsNavigationBar,
-            allowsDeletionSelection: allowsDeletionSelection
-        )
-    }
 
     func makePostDetailView(
         brandID: BrandID,
@@ -462,21 +319,6 @@ final class LookbookContainer {
         )
     }
 
-    func makeCreateBrandFlow(
-        initialBrandName: String? = nil,
-        initialEnglishName: String? = nil,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> some View {
-        CreateBrandFlowView(
-            provider: provider,
-            initialBrandName: initialBrandName,
-            initialEnglishName: initialEnglishName,
-            onFinished: { createdBrandID in
-                guard let createdBrandID else { return }
-                onCreatedBrand(createdBrandID)
-            }
-        )
-    }
 
     func makeBrandDetailViewModel() -> BrandDetailViewModel {
         BrandDetailViewModel(
@@ -559,147 +401,6 @@ final class LookbookContainer {
             commentInteractionStore: interactionStore,
             currentUserIDProvider: currentUserIDProvider,
             authorProfileStore: makeCommentAuthorProfileStore()
-        )
-    }
-
-    func makeSeasonCandidateSelectionView(
-        createdBrand: CreateBrandViewModel.CreatedBrand,
-        onToolbarCloseVisibilityChange: @escaping (Bool) -> Void = { _ in },
-        onDismiss: @escaping () -> Void
-    ) -> CreateBrandCandidateSelectionView {
-        CreateBrandCandidateSelectionView(
-            createdBrand: createdBrand,
-            loadSelectableSeasonCandidatesUseCase: LoadSelectableSeasonCandidatesUseCase(
-                candidateRepository: provider.seasonCandidateRepository,
-                seasonImportJobRepository: provider.seasonImportJobRepository
-            ),
-            startSeasonImportExtractionUseCase: StartSeasonImportExtractionUseCase(
-                importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
-                requestStore: provider.importRequestStore,
-                ownerUIDProvider: provider.currentUserUIDProvider
-            ),
-            discoveryErrorMessage: nil,
-            emptySelectionButtonTitle: "닫기",
-            onToolbarCloseVisibilityChange: onToolbarCloseVisibilityChange,
-            onComplete: onDismiss
-        )
-    }
-
-    func makeSeasonAdditionSheet(
-        brand: Brand,
-        onDismiss: @escaping () -> Void
-    ) -> some View {
-        SeasonAdditionSheetView(
-            createdBrand: CreateBrandViewModel.CreatedBrand(
-                id: brand.id,
-                name: brand.name,
-                englishName: brand.englishName,
-                websiteURL: brand.websiteURL,
-                lookbookArchiveURL: brand.lookbookArchiveURL,
-                hasLogoAsset: brand.logoThumbPath != nil,
-                moodIDs: brand.moodIDs
-            ),
-            container: self,
-            onDismiss: onDismiss
-        )
-    }
-
-    func makeSeasonImportManagementView(
-        brand: Brand,
-        showsNavigationChrome: Bool = true,
-        coordinator: LookbookCoordinator,
-        onSelectCandidates: @escaping () -> Void = {},
-        onUpdateSourceURL: @escaping () -> Void = {}
-    ) -> SeasonImportManagementView {
-        SeasonImportManagementView(
-            viewModel: SeasonImportManagementViewModel(
-                brandID: brand.id,
-                useCase: ManageSeasonImportJobsUseCase(
-                    jobRepository: provider.seasonImportJobRepository,
-                retryRepository: provider.seasonAssetRetryRepository
-                ),
-                discoveryRepository: provider.seasonCandidateDiscoveryRepository,
-                queueUseCase: StartSeasonImportExtractionUseCase(
-                    importJobRequestingRepository: provider.seasonImportJobRequestingRepository,
-                    requestStore: provider.importRequestStore,
-                    ownerUIDProvider: provider.currentUserUIDProvider
-                )
-            ),
-            brand: brand,
-            showsNavigationChrome: showsNavigationChrome,
-            onReview: { [weak coordinator] jobID in
-                coordinator?.pushLookbookExtractionReview(
-                    brandID: brand.id,
-                    jobID: jobID
-                )
-            },
-            onRepair: { [weak coordinator] jobID, seasonID in
-                coordinator?.pushLookbookSeasonRepair(
-                    brandID: brand.id,
-                    seasonID: seasonID,
-                    sourceImportJobID: jobID
-                )
-            },
-            onSelectCandidates: onSelectCandidates,
-            onDiscoveryReview: { [weak coordinator] result in
-                coordinator?.pushSeasonDiscoveryReview(job: result)
-            },
-            onUpdateSourceURL: onUpdateSourceURL
-        )
-    }
-
-    func makeLookbookSeasonRepairView(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        sourceImportJobID: String,
-        coordinator: LookbookCoordinator
-    ) -> LookbookSeasonRepairView {
-        LookbookSeasonRepairView(
-            viewModel: LookbookSeasonRepairViewModel(
-                brandID: brandID,
-                seasonID: seasonID,
-                sourceImportJobID: sourceImportJobID,
-                useCase: ManageLookbookSeasonRepairUseCase(
-                    repository: provider.lookbookSeasonRepairRepository
-                ),
-                onCompleted: { [weak coordinator] in coordinator?.pop() }
-            ),
-            imageLoader: remotePreviewImageLoader,
-            onBack: { [weak coordinator] in coordinator?.pop() }
-        )
-    }
-
-    func makeSeasonDiscoveryReviewView(
-        job: SeasonCandidateDiscoveryResult,
-        coordinator: LookbookCoordinator
-    ) -> SeasonDiscoveryReviewView {
-        SeasonDiscoveryReviewView(
-            viewModel: SeasonDiscoveryReviewViewModel(
-                job: job,
-                repository: provider.seasonCandidateDiscoveryRepository,
-                seasonRepository: provider.seasonRepository,
-                onCompleted: { [weak coordinator] in coordinator?.pop() }
-            ),
-            onBack: { [weak coordinator] in coordinator?.pop() }
-        )
-    }
-
-    func makeLookbookExtractionReviewView(
-        brandID: BrandID,
-        jobID: String,
-        coordinator: LookbookCoordinator
-    ) -> LookbookExtractionReviewView {
-        LookbookExtractionReviewView(
-            viewModel: LookbookExtractionReviewViewModel(
-                brandID: brandID,
-                jobID: jobID,
-                useCase: ManageLookbookExtractionReviewUseCase(
-                    repository: provider.lookbookExtractionReviewRepository
-                ),
-                onCompleted: { [weak coordinator] in coordinator?.pop() }
-            ),
-            imageLoader: remotePreviewImageLoader,
-            onBack: { [weak coordinator] in coordinator?.pop() }
         )
     }
 
@@ -836,37 +537,5 @@ final class LookbookContainer {
             currentUserIDProvider: currentUserIDProvider,
             currentUserProvider: currentUserProvider
         )
-    }
-}
-
-private struct SeasonAdditionSheetView: View {
-    let createdBrand: CreateBrandViewModel.CreatedBrand
-    let container: LookbookContainer
-    let onDismiss: () -> Void
-
-    @State private var isToolbarCloseVisible: Bool = true
-
-    var body: some View {
-        NavigationView {
-            container.makeSeasonCandidateSelectionView(
-                createdBrand: createdBrand,
-                onToolbarCloseVisibilityChange: { isVisible in
-                    isToolbarCloseVisible = isVisible
-                },
-                onDismiss: onDismiss
-            )
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
-                        onDismiss()
-                    }
-                    .opacity(isToolbarCloseVisible ? 1 : 0)
-                    .disabled(isToolbarCloseVisible == false)
-                    .accessibilityHidden(isToolbarCloseVisible == false)
-                }
-            }
-            .navigationBarHidden(isToolbarCloseVisible == false)
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
 }

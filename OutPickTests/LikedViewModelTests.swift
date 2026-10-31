@@ -519,7 +519,8 @@ struct LikedViewModelTests {
                 popularScore: 0
             ),
             deletionStatus: .active,
-            updatedAt: Date()
+            updatedAt: Date(),
+            publicationStatus: "public"
         )
     }
 

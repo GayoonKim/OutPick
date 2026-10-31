@@ -11,7 +11,6 @@ struct BrandDetailSeasonsGridView: View {
     let seasons: [Season]
     let isLoading: Bool
     let errorMessage: String?
-    let canManageBrand: Bool
     let brandImageCache: any BrandImageCacheProtocol
     let maxBytes: Int
     let coordinator: LookbookCoordinator
@@ -44,7 +43,7 @@ struct BrandDetailSeasonsGridView: View {
             if seasons.isEmpty, isLoading {
                 loadingSection
             } else if seasons.isEmpty, !isLoading, errorMessage == nil {
-                Text(emptyStateMessage)
+                Text("등록된 시즌이 없습니다.")
                     .font(.footnote)
                     .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
                     .padding(.horizontal, 16)
@@ -87,12 +86,6 @@ struct BrandDetailSeasonsGridView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 52)
-    }
-
-    private var emptyStateMessage: String {
-        canManageBrand ?
-            "등록된 시즌이 없습니다. 상단의 시즌 추가에서 시즌을 가져올 수 있습니다." :
-            "등록된 시즌이 없습니다."
     }
 
 }

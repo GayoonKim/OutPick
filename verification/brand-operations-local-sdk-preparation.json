@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": ["OutPick", "OutPickTests", "OutPick.xcodeproj", "tools/brand-operations", "tools/verification-gate", "verification/brand-operations-local-sdk-preparation.json"],
+  "checks": [{
+    "id": "local-sdk-preparation", "command": "node", "args": ["tools/brand-operations/run-local-sdk.mjs", "--preparation"],
+    "cwd": ".", "timeoutMs": 850000, "kind": "xcresult", "nodeMajor": 24,
+    "requiredTests": [
+      "BrandLocalIntegrationPreparationTests/testDedicatedModeDoesNotConfigureDefaultFirebaseApp()",
+      "BrandLocalIntegrationPreparationTests/testOnlyCompleteLocalTargetIsAccepted()",
+      "BrandLocalIntegrationPreparationTests/testRemoteMixedOrMalformedHostsFailBeforeSDKCreation()",
+      "BrandLocalIntegrationPreparationTests/testWrongProjectRegionMissingFunctionsAndSharedPortsFailClosed()"
+    ]
+  }]
+}

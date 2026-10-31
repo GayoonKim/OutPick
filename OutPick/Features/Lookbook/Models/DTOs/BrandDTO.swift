@@ -26,6 +26,7 @@ struct BrandDTO: Decodable {
     let popularScore: Double?
     let deletionStatus: BrandDeletionStatus?
     let updatedAt: Timestamp?
+    let publicationStatus: String?
 
     func toDomain(documentID: String) throws -> Brand {
         guard !documentID.isEmpty else { throw MappingError.missingDocumentID }
@@ -62,7 +63,8 @@ struct BrandDTO: Decodable {
             lastDiscoveryCompletedAt: lastDiscoveryCompletedAt?.dateValue(),
             metrics: metrics,
             deletionStatus: deletionStatus ?? .active,
-            updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0)
+            updatedAt: updatedAt?.dateValue() ?? Date(timeIntervalSince1970: 0),
+            publicationStatus: publicationStatus
         )
     }
 }

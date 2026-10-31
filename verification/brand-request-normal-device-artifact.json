@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "runTimeoutMs": 120000,
+  "inputs": ["tools/development-consumer/inspect-normal-device-build.py", "tools/verification-gate", "verification/brand-request-normal-device-artifact.json", "output/verification-derived-data/Build/Products/Development-Debug-iphoneos/OutPick.app/Info.plist", "output/verification-derived-data/Build/Products/Development-Debug-iphoneos/OutPick.app/GoogleService-Info.plist", "output/verification-derived-data/Build/Products/Development-Debug-iphoneos/OutPick.app/embedded.mobileprovision", "output/verification-derived-data/Build/Products/Development-Debug-iphoneos/OutPick.app/OutPick"],
+  "checks": [{
+    "id": "normal-device-artifact-boundaries",
+    "kind": "command",
+    "command": "python3",
+    "args": ["tools/development-consumer/inspect-normal-device-build.py", "--app", "output/verification-derived-data/Build/Products/Development-Debug-iphoneos/OutPick.app", "--output", "output/brand-operations-b5/hatchingroom-device-qa-20261020/device-build-verification.json"],
+    "cwd": ".",
+    "timeoutMs": 60000
+  }]
+}

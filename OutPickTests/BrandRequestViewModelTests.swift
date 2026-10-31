@@ -6,7 +6,8 @@ struct BrandRequestViewModelTests {
     @Test func interactivePopIsBlockedOnlyAfterDraftChanges() {
         let viewModel = BrandRequestViewModel(
             initialBrandName: "Acne Studios",
-            submitUseCase: BrandRequestSubmitUseCaseStub()
+            submitUseCase: BrandRequestSubmitUseCaseStub(),
+            loadBrandUseCase: BrandRequestLoadUseCaseStub()
         )
 
         #expect(viewModel.hasDraftChanges == false)
@@ -26,9 +27,16 @@ struct BrandRequestViewModelTests {
     }
 }
 
+private struct BrandRequestLoadUseCaseStub: LoadPublicBrandUseCaseProtocol {
+    func execute(brandID: BrandID) async throws -> Brand {
+        throw LookbookContentUnavailableError.brandUnavailable
+    }
+}
+
 private struct BrandRequestSubmitUseCaseStub: SubmitBrandRequestUseCaseProtocol {
     func execute(
         brandName: String,
+        websiteURL: String,
         englishBrandName: String?
     ) async throws -> BrandRequestSubmissionReceipt {
         fatalError("이 테스트에서는 제출하지 않습니다.")

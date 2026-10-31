@@ -14,6 +14,7 @@ struct InterestedStyleBrandSectionView: View {
             content
         }
         .padding(.vertical, 18)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("lookbook.interest.section")
     }
 
@@ -45,15 +46,7 @@ struct InterestedStyleBrandSectionView: View {
     private var content: some View {
         switch phase {
         case .idle, .loading:
-            HStack(spacing: 10) {
-                ProgressView()
-                    .tint(OutPickTheme.SwiftUIColor.accent)
-                Text("취향에 맞는 브랜드를 찾고 있어요")
-                    .font(.footnote)
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
-            }
-            .padding(.horizontal, 20)
-            .frame(minHeight: 92)
+            loadingState
 
         case .ready:
             ScrollView(.horizontal, showsIndicators: false) {
@@ -74,21 +67,42 @@ struct InterestedStyleBrandSectionView: View {
             }
 
         case .unconfigured:
-            EmptyView()
+            Text("마이페이지에서 관심 스타일을 등록해 보세요")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .background(OutPickTheme.SwiftUIColor.surfaceBase)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 20)
 
         case .empty:
             emptyState
 
         case .failed(let message):
-            statusCard(
-                title: "관심 스타일을 불러오지 못했어요",
-                message: message,
-                primaryTitle: "다시 시도",
-                primaryAction: onRetry,
-                secondaryTitle: nil,
-                secondaryAction: nil
-            )
+            failureState(message: message)
         }
+    }
+
+    private var loadingState: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(OutPickTheme.SwiftUIColor.accent)
+            Text("취향에 맞는 브랜드를 찾고 있어요")
+                .font(.footnote)
+                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .padding(18)
+        .background(OutPickTheme.SwiftUIColor.surfaceBase)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(OutPickTheme.SwiftUIColor.borderSubtle, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lookbook.interest.loading")
+        .padding(.horizontal, 20)
     }
 
     private var emptyState: some View {
@@ -115,45 +129,26 @@ struct InterestedStyleBrandSectionView: View {
         .padding(.horizontal, 20)
     }
 
-    private func statusCard(
-        title: String,
-        message: String,
-        primaryTitle: String,
-        primaryAction: @escaping () -> Void,
-        secondaryTitle: String?,
-        secondaryAction: (() -> Void)?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
+    private func failureState(message: String) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(OutPickTheme.SwiftUIColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 10) {
-                Button(primaryTitle, action: primaryAction)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
-                    .padding(.horizontal, 16)
-                    .frame(height: 40)
-                    .background(OutPickTheme.SwiftUIColor.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                if let secondaryTitle, let secondaryAction {
-                    Button(secondaryTitle, action: secondaryAction)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.textPrimary)
-                        .padding(.horizontal, 16)
-                        .frame(height: 40)
-                        .background(OutPickTheme.SwiftUIColor.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-            }
-            .buttonStyle(.plain)
+            Button("다시 시도", action: onRetry)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.backgroundBase)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+                .background(OutPickTheme.SwiftUIColor.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("lookbook.interest.retry")
         }
+        .frame(maxWidth: .infinity, minHeight: 96)
         .padding(18)
         .background(OutPickTheme.SwiftUIColor.surfaceBase)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

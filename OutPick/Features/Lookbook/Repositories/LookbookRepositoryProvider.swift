@@ -12,7 +12,9 @@ final class LookbookRepositoryProvider {
     static let shared = LookbookRepositoryProvider.live()
 
     static func live(
-        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(),
+        transport: any CloudFunctionsTransporting = FirebaseCloudFunctionsTransport(
+            preservingErrorDetailsForCalls: ["submitBrandRequest", "listMyBrandRequests"]),
+        brandRequestTransport: (any CloudFunctionsTransporting)? = nil,
         userBlockRepository: (any UserBlockRepositoryProtocol)? = nil,
         importRequestStore: any LookbookImportRequestStoringRepositoryProtocol = UnavailableLookbookImportRequestStore(),
         currentUserUIDProvider: @escaping () -> String = { LoginManagerCurrentUserProvider().canonicalUserID }
@@ -21,49 +23,9 @@ final class LookbookRepositoryProvider {
             importRequestStore: importRequestStore,
             currentUserUIDProvider: currentUserUIDProvider,
             brandSearchRepository: CloudFunctionsBrandSearchRepository(transport: transport),
-            brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: transport),
-            lookbookDeletionRepository: CloudFunctionsLookbookDeletionRepository(transport: transport),
+            brandRequestRepository: CloudFunctionsBrandRequestRepository(transport: brandRequestTransport ?? transport),
             brandEngagementRepository: CloudFunctionsBrandEngagementRepository(transport: transport),
-            brandStore: CloudFunctionsBrandStore(
-                transport: transport,
-                requestStore: importRequestStore,
-                currentUserUIDProvider: currentUserUIDProvider
-            ),
-            styleMoodAdminRepository:
-                CloudFunctionsStyleMoodAdminRepository(transport: transport),
-            seasonMoodAdminRepository:
-                CloudFunctionsSeasonMoodAdminRepository(transport: transport),
             seasonEngagementRepository: CloudFunctionsSeasonEngagementRepository(transport: transport),
-            seasonImportRepository: CloudFunctionsSeasonImportRepository(
-                transport: transport,
-                requestStore: importRequestStore,
-                currentUserUIDProvider: currentUserUIDProvider
-            ),
-            seasonImportJobRequestingRepository: CloudFunctionsSeasonImportJobRequestingRepository(
-                transport: transport
-            ),
-            seasonAssetRetryRepository: CloudFunctionsSeasonAssetRetryRepository(
-                transport: transport,
-                requestStore: importRequestStore,
-                currentUserUIDProvider: currentUserUIDProvider
-            ),
-            lookbookExtractionReviewRepository:
-                CloudFunctionsLookbookExtractionReviewRepository(
-                    transport: transport,
-                    requestStore: importRequestStore,
-                    currentUserUIDProvider: currentUserUIDProvider
-                ),
-            lookbookSeasonRepairRepository:
-                CloudFunctionsLookbookSeasonRepairRepository(
-                    transport: transport,
-                    requestStore: importRequestStore,
-                    currentUserUIDProvider: currentUserUIDProvider
-                ),
-            seasonCandidateDiscoveryRepository: CloudFunctionsSeasonCandidateDiscoveryRepository(
-                transport: transport,
-                requestStore: importRequestStore,
-                currentUserUIDProvider: currentUserUIDProvider
-            ),
             postEngagementRepository: CloudFunctionsPostEngagementRepository(transport: transport),
             commentWritingRepository: CloudFunctionsCommentWritingRepository(transport: transport),
             commentEngagementRepository: CloudFunctionsCommentEngagementRepository(transport: transport),
@@ -77,24 +39,13 @@ final class LookbookRepositoryProvider {
     let brandRepository: BrandRepositoryProtocol
     let brandSearchRepository: BrandSearchRepositoryProtocol
     let brandRequestRepository: BrandRequestRepositoryProtocol
-    let lookbookDeletionRepository: LookbookDeletionRepositoryProtocol
     let brandEngagementRepository: BrandEngagementRepositoryProtocol
     let styleMoodRepository: StyleMoodRepositoryProtocol
-    let styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol
-    let seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol
 
     let seasonRepository: SeasonRepositoryProtocol
     let seasonEngagementRepository: SeasonEngagementRepositoryProtocol
     let seasonUserStateRepository: SeasonUserStateRepositoryProtocol
     let seasonCoverThumbnailPolicy: ThumbnailPolicy
-    let seasonImportRepository: SeasonImportRequestingRepository
-    let seasonImportJobRepository: SeasonImportJobRepositoryProtocol
-    let seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol
-    let seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository
-    let lookbookExtractionReviewRepository: LookbookExtractionReviewRepositoryProtocol
-    let lookbookSeasonRepairRepository: LookbookSeasonRepairRepositoryProtocol
-    let seasonCandidateRepository: SeasonCandidateRepositoryProtocol
-    let seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol
 
     let postRepository: PostRepositoryProtocol
     let postEngagementRepository: PostEngagementRepositoryProtocol
@@ -119,7 +70,6 @@ final class LookbookRepositoryProvider {
     /// - Note: View/VM에서 `BrandImageCache()`를 새로 만들지 말고, provider의 이 인스턴스를 주입해 사용합니다.
     let brandImageCache: any BrandImageCacheProtocol
 
-    let brandStore: BrandStoringRepository
     let storageService: StorageServiceProtocol
     let thumbnailer: ImageThumbnailing
     let imageCachePipeline: ImageCachePipeline
@@ -130,30 +80,14 @@ final class LookbookRepositoryProvider {
         brandRepository: BrandRepositoryProtocol = FirestoreBrandRepository(),
         brandSearchRepository: BrandSearchRepositoryProtocol = CloudFunctionsBrandSearchRepository(),
         brandRequestRepository: BrandRequestRepositoryProtocol = CloudFunctionsBrandRequestRepository(),
-        lookbookDeletionRepository: LookbookDeletionRepositoryProtocol = CloudFunctionsLookbookDeletionRepository(),
         brandEngagementRepository: BrandEngagementRepositoryProtocol = CloudFunctionsBrandEngagementRepository(),
-        brandStore: BrandStoringRepository = CloudFunctionsBrandStore(),
         styleMoodRepository: StyleMoodRepositoryProtocol =
             FirestoreStyleMoodRepository(db: .firestore()),
-        styleMoodAdminRepository: StyleMoodAdminRepositoryProtocol =
-            CloudFunctionsStyleMoodAdminRepository(),
-        seasonMoodAdminRepository: SeasonMoodAdminRepositoryProtocol =
-            CloudFunctionsSeasonMoodAdminRepository(),
 
         seasonRepository: SeasonRepositoryProtocol? = nil,
         seasonEngagementRepository: SeasonEngagementRepositoryProtocol = CloudFunctionsSeasonEngagementRepository(),
         seasonUserStateRepository: SeasonUserStateRepositoryProtocol = FirestoreSeasonUserStateRepository(),
         seasonCoverThumbnailPolicy: ThumbnailPolicy = ThumbnailPolicies.seasonCover,
-        seasonImportRepository: SeasonImportRequestingRepository = CloudFunctionsSeasonImportRepository(),
-        seasonImportJobRepository: SeasonImportJobRepositoryProtocol = FirestoreSeasonImportJobRepository(),
-        seasonImportJobRequestingRepository: SeasonImportJobRequestingRepositoryProtocol = CloudFunctionsSeasonImportJobRequestingRepository(),
-        seasonAssetRetryRepository: SeasonAssetRetryRequestingRepository = CloudFunctionsSeasonAssetRetryRepository(),
-        lookbookExtractionReviewRepository: LookbookExtractionReviewRepositoryProtocol =
-            CloudFunctionsLookbookExtractionReviewRepository(),
-        lookbookSeasonRepairRepository: LookbookSeasonRepairRepositoryProtocol =
-            CloudFunctionsLookbookSeasonRepairRepository(),
-        seasonCandidateRepository: SeasonCandidateRepositoryProtocol = FirestoreSeasonCandidateRepository(),
-        seasonCandidateDiscoveryRepository: SeasonCandidateDiscoveryRepositoryProtocol = CloudFunctionsSeasonCandidateDiscoveryRepository(),
 
         postRepository: PostRepositoryProtocol = FirestorePostRepository(),
         postEngagementRepository: PostEngagementRepositoryProtocol = CloudFunctionsPostEngagementRepository(),
@@ -197,11 +131,8 @@ final class LookbookRepositoryProvider {
         self.brandRepository = brandRepository
         self.brandSearchRepository = brandSearchRepository
         self.brandRequestRepository = brandRequestRepository
-        self.lookbookDeletionRepository = lookbookDeletionRepository
         self.brandEngagementRepository = brandEngagementRepository
         self.styleMoodRepository = styleMoodRepository
-        self.styleMoodAdminRepository = styleMoodAdminRepository
-        self.seasonMoodAdminRepository = seasonMoodAdminRepository
         self.postRepository = postRepository
         self.postEngagementRepository = postEngagementRepository
         self.seasonEngagementRepository = seasonEngagementRepository
@@ -222,14 +153,5 @@ final class LookbookRepositoryProvider {
         self.seasonRepository = seasonRepository
             ?? FirestoreSeasonRepository()
         self.seasonCoverThumbnailPolicy = seasonCoverThumbnailPolicy
-        self.seasonImportRepository = seasonImportRepository
-        self.seasonImportJobRepository = seasonImportJobRepository
-        self.seasonImportJobRequestingRepository = seasonImportJobRequestingRepository
-        self.seasonAssetRetryRepository = seasonAssetRetryRepository
-        self.lookbookExtractionReviewRepository = lookbookExtractionReviewRepository
-        self.lookbookSeasonRepairRepository = lookbookSeasonRepairRepository
-        self.seasonCandidateRepository = seasonCandidateRepository
-        self.seasonCandidateDiscoveryRepository = seasonCandidateDiscoveryRepository
-        self.brandStore = brandStore
     }
 }

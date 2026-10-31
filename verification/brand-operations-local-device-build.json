@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "runTimeoutMs": 600000,
+  "inputs": ["OutPick", "OutPick.xcodeproj", "tools/brand-operations", "tools/verification-gate", "verification/brand-operations-local-device-build.json", "output/brand-operations-b5/device-l163/DeviceQA-Info.plist"],
+  "checks": [{
+    "id": "local-device-signed-build", "command": "xcodebuild",
+    "args": ["build", "-project", "OutPick.xcodeproj", "-scheme", "OutPick-Development", "-configuration", "Development-Debug", "-destination", "generic/platform=iOS", "-derivedDataPath", "output/brand-device-derived-data", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) OUTPICK_BRAND_LOCAL_DEVICE", "OUTPICK_DEBUG_INFOPLIST_FILE=output/brand-operations-b5/device-l163/DeviceQA-Info.plist"],
+    "cwd": ".", "timeoutMs": 550000, "kind": "command"
+  }]
+}

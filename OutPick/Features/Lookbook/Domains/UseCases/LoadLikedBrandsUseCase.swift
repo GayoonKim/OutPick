@@ -56,8 +56,10 @@ final class LoadLikedBrandsUseCase: LoadLikedBrandsUseCaseProtocol {
         for state in statePage.items where state.isLiked {
             do {
                 let brand = try await brandRepository.fetchBrand(brandID: state.brandID)
-                items.append(LikedBrandListItem(brand: brand, userState: state))
-            } catch {
+                if brand.isVisibleToUsers {
+                    items.append(LikedBrandListItem(brand: brand, userState: state))
+                }
+            } catch LookbookContentUnavailableError.brandUnavailable {
                 continue
             }
         }

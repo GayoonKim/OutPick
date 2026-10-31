@@ -128,6 +128,7 @@ private func interestedBrand(
             popularScore: 0
         ),
         deletionStatus: deletionStatus,
-        updatedAt: Date(timeIntervalSince1970: 0)
+        updatedAt: Date(timeIntervalSince1970: 0),
+        publicationStatus: "public"
     )
 }

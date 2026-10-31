@@ -40,7 +40,6 @@
     "-only-testing:OutPickTests/ChatSignedURLQAHTTPClientTests",
     "-only-testing:OutPickTests/ChatVideoPlaybackSessionTests",
     "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests",
-    "-only-testing:OutPickTests/CloudFunctionsSeasonImportRepositoryTests",
     "-only-testing:OutPickTests/GRDBChatDeletionSyncStoreTests",
     "-only-testing:OutPickTests/GRDBChatMediaIndexStoreTests",
     "-only-testing:OutPickTests/GRDBChatRoomLocalDataStoreTests",
@@ -55,8 +54,6 @@
     "-only-testing:OutPickTests/PhotoLibraryOriginalIntegrationTests",
     "-only-testing:OutPickTests/PhotoLibraryOriginalResourceTests",
     "-only-testing:OutPickTests/PhotoLibrarySaverBoundaryTests",
-    "-only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests",
-    "-only-testing:OutPickTests/StartSeasonImportExtractionUseCaseTests",
     "-only-testing:OutPickTests/UserBlockSessionControllerTests",
     "-only-testing:OutPickTests/VideoSaveLifetimeTests"
   ],
@@ -186,12 +183,7 @@
     "ChatVideoPlaybackSessionTests/testPausedURLExpiryRenewsOnResumeAndPreservesPosition()",
     "ChatVideoPlaybackSessionTests/testRefreshFailureWaitsForManualRetry()",
     "ChatVideoPlaybackSessionTests/testSeekWithExpiredURLPreservesTargetAndPausedState()",
-    "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
-    "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
-    "CloudFunctionsSeasonImportRepositoryTests/coversExtractionReviewCallableContracts()",
-    "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
-    "CloudFunctionsSeasonImportRepositoryTests/coversSeasonRepairCallableContracts()",
-    "CloudFunctionsSeasonImportRepositoryTests/rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved()",
+    "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()",
     "GRDBChatDeletionSyncStoreTests/applyScrubsMessageReplySearchMediaAndOutboxAtomically()",
     "GRDBChatDeletionSyncStoreTests/repeatedResolvedDeletionOnlyInvalidatesChangedMarkerState()",
     "GRDBChatDeletionSyncStoreTests/revisionGapRollsBackScrubAndCursor()",
@@ -238,8 +230,6 @@
     "PhotoLibrarySaverBoundaryTests/testExpiryWhilePermissionIsPendingPreventsSubmission()",
     "PhotoLibrarySaverBoundaryTests/testSubmittedFailurePropagatesAndCleansPreparedFile()",
     "PhotoLibrarySaverBoundaryTests/testSubmittedSaveSurvivesExpiryAndCancellationUntilSuccess()",
-    "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()",
-    "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()",
     "UserBlockSessionControllerTests/bootstrapFailsClosedWithoutCache()",
     "UserBlockSessionControllerTests/bootstrapUsesCacheThenReplacesWithServerSnapshot()",
     "UserBlockSessionControllerTests/staleBootstrapFailureDoesNotClearNewAccountVisibility()",
@@ -1012,17 +1002,77 @@
         "LookbookImportQueueContractTests/receiptMustMatchRequestBrandAndQueueKind()",
         "GRDBLookbookImportRequestStoreTests/samePendingPayloadReusesSameIdentityButOtherAccountsStayIsolated()",
         "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
-        "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()",
         "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()"
+      ]
+    }
+  ],
+  "retirements": [
+    {
+      "source": "L178 admin-season-api-handoff",
+      "reason": "웹 관리자 전용 시즌21개 호출과 iOS 전용 소비자 제거로 해당 성공/복원 검사를 종료한다. 검사를 skip 처리하지 않고 admin-season-retirement의 소스 부재·유지 기능 검사로 대체한다.",
+      "retiredSelectorsAndTests": [
+        "-only-testing:OutPickTests/CloudFunctionsSeasonImportRepositoryTests",
+        "-only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests",
+        "-only-testing:OutPickTests/StartSeasonImportExtractionUseCaseTests",
         "CloudFunctionsSeasonImportRepositoryTests/coversExtractionReviewCallableContracts()",
+        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
         "CloudFunctionsSeasonImportRepositoryTests/coversSeasonRepairCallableContracts()",
         "CloudFunctionsSeasonImportRepositoryTests/rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved()",
-        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
+        "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()",
+        "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()"
+      ],
+      "replacementConfig": "verification/admin-season-retirement.json"
+    },
+    {
+      "source": "2026-10-30 사용자 iOS 관리자 전면 제거 지시",
+      "reason": "삭제된 관리자 기능 검사를 종료하고 공개 검색 검사를 분리 보존한다. 경로 부재는 전면 제거 소스 게이트로 검증한다.",
+      "retiredSelectorsAndTests": [
+        "-only-testing:OutPickTests/AdminLookbookDeletionManagementViewModelTests",
+        "-only-testing:OutPickTests/CloudFunctionsStyleMoodAdminRepositoryTests",
+        "-only-testing:OutPickTests/BrandAdminCapabilitiesCloudFunctionsClientTests",
+        "-only-testing:OutPickTests/CloudFunctionsLookbookDeletionRepositoryTests",
         "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
-        "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()"
-      ]
+        "AdminLookbookDeletionManagementViewModelTests/interactivePopIsBlockedForPendingReasonDraft()",
+        "AdminLookbookDeletionManagementViewModelTests/reloadReplacesFirstPageAndStoresNextCursor()",
+        "AdminLookbookDeletionManagementViewModelTests/nextPageAppendRemovesDuplicateRequestIDs()",
+        "AdminLookbookDeletionManagementViewModelTests/retryIsRestrictedToTotalAdminAndFailedStatus()",
+        "AdminLookbookDeletionManagementViewModelTests/concurrentNextPageRequestsCallRepositoryOnce()",
+        "AdminLookbookDeletionManagementViewModelTests/retryDisplayStateCombinesAutomaticManualAndLeaseStates()",
+        "CloudFunctionsStyleMoodAdminRepositoryTests/moodAndSeasonMutationsUseExpectedCallablePayloads()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/loadsCapabilitiesWithEmptyPayload()",
+        "BrandAdminCapabilitiesCloudFunctionsClientTests/appliesExistingDefaultsForMissingOptionalCapabilityFields()",
+        "CloudFunctionsLookbookDeletionRepositoryTests/coversDeletionCallableContracts()",
+        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
+    },
+    {
+      "source": "2026-10-30 사용자 iOS 관리자 전면 제거 지시",
+      "reason": "관리자 Store 삭제로 두 검사를 종료한다. 기본 SDK 미초기화와 공개 로컬 조립 검사는 유지한다.",
+      "retiredSelectorsAndTests": [
+        "BrandLocalUIPreparationTests/injectedBlankIdentityNeverInitializesDefaultLoginManager()",
+        "BrandLocalUIPreparationTests/injectedGeneralIdentityLoadsOnceWithoutGrantingAdmin()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
+    },
+    {
+      "source": "verification/brand-operations.json (B5)",
+      "reason": "2026-10-30 사용자 iOS 관리자 전면 제거 지시에 따라 삭제된 관리자 편집 테스트를 종료한다. 공개 검색·요청 검사는 유지하고 관리자 화면·권한·callable 부재는 기존 전면 제거 소스 검사로 대체한다.",
+      "retiredSelectorsAndTests": [
+        "-only-testing:OutPickTests/AdminBrandManagementViewModelTests",
+        "AdminBrandManagementViewModelTests/canSaveBrandRequiresActualBrandInfoChange()",
+        "AdminBrandManagementViewModelTests/featuredChangeOnlyCountsForTotalAdminSavePermission()",
+        "AdminBrandManagementViewModelTests/moodChangeOnlyCountsForTotalAdminSavePermission()",
+        "AdminBrandManagementViewModelTests/clearSearchClearsSelectedBrandAndDraftInputs()",
+        "AdminBrandManagementViewModelTests/directBrandModeWithInitialBrandStartsReadyWithoutFetchLoading()",
+        "AdminBrandManagementViewModelTests/directBrandModeKeepsInitialBrandAfterSearchBindingEmitsEmptyQuery()",
+        "AdminBrandManagementViewModelTests/directBrandModeWithOnlyBrandIDStartsInInitialLoadingState()",
+        "AdminBrandManagementViewModelTests/seasonStyleSearchMatchesDisplaySourceYearAndTerm()",
+        "AdminBrandManagementViewModelTests/logoUploadFailureHidesInternalError()"
+      ],
+      "replacementConfig": "verification/ios-admin-full-retirement-source.json"
     }
   ]
 }

@@ -29,6 +29,11 @@ struct LookbookSharedContent: Codable, Hashable, Sendable {
     let subtitleSnapshot: String?
     let thumbnailPathSnapshot: String?
 
+    /// 기존 저장 스냅샷은 보존하고 브랜드 카드의 이미지 소비만 막는다.
+    var displayThumbnailPath: String? {
+        contentType == .brand ? nil : thumbnailPathSnapshot
+    }
+
     init(
         schemaVersion: Int,
         contentType: ContentType,

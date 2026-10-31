@@ -9,7 +9,13 @@ import SwiftUI
 import UIKit
 
 @MainActor
-final class LookbookCoordinator {
+protocol BrandRequestRouting: AnyObject {
+    func pushBrandRequest(initialBrandName: String)
+    func pushBrandDetail(brand: Brand)
+}
+
+@MainActor
+final class LookbookCoordinator: BrandRequestRouting {
     private let container: LookbookContainer
     private weak var navigationController: UINavigationController?
 
@@ -70,8 +76,10 @@ final class LookbookCoordinator {
         push(
             makeBrandRequestView(
                 initialBrandName: initialBrandName,
-                onSubmitted: { [weak self] in
-                    self?.replaceTopWithMyBrandRequests(initialScope: .active)
+                onSubmitted: { [weak self] receipt in
+                    let scope: BrandRequestListScope = receipt.status == .added || receipt.status == .rejected
+                        ? .history : .active
+                    self?.replaceTopWithMyBrandRequests(initialScope: scope)
                 }
             ),
             policy: .stateful
@@ -89,85 +97,10 @@ final class LookbookCoordinator {
         )
     }
 
-    func pushAdminHome(onCreatedBrand: @escaping (BrandID) -> Void) {
-        push(makeAdminHomeView(onCreatedBrand: onCreatedBrand), policy: .browse)
-    }
 
-    func pushAdminBrandRequestGroups() {
-        push(makeAdminBrandRequestGroupsView(), policy: .browse)
-    }
 
-    func pushStyleMoodManagement() {
-        push(
-            container.makeStyleMoodManagementView(coordinator: self),
-            policy: .browse
-        )
-    }
 
-    func pushAdminBrandManagement(
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) {
-        push(
-            makeAdminBrandManagementView(
-                initialBrand: initialBrand,
-                initialBrandID: initialBrandID,
-                onUpdatedBrand: onUpdatedBrand
-            ),
-            policy: .stateful
-        )
-    }
 
-    func pushAdminLookbookDeletionManagement(initialBrand: Brand? = nil) {
-        push(
-            makeAdminLookbookDeletionManagementView(
-                initialBrand: initialBrand,
-                allowsDeletionSelection: initialBrand != nil
-            ),
-            policy: .stateful
-        )
-    }
-
-    func pushLookbookExtractionReview(
-        brandID: BrandID,
-        jobID: String
-    ) {
-        push(
-            container.makeLookbookExtractionReviewView(
-                brandID: brandID,
-                jobID: jobID,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
-
-    func pushSeasonDiscoveryReview(job: SeasonCandidateDiscoveryResult) {
-        push(
-            container.makeSeasonDiscoveryReviewView(
-                job: job,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
-
-    func pushLookbookSeasonRepair(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        sourceImportJobID: String
-    ) {
-        push(
-            container.makeLookbookSeasonRepairView(
-                brandID: brandID,
-                seasonID: seasonID,
-                sourceImportJobID: sourceImportJobID,
-                coordinator: self
-            ),
-            policy: .stateful
-        )
-    }
 
     func pop() {
         guard let navigationController else {
@@ -198,7 +131,7 @@ final class LookbookCoordinator {
 
     func makeBrandRequestView(
         initialBrandName: String,
-        onSubmitted: @escaping () -> Void
+        onSubmitted: @escaping (BrandRequestSubmissionReceipt) -> Void
     ) -> BrandRequestView {
         container.makeBrandRequestView(
             initialBrandName: initialBrandName,
@@ -216,42 +149,9 @@ final class LookbookCoordinator {
         )
     }
 
-    func makeAdminHomeView(
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> LookbookAdminHomeView {
-        container.makeAdminHomeView(
-            coordinator: self,
-            onCreatedBrand: onCreatedBrand
-        )
-    }
 
-    func makeAdminBrandRequestGroupsView() -> AdminBrandRequestGroupsView {
-        container.makeAdminBrandRequestGroupsView(coordinator: self)
-    }
 
-    func makeAdminBrandManagementView(
-        initialBrand: Brand? = nil,
-        initialBrandID: BrandID? = nil,
-        onUpdatedBrand: ((Brand) -> Void)? = nil
-    ) -> AdminBrandManagementView {
-        container.makeAdminBrandManagementView(
-            coordinator: self,
-            initialBrand: initialBrand,
-            initialBrandID: initialBrandID,
-            onUpdatedBrand: onUpdatedBrand
-        )
-    }
 
-    func makeAdminLookbookDeletionManagementView(
-        initialBrand: Brand? = nil,
-        allowsDeletionSelection: Bool = true
-    ) -> AdminLookbookDeletionManagementView {
-        container.makeAdminLookbookDeletionManagementView(
-            coordinator: self,
-            initialBrand: initialBrand,
-            allowsDeletionSelection: allowsDeletionSelection
-        )
-    }
 
     func makePostDetailView(post: LookbookPost) -> PostDetailView {
         container.makePostDetailView(
@@ -259,18 +159,6 @@ final class LookbookCoordinator {
             seasonID: post.seasonID,
             postID: post.id,
             coordinator: self
-        )
-    }
-
-    func makeCreateBrandFlow(
-        initialBrandName: String? = nil,
-        initialEnglishName: String? = nil,
-        onCreatedBrand: @escaping (BrandID) -> Void
-    ) -> some View {
-        container.makeCreateBrandFlow(
-            initialBrandName: initialBrandName,
-            initialEnglishName: initialEnglishName,
-            onCreatedBrand: onCreatedBrand
         )
     }
 
@@ -352,7 +240,6 @@ final class LookbookCoordinator {
         )
         let rootView = view
             .environment(\.repositoryProvider, container.provider)
-            .environmentObject(container.brandAdminSessionStore)
             .environment(\.lookbookInteractivePopState, interactivePopState)
 
         return LookbookHostingController(

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "runTimeoutMs": 120000,
+  "inputs": ["OutPick", "tools/development-consumer", "tools/verification-gate", "contracts/brand-operations", "verification/development-brand-request-sdk.json"],
+  "checks": [{
+    "id": "actual-sdk-submission-evidence",
+    "kind": "command",
+    "command": "node",
+    "args": ["tools/development-consumer/check-submission.mjs"],
+    "cwd": ".",
+    "timeoutMs": 30000
+  }]
+}

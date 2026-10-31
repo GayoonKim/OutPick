@@ -19,33 +19,6 @@ struct BrandDetailHeaderView: View {
 
     @Environment(\.openURL) private var openURL
 
-    @State private var uiImage: UIImage?
-    @State private var loadFailed: Bool = false
-    @State private var isPresentingZoomPreview: Bool = false
-    @State private var detailUpgradeTask: Task<Void, Never>?
-    @State private var lastLoadKey: String?
-
-    /// 홈에서 prewarm된 썸네일을 즉시 재사용하기 위해 썸네일을 우선 표시합니다.
-    private var headerImagePath: String? {
-        if let thumb = brand.logoThumbPath, thumb.isEmpty == false {
-            return thumb
-        }
-        let candidate = brand.logoDetailPath ?? brand.logoOriginalPath
-        guard let candidate, candidate.isEmpty == false else { return nil }
-        return candidate
-    }
-
-    /// 이미 저장된 detail/original이 있으면 썸네일 표시 후 교체합니다.
-    private var preferredDetailPath: String? {
-        if let detail = brand.logoDetailPath, detail.isEmpty == false, detail != headerImagePath {
-            return detail
-        }
-        if let original = brand.logoOriginalPath, original.isEmpty == false, original != headerImagePath {
-            return original
-        }
-        return nil
-    }
-
     private var officialWebsiteURL: URL? {
         guard let rawValue = brand.websiteURL, rawValue.isEmpty == false else {
             return nil
@@ -53,78 +26,8 @@ struct BrandDetailHeaderView: View {
         return URL(string: rawValue)
     }
 
-    /// 생성 직후(thumb만 저장된 상태)에도 detail 업로드 완료 시 자동 교체하기 위한 경로
-    private var deferredDetailPath: String? {
-        if let existingDetail = brand.logoDetailPath, existingDetail.isEmpty == false {
-            return nil
-        }
-        guard brand.logoOriginalPath == nil else { return nil }
-        guard let thumbPath = brand.logoThumbPath, !thumbPath.isEmpty else { return nil }
-        if thumbPath.hasSuffix("/logo/thumb.jpg") {
-            return String(thumbPath.dropLast("thumb.jpg".count)) + "detail.jpg"
-        }
-        if let lastSlash = thumbPath.lastIndex(of: "/") {
-            return String(thumbPath[..<lastSlash]) + "/detail.jpg"
-        }
-        return "brands/\(brand.id.value)/logo/detail.jpg"
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 상단 로고(큰 이미지) - 캐시된 UIImage를 사용
-            ZStack {
-                if let uiImage {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        // 좌/우 빈 공간이 생기지 않도록 채우기(필요한 만큼 일부가 잘릴 수 있음)
-                        .scaledToFill()
-                        // 얼굴이 위쪽에서 잘리는 경우가 많아서 상단 기준으로 크롭되도록 정렬을 고정합니다.
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .clipped()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            isPresentingZoomPreview = true
-                        }
-                } else if loadFailed {
-                    Image(systemName: "photo")
-                        .imageScale(.large)
-                        .foregroundStyle(OutPickTheme.SwiftUIColor.iconSecondary)
-                } else {
-                    ProgressView()
-                        .tint(OutPickTheme.SwiftUIColor.accent)
-                }
-            }
-            // 배경색을 두지 않아 이미지 뒤에 회색 배경이 보이지 않습니다.
-            // 좌/우 끝까지 붙는 느낌 (클립/라운드 없음)
-            .background(Color.clear)
-            .frame(maxWidth: .infinity)
-            .frame(height: 220, alignment: .top)
-            .clipped()
-            .task(id: logoLoadKey) {
-                await ImageCacheMetrics.$consumer.withValue("visible") {
-                    await ImageCacheMetrics.shared.request(key: logoLoadKey) {
-                        await loadLogoIfNeeded()
-                        scheduleDetailUpgradeIfNeeded()
-                    }
-                }
-            }
-            .fullScreenCover(isPresented: $isPresentingZoomPreview) {
-                if let image = uiImage {
-                    LookbookImageViewerView(
-                        initialImage: image,
-                        previewPath: headerImagePath,
-                        originalPath: preferredDetailPath ?? deferredDetailPath,
-                        remoteURL: nil,
-                        sourcePageURL: nil,
-                        brandImageCache: brandImageCache
-                    )
-                }
-            }
-            .onDisappear {
-                detailUpgradeTask?.cancel()
-                detailUpgradeTask = nil
-            }
-
             // 브랜드 이름 + 좋아요 버튼
             VStack(alignment: .leading, spacing: 6) {
                 Text(brand.name)
@@ -235,74 +138,4 @@ struct BrandDetailHeaderView: View {
         }
     }
 
-    private func loadLogoIfNeeded() async {
-        if lastLoadKey != logoLoadKey {
-            lastLoadKey = logoLoadKey
-            uiImage = nil
-            loadFailed = false
-            detailUpgradeTask?.cancel()
-            detailUpgradeTask = nil
-        }
-
-        // 이미 로딩된 이미지가 있거나 실패 상태면 재시도하지 않음(원하면 정책 바꿔도 됨)
-        if uiImage != nil || loadFailed { return }
-
-        guard
-            let path = headerImagePath
-        else {
-            loadFailed = true
-            return
-        }
-
-        do {
-            let headerMaxBytes = max(maxBytes, 8_000_000)
-            // BrandImageCache 내부에서 캐시/중복 다운로드 방지가 처리됩니다.
-            let image = try await brandImageCache.loadImage(
-                path: path,
-                maxBytes: headerMaxBytes
-            )
-            uiImage = image
-            ImageCacheMetrics.shared.mark("ui.header.assigned", key: path, outcome: Task.isCancelled ? "afterCancellation" : "success")
-        } catch {
-            if error is CancellationError || Task.isCancelled { return }
-            loadFailed = true
-        }
-    }
-
-    private var logoLoadKey: String {
-        "\(headerImagePath ?? "")|\(preferredDetailPath ?? deferredDetailPath ?? "")|\(brand.updatedAt.timeIntervalSince1970)"
-    }
-
-    private func scheduleDetailUpgradeIfNeeded() {
-        guard detailUpgradeTask == nil else { return }
-        guard let detailPath = preferredDetailPath ?? deferredDetailPath else { return }
-
-        let maxLoadBytes = max(maxBytes, 8_000_000)
-
-        detailUpgradeTask = Task(priority: .utility) {
-            // 짧은 시간 재시도로 detail 업로드 완료를 감지
-            for attempt in 0..<8 {
-                if Task.isCancelled { break }
-                do {
-                    let upgraded = try await brandImageCache.loadImage(
-                        path: detailPath,
-                        maxBytes: maxLoadBytes
-                    )
-                    if Task.isCancelled { break }
-                    await MainActor.run {
-                        self.uiImage = upgraded
-                        self.loadFailed = false
-                    }
-                    break
-                } catch {
-                    if attempt == 7 { break }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                }
-            }
-
-            await MainActor.run {
-                self.detailUpgradeTask = nil
-            }
-        }
-    }
 }

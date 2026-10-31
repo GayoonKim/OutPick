@@ -31,11 +31,7 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
             .getDocument()
 
         guard snapshot.exists else {
-            throw NSError(
-                domain: "FirestoreBrandRepository",
-                code: -40,
-                userInfo: [NSLocalizedDescriptionKey: "브랜드 문서를 찾지 못했습니다."]
-            )
+            throw LookbookContentUnavailableError.brandUnavailable
         }
 
         let dto: BrandDTO = try FirestoreMapper.mapDocument(snapshot)
@@ -54,6 +50,7 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
     ) async throws -> BrandPage {
 
         var q: Query = db.collection("brands")
+            .whereField("publicationStatus", isEqualTo: "public")
         q = applyOrdering(to: q, sort: sort)
 
         q = q.limit(to: limit)
@@ -81,6 +78,7 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
     ) async throws -> BrandPage {
 
         var q: Query = db.collection("brands")
+            .whereField("publicationStatus", isEqualTo: "public")
             .whereField("isFeatured", isEqualTo: true)
         q = applyOrdering(to: q, sort: sort)
 
@@ -112,6 +110,7 @@ final class FirestoreBrandRepository: BrandRepositoryProtocol {
 
         while visibleBrands.count < pageSize {
             var query: Query = db.collection("brands")
+                .whereField("publicationStatus", isEqualTo: "public")
                 .whereField("moodIDs", arrayContainsAny: moodIDs)
                 .order(by: "likeCount", descending: true)
                 .order(by: FieldPath.documentID())

@@ -21,6 +21,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var coordinator: AppCoordinator?
     private let bootstrapFailureInjector = AppBootstrapFailureInjector()
+    #if DEBUG && (targetEnvironment(simulator) || OUTPICK_BRAND_LOCAL_DEVICE)
+    private var brandLocalUI: BrandLocalUIBootstrap?
+    #endif
     
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url else { return }
@@ -45,6 +48,21 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window = UIWindow(windowScene: windowScene)
         }
         guard let window else { return }
+
+        #if DEBUG && (targetEnvironment(simulator) || OUTPICK_BRAND_LOCAL_DEVICE)
+        if BrandLocalIntegrationMode.isEnabled {
+            let controller = UIViewController()
+            controller.view.backgroundColor = .black
+            window.rootViewController = controller
+            window.makeKeyAndVisible()
+            if BrandLocalIntegrationMode.showsLocalUI {
+                let bootstrap = BrandLocalUIBootstrap(window: window)
+                brandLocalUI = bootstrap
+                Task { await bootstrap.start() }
+            }
+            return
+        }
+        #endif
 
         if let notificationResponse = connectionOptions.notificationResponse {
             NotificationRouter.shared.storePendingRoute(from: notificationResponse.notification.request.content.userInfo)

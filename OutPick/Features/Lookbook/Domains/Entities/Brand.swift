@@ -65,8 +65,10 @@ struct Brand: Equatable, Codable, Identifiable {
     var metrics: BrandMetrics
     var deletionStatus: BrandDeletionStatus
     var updatedAt: Date
+    /// 서버의 명시 상태만 인정한다. 부재와 모르는 값은 공개로 보정하지 않는다.
+    var publicationStatus: String? = nil
 
     var isVisibleToUsers: Bool {
-        deletionStatus == .active
+        publicationStatus == "public" && deletionStatus == .active
     }
 }

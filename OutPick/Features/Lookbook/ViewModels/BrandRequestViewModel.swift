@@ -18,18 +18,24 @@ final class BrandRequestViewModel: ObservableObject {
 
     @Published var brandName: String
     @Published var englishBrandName: String = ""
+    @Published var websiteURL: String = ""
     @Published private(set) var phase: Phase = .idle
+    @Published private(set) var navigationError: String?
+    @Published private(set) var isOpeningBrand = false
 
     private let submitUseCase: any SubmitBrandRequestUseCaseProtocol
     private let initialBrandName: String
+    private let loadBrandUseCase: any LoadPublicBrandUseCaseProtocol
 
     init(
         initialBrandName: String,
-        submitUseCase: any SubmitBrandRequestUseCaseProtocol
+        submitUseCase: any SubmitBrandRequestUseCaseProtocol,
+        loadBrandUseCase: any LoadPublicBrandUseCaseProtocol
     ) {
         self.brandName = initialBrandName
         self.initialBrandName = initialBrandName
         self.submitUseCase = submitUseCase
+        self.loadBrandUseCase = loadBrandUseCase
     }
 
     var trimmedBrandName: String {
@@ -41,16 +47,49 @@ final class BrandRequestViewModel: ObservableObject {
     }
 
     var canSubmit: Bool {
-        trimmedBrandName.isEmpty == false && phase != .submitting
+        BrandRequestInput.isValid(brandName: trimmedBrandName, websiteURL: trimmedWebsiteURL,
+                                 englishBrandName: trimmedEnglishBrandName.isEmpty ? nil : trimmedEnglishBrandName)
+            && phase != .submitting && receipt == nil
     }
+
+    var receipt: BrandRequestSubmissionReceipt? {
+        if case .submitted(let receipt) = phase { return receipt }
+        return nil
+    }
+
+    var submissionErrorMessage: String? {
+        if case .failed(let message) = phase { return message }
+        return nil
+    }
+
+    func dismissSubmissionError() {
+        guard case .failed = phase else { return }
+        phase = .idle
+    }
+
+    func openCompletedBrand(using coordinator: any BrandRequestRouting) async {
+        guard let id = receipt?.destinationBrandID, !isOpeningBrand else { return }
+        isOpeningBrand = true
+        navigationError = nil
+        defer { isOpeningBrand = false }
+        do {
+            let brand = try await loadBrandUseCase.execute(brandID: id)
+            guard !Task.isCancelled else { return }
+            coordinator.pushBrandDetail(brand: brand)
+        } catch {
+            navigationError = error.localizedDescription
+        }
+    }
+
+    var trimmedWebsiteURL: String { websiteURL.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var hasDraftChanges: Bool {
         trimmedBrandName != initialBrandName.trimmingCharacters(in: .whitespacesAndNewlines) ||
-        trimmedEnglishBrandName.isEmpty == false
+        trimmedEnglishBrandName.isEmpty == false || trimmedWebsiteURL.isEmpty == false
     }
 
     var disablesInteractivePop: Bool {
-        phase == .submitting || hasDraftChanges
+        phase == .submitting || (receipt == nil && hasDraftChanges)
     }
 
     func submit() async -> BrandRequestSubmissionReceipt? {
@@ -60,6 +99,7 @@ final class BrandRequestViewModel: ObservableObject {
         do {
             let receipt = try await submitUseCase.execute(
                 brandName: trimmedBrandName,
+                websiteURL: trimmedWebsiteURL,
                 englishBrandName: trimmedEnglishBrandName.isEmpty ? nil : trimmedEnglishBrandName
             )
             phase = .submitted(receipt)
@@ -71,14 +111,7 @@ final class BrandRequestViewModel: ObservableObject {
     }
 
     private static func message(for error: Error) -> String {
-        let nsError = error as NSError
-        switch nsError.code {
-        case 8:
-            return "오늘 요청 가능 횟수를 모두 사용했어요."
-        case 7:
-            return "브랜드 요청이 제한된 계정이에요."
-        default:
-            return error.localizedDescription
-        }
+        (error as? BrandRequestFailure)?.errorDescription
+            ?? "접수 결과를 확인하지 못했어요. 요청 내역을 확인해 주세요."
     }
 }

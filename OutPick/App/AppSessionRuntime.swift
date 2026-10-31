@@ -38,8 +38,7 @@ final class AppSessionRuntime {
     }
 
     func startAuthenticatedSession(
-        joinedRoomsStore: JoinedRoomsSessionStoring,
-        brandAdminSessionStore: BrandAdminSessionStore
+        joinedRoomsStore: JoinedRoomsSessionStoring
     ) async {
         sessionGeneration += 1
         let generation = sessionGeneration

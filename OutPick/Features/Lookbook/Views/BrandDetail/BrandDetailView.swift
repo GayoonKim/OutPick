@@ -17,7 +17,6 @@ struct BrandDetailView: View {
     private let initialBrand: Brand
     private let pullToRefreshMinimumVisibleDuration: TimeInterval = 0.6
 
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @StateObject private var viewModel: BrandDetailViewModel
     @State private var activeShareTarget: LookbookShareTarget?
     @State private var shareCompletion: LookbookChatShareViewModel.Completion?
@@ -57,25 +56,7 @@ struct BrandDetailView: View {
             }
         }
         .background(OutPickTheme.SwiftUIColor.backgroundBase)
-        .lookbookNavigationBar(
-            title: "",
-            showsBackButton: true,
-            onBack: { coordinator.pop() }
-        ) {
-            if let brand = viewModel.brand,
-               brandAdminSessionStore.canWrite(brandID: brand.id) {
-                LookbookNavigationTextButton(
-                    title: "관리자",
-                    accessibilityLabel: "브랜드 관리자"
-                ) {
-                    coordinator.pushAdminBrandManagement(initialBrand: brand) { updatedBrand in
-                        Task {
-                            await viewModel.applyUpdatedBrand(updatedBrand)
-                        }
-                    }
-                }
-            }
-        }
+        .lookbookNavigationBar(title: "", showsBackButton: true, onBack: { coordinator.pop() })
         .sheet(item: $activeShareTarget) { target in
             shareSheetFactory(target) { completion in
                 activeShareTarget = nil
@@ -103,7 +84,6 @@ struct BrandDetailView: View {
                 Task(priority: .utility) { await prewarmHeaderLogoIfNeeded() }
                 await viewModel.loadContentsIfNeeded(brandID: initialBrand.id)
             }
-            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
         .onDisappear { viewModel.clearViewport() }
         .onChange(of: viewModel.seasons.count) { _ in updateViewport() }
@@ -139,7 +119,6 @@ struct BrandDetailView: View {
                 seasons: viewModel.seasons,
                 isLoading: viewModel.isLoading,
                 errorMessage: viewModel.errorMessage,
-                canManageBrand: brandAdminSessionStore.canWrite(brandID: brand.id),
                 brandImageCache: brandImageCache,
                 maxBytes: maxBytes,
                 coordinator: coordinator,

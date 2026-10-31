@@ -1,0 +1,16 @@
+{
+  "version": 1, "runTimeoutMs": 120000,
+  "inputs": ["OutPick", "tools/development-consumer", "tools/verification-gate", "contracts/brand-operations", "verification/development-interest-recheck.json"],
+  "checks": [{
+    "id": "interest-diagnostic-selftests", "kind": "node", "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/development-consumer/interest-recheck.test.mjs"],
+    "cwd": ".", "timeoutMs": 30000, "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/development-consumer/interest-recheck.test.mjs::DIR-P01 기존 관심 스타일 실패의 domain code만 수집하고 임의 콘솔을 버린다",
+      "tools/development-consumer/interest-recheck.test.mjs::DIR-P02 미설정 로딩 오류 미관측과 code9를 정상 조회로 판정하지 않는다"
+    ]
+  }, {
+    "id": "manual-interest-evidence-consistency", "kind": "command", "command": "node",
+    "args": ["tools/development-consumer/interest-recheck.mjs"], "cwd": ".", "timeoutMs": 30000
+  }]
+}

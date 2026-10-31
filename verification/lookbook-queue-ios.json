@@ -12,7 +12,8 @@
     "OutPickUITests",
     "OutPick.xcodeproj",
     "AGENTS.md",
-    "contracts/lookbook-import-queue-v1.json"
+    "contracts/lookbook-import-queue-v1.json",
+    "tools/brand-operations/ios-admin-full-retirement.test.mjs"
   ],
   "checks": [
     {
@@ -33,12 +34,9 @@
         "CODE_SIGNING_ALLOWED=NO",
         "-only-testing:OutPickTests/LookbookImportQueueContractTests",
         "-only-testing:OutPickTests/GRDBLookbookImportRequestStoreTests",
-        "-only-testing:OutPickTests/StartSeasonImportExtractionUseCaseTests",
         "-only-testing:OutPickTests/AppDatabaseMigrationTests",
         "-only-testing:OutPickTests/AccountDeletionLocalDataCleanupTests",
-        "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests",
-        "-only-testing:OutPickTests/CloudFunctionsSeasonImportRepositoryTests",
-        "-only-testing:OutPickTests/SeasonDiscoveryManagementViewModelTests"
+        "-only-testing:OutPickTests/CloudFunctionsBrandRepositoryTests"
       ],
       "cwd": ".",
       "timeoutMs": 1800000,
@@ -52,16 +50,29 @@
         "LookbookImportQueueContractTests/receiptMustMatchRequestBrandAndQueueKind()",
         "GRDBLookbookImportRequestStoreTests/samePendingPayloadReusesSameIdentityButOtherAccountsStayIsolated()",
         "GRDBLookbookImportRequestStoreTests/onlySettledRecordsExpireAndUnresolvedRecordsRemain()",
-        "StartSeasonImportExtractionUseCaseTests/persistsBeforeSendingAndReusesSameEnvelopeAfterUncertainResponse()",
         "AppDatabaseMigrationTests/freshDatabaseAppliesTwentySevenMigrationsWithoutLegacyColumns()",
         "AccountDeletionLocalDataCleanupTests/deletesEveryUserScopedGRDBTable()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonImportCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversExtractionReviewCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/coversSeasonRepairCallableContracts()",
-        "CloudFunctionsSeasonImportRepositoryTests/rejectsReceiptWithDifferentRequestIDAndKeepsRecordUnresolved()",
-        "CloudFunctionsBrandRepositoryTests/coversBrandStoreAndSearchCallableContracts()",
-        "CloudFunctionsBrandRepositoryTests/requestStoreFailurePreventsBrandCreationRequest()",
-        "SeasonDiscoveryManagementViewModelTests/assetRetryReturnsWithoutWaitingForQueuedBatchToFinish()"
+        "CloudFunctionsBrandRepositoryTests/coversPublicSearchCallableContract()"
+      ]
+    },
+    {
+      "id": "full-admin-retirement-source",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 60000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S01 공개 앱에 관리자 화면 세션 조립과 진입점이 없다",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S02 공개 앱이 기존 관리자 callable을 호출하지 않는다",
+        "tools/brand-operations/ios-admin-full-retirement.test.mjs::IAR-S03 공개 요청 내역 스타일 조회와 본인 댓글 흐름은 남는다"
       ]
     }
   ]

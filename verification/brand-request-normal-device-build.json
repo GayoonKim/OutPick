@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "runTimeoutMs": 700000,
+  "inputs": ["OutPick", "OutPick.xcodeproj", "Configurations", "scripts/build", "tools/verification-gate", "LocalSecrets/Firebase/Development/GoogleService-Info.plist", "LocalSecrets/Kakao/Development.xcconfig", "verification/brand-request-normal-device-build.json"],
+  "checks": [{
+    "id": "normal-development-device-signed-build",
+    "kind": "command",
+    "command": "xcodebuild",
+    "args": ["build", "-project", "OutPick.xcodeproj", "-scheme", "OutPick-Development", "-configuration", "Development-Debug", "-destination", "generic/platform=iOS", "-derivedDataPath", "output/verification-derived-data", "-disableAutomaticPackageResolution", "CODE_SIGNING_ALLOWED=YES"],
+    "cwd": ".",
+    "timeoutMs": 650000
+  }]
+}

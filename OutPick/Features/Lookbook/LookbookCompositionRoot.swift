@@ -26,7 +26,6 @@ enum LookbookCompositionRoot {
                 coordinator: coordinator
             )
             .environment(\.repositoryProvider, container.provider)
-            .environmentObject(container.brandAdminSessionStore)
 
         // 한국어 주석: SwiftUI -> UIKit 브릿지
         let hostingVC = UIHostingController(rootView: lookbookView)
@@ -42,7 +41,6 @@ enum LookbookCompositionRoot {
         let coordinator = LookbookCoordinator(container: container)
         let likedView = coordinator.makeLikedView()
             .environment(\.repositoryProvider, container.provider)
-            .environmentObject(container.brandAdminSessionStore)
 
         let hostingVC = UIHostingController(rootView: likedView)
         let nav = LookbookNavigationController(rootViewController: hostingVC)

@@ -27,16 +27,10 @@ enum LookbookUITestFixtureRepositoryProviderFactory {
             brandRepository: fixture,
             brandSearchRepository: fixture,
             brandRequestRepository: fixture,
-            lookbookDeletionRepository: fixture,
             brandEngagementRepository: fixture,
-            brandStore: fixture,
             seasonRepository: fixture,
             seasonEngagementRepository: fixture,
             seasonUserStateRepository: fixture,
-            seasonImportRepository: fixture,
-            seasonImportJobRequestingRepository: fixture,
-            seasonAssetRetryRepository: fixture,
-            seasonCandidateDiscoveryRepository: fixture,
             postRepository: fixture,
             postEngagementRepository: fixture,
             commentRepository: fixture,
@@ -103,16 +97,10 @@ private final class LookbookUITestFixtureStore:
     BrandRepositoryProtocol,
     BrandSearchRepositoryProtocol,
     BrandRequestRepositoryProtocol,
-    LookbookDeletionRepositoryProtocol,
     BrandEngagementRepositoryProtocol,
-    BrandStoringRepository,
     SeasonRepositoryProtocol,
     SeasonEngagementRepositoryProtocol,
     SeasonUserStateRepositoryProtocol,
-    SeasonImportRequestingRepository,
-    SeasonImportJobRequestingRepositoryProtocol,
-    SeasonAssetRetryRequestingRepository,
-    SeasonCandidateDiscoveryRepositoryProtocol,
     PostRepositoryProtocol,
     PostEngagementRepositoryProtocol,
     CommentRepositoryProtocol,
@@ -129,6 +117,7 @@ private final class LookbookUITestFixtureStore:
     }
 
     private let now = Date(timeIntervalSince1970: 1_779_100_000)
+    private var historyPageFailureEmitted = false
 
     private var brand: Brand {
         Brand(
@@ -148,7 +137,8 @@ private final class LookbookUITestFixtureStore:
             lastDiscoveryCompletedAt: nil,
             metrics: BrandMetrics(likeCount: 0, viewCount: 0, popularScore: 0),
             deletionStatus: .active,
-            updatedAt: now
+            updatedAt: now,
+            publicationStatus: "public"
         )
     }
 
@@ -268,7 +258,12 @@ private final class LookbookUITestFixtureStore:
         )
     }
 
-    func fetchBrand(brandID: BrandID) async throws -> Brand { brand }
+    func fetchBrand(brandID: BrandID) async throws -> Brand {
+        if ProcessInfo.processInfo.arguments.contains("--uitest-brand-history-delayed-navigation") {
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        return brand
+    }
 
     func fetchBrands(
         sort: BrandSort?,
@@ -291,6 +286,14 @@ private final class LookbookUITestFixtureStore:
         limit: Int,
         after cursor: InterestedStyleBrandCursor?
     ) async throws -> InterestedStyleBrandPage {
+        if ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-interest-failure") {
+            // 재조회 중 오류 카드가 진행 표시로 교체되는지 확인하는 모의 지연이다.
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+            throw URLError(.cannotLoadFromNetwork)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--uitest-lookbook-interest-empty") {
+            return InterestedStyleBrandPage(items: [], nextCursor: nil)
+        }
         let matches = brand.moodIDs.contains { moodIDs.contains($0) }
         return InterestedStyleBrandPage(
             items: matches ? [brand] : [],
@@ -298,204 +301,73 @@ private final class LookbookUITestFixtureStore:
         )
     }
 
-    func searchBrands(query: String, limit: Int) async throws -> [Brand] { [brand] }
-
-    func createBrand(
-        name: String,
-        englishName: String?,
-        isFeatured: Bool,
-        websiteURL: String?,
-        lookbookArchiveURL: String?,
-        moodIDs: [String]
-    ) async throws -> BrandCreationReceipt {
-        BrandCreationReceipt(brandID: brand.id.value, discoveryJobID: nil)
+    func searchBrands(query: String, limit: Int) async throws -> [Brand] {
+        brand.name.lowercased().contains(query.lowercased()) ? [brand] : []
     }
 
-    func updateBrand(
-        brandID: BrandID,
-        name: String,
-        englishName: String?,
-        websiteURL: String?,
-        lookbookArchiveURL: String?,
-        isFeatured: Bool?,
-        moodIDs: [String]?
-    ) async throws -> Brand { brand }
 
-    func updateLogoPaths(docID: String, logoThumbPath: String?, logoDetailPath: String?) async throws {}
 
-    func addBrandManager(
-        brandID: BrandID,
-        email: String,
-        role: BrandManagerRole
-    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
 
-    func removeBrandManager(
-        brandID: BrandID,
-        email: String,
-        role: BrandManagerRole
-    ) async throws -> BrandManagerMutationReceipt { throw FixtureError.unsupported }
+
 
     func submitBrandRequest(
         brandName: String,
+        websiteURL: String,
         englishBrandName: String?
-    ) async throws -> BrandRequestSubmissionReceipt { throw FixtureError.unsupported }
+    ) async throws -> BrandRequestSubmissionReceipt {
+        let fails = ProcessInfo.processInfo.arguments.contains("--uitest-brand-request-failure")
+        if fails || ProcessInfo.processInfo.arguments.contains("--uitest-brand-request-delayed-success") {
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        if fails {
+            throw CloudFunctionsClientError.missingField("resolvedBrandID")
+        }
+        return .init(requestID: "fixture-request", groupID: "fixture-group",
+              status: brandName == brand.name ? .added : .submitted, isDuplicate: false,
+              remainingToday: 4, resolvedBrandID: brandName == brand.name ? brand.id : nil)
+    }
 
     func listMyBrandRequests(
         scope: BrandRequestListScope,
         limit: Int,
         cursor: BrandRequestPage.Cursor?
-    ) async throws -> BrandRequestPage { throw FixtureError.unsupported }
-
-    func listBrandRequestGroups(
-        adminStage: BrandRequestAdminStage?,
-        processedScope: ProcessedRequestScope?,
-        limit: Int,
-        cursor: AdminBrandRequestGroupPage.Cursor?
-    ) async throws -> AdminBrandRequestGroupPage { throw FixtureError.unsupported }
-
-    func updateBrandRequestGroupStage(
-        groupID: String,
-        adminStage: BrandRequestAdminStage,
-        rejectionReason: BrandRequestRejectionReason?,
-        adminNote: String?
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
-
-    func resolveBrandRequestGroup(
-        groupID: String,
-        resolvedBrandID: BrandID,
-        adminNote: String?
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
-
-    func markBrandRequestGroupBrandCreated(
-        groupID: String,
-        createdBrandID: BrandID
-    ) async throws -> AdminBrandRequestGroupStageUpdateReceipt { throw FixtureError.unsupported }
-
-    func requestBrandDeletion(
-        brandID: BrandID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
-
-    func cancelBrandDeletion(brandID: BrandID) async throws -> LookbookDeletionMutationReceipt {
-        throw FixtureError.unsupported
+    ) async throws -> BrandRequestPage {
+        let statuses: [BrandRequestStatus] = scope == .active ? [.submitted, .reviewing] : [.added, .rejected]
+        let rows = statuses.map { status in
+            BrandRequest(id: "fixture-" + status.rawValue, brandName: "UI Test Brand", normalizedBrandName: "ui test brand",
+                englishBrandName: nil, normalizedEnglishBrandName: nil, groupID: "fixture-group",
+                dedupeKey: nil, dedupeKeySource: nil, status: status,
+                resolvedBrandID: status == .added ? brand.id : nil,
+                rejectionReason: status == .rejected ? "공식 룩북 확인 필요" : nil,
+                createdAt: now, updatedAt: now)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--uitest-brand-history-page-failure"), scope == .active {
+            if cursor == nil {
+                return .init(requests: Array(rows.prefix(1)),
+                    nextCursor: .init(createdAt: "2026-10-15T00:00:00.000Z", requestID: "consumed-candidate"), scope: scope)
+            }
+            if !historyPageFailureEmitted {
+                historyPageFailureEmitted = true
+                throw BrandRequestFailure.queryBudget
+            }
+            return .init(requests: Array(rows.suffix(1)), nextCursor: nil, scope: scope)
+        }
+        return .init(requests: rows, nextCursor: nil, scope: scope)
     }
 
-    func softDeleteSeason(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func batchSoftDeleteSeasons(
-        brandID: BrandID,
-        seasonIDs: [SeasonID],
-        reason: String?
-    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
 
-    func restoreSeason(
-        brandID: BrandID,
-        seasonID: SeasonID
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func softDeletePost(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID,
-        reason: String?
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func batchSoftDeletePosts(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postIDs: [PostID],
-        reason: String?
-    ) async throws -> LookbookDeletionBatchResult { throw FixtureError.unsupported }
 
-    func restorePost(
-        brandID: BrandID,
-        seasonID: SeasonID,
-        postID: PostID
-    ) async throws -> LookbookDeletionMutationReceipt { throw FixtureError.unsupported }
 
-    func listDeletionRequests(
-        targetType: LookbookDeletionTargetType?,
-        brandID: BrandID?,
-        limit: Int,
-        cursor: LookbookDeletionRequestPage.Cursor?
-    ) async throws -> LookbookDeletionRequestPage { throw FixtureError.unsupported }
 
-    func retryFailedPurge(requestID: String) async throws -> LookbookDeletionRetryReceipt {
-        throw FixtureError.unsupported
-    }
 
-    func requestSeasonImport(
-        brandID: BrandID,
-        seasonURL: String,
-        sourceCandidateID: String?
-    ) async throws -> SeasonImportRequestReceipt { throw FixtureError.unsupported }
 
-    func requestSeasonCandidateImportJobs(
-        brandID: BrandID,
-        discoveryJobID: String,
-        generation: Int,
-        candidateIDs: [String],
-        candidateSnapshotHash: String,
-        envelope: LookbookImportQueueContract.RequestEnvelope
-    ) async throws -> LookbookImportQueueReceipt { throw FixtureError.unsupported }
 
-    func getSeasonImportBatch(requestID: String) async throws -> LookbookImportQueueReceipt {
-        throw FixtureError.unsupported
-    }
 
-    func requestAssetRetry(
-        brandID: BrandID,
-        sourceJobID: String
-    ) async throws -> SeasonAssetRetryReceipt { throw FixtureError.unsupported }
 
-    func discoverSeasonCandidates(
-        brandID: BrandID
-    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
 
-    func requestSeasonDiscovery(
-        brandID: BrandID
-    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
-
-    func observeSeasonDiscovery(
-        brandID: BrandID,
-        jobID: String
-    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
-
-    func observeLatestSeasonDiscovery(
-        brandID: BrandID
-    ) -> AsyncThrowingStream<SeasonCandidateDiscoveryResult?, Error> {
-        AsyncThrowingStream { continuation in continuation.finish() }
-    }
-
-    func retrySeasonDiscovery(brandID: BrandID, jobID: String) async throws {
-        throw FixtureError.unsupported
-    }
-
-    func cancelSeasonDiscovery(brandID: BrandID, jobID: String) async throws {
-        throw FixtureError.unsupported
-    }
-
-    func retrySeasonDiscoveryAfterExtractionFix(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult
-    ) async throws -> SeasonCandidateDiscoveryResult { throw FixtureError.unsupported }
-
-    func fetchReviewCandidates(
-        brandID: BrandID,
-        jobID: String
-    ) async throws -> [SeasonDiscoveryReviewCandidate] { throw FixtureError.unsupported }
-
-    func resolveReviewCandidate(
-        brandID: BrandID,
-        job: SeasonCandidateDiscoveryResult,
-        candidateID: String,
-        decision: String,
-        targetSeasonID: SeasonID?
-    ) async throws { throw FixtureError.unsupported }
 
     func fetchSeason(brandID: BrandID, seasonID: SeasonID) async throws -> Season { season }
 

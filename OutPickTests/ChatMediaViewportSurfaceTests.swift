@@ -169,7 +169,7 @@ final class ChatMediaViewportSurfaceTests: XCTestCase {
             card.heightAnchor.constraint(equalToConstant: 76)
         ])
         func content(_ path: String) -> LookbookSharedContent {
-            LookbookSharedContent(schemaVersion: 1, contentType: .brand, brandID: "brand", titleSnapshot: "공유 카드", thumbnailPathSnapshot: path)
+            LookbookSharedContent(schemaVersion: 1, contentType: .season, brandID: "brand", seasonID: "season", titleSnapshot: "공유 카드", thumbnailPathSnapshot: path)
         }
         let image = UIImage()
         card.configure(with: content("first"))
@@ -186,5 +186,33 @@ final class ChatMediaViewportSurfaceTests: XCTestCase {
         card.prepareForReuse()
         card.render(path: "second", state: .image(image))
         XCTAssertFalse(thumbnail.image === image)
+    }
+
+    func testBrandShareHidesStoredThumbnailAndRejectsLateImage() throws {
+        let card = LookbookShareMessageContentView(frame: .zero)
+        let content = LookbookSharedContent(schemaVersion: 1, contentType: .brand, brandID: "brand",
+                                            titleSnapshot: "브랜드", thumbnailPathSnapshot: "old-logo")
+        card.configure(with: content)
+        let thumbnail = try XCTUnwrap(card.subviews.first as? UIImageView)
+        XCTAssertTrue(thumbnail.isHidden)
+        let late = UIImage()
+        card.render(path: "old-logo", state: .image(late))
+        XCTAssertFalse(thumbnail.image === late)
+    }
+
+    func testBrandSharedMessageCreatesNoViewportDemandButSeasonDoes() {
+        let cell = ChatMessageCell(frame: CGRect(x: 0, y: 0, width: 320, height: 150))
+        func message(_ type: LookbookSharedContent.ContentType) -> ChatMessage {
+            var message = ChatMessage(ID: "share", seq: 1, roomID: "room", senderUID: "sender",
+                                      senderNickname: "사용자", msg: nil, sentAt: nil, attachments: [])
+            message.messageType = .lookbookShare
+            message.sharedContent = LookbookSharedContent(schemaVersion: 1, contentType: type, brandID: "brand",
+                seasonID: type == .season ? "season" : nil, titleSnapshot: "공유", thumbnailPathSnapshot: "old-logo")
+            return message
+        }
+        cell.configureWithLookbookShare(with: message(.brand))
+        XCTAssertTrue(cell.mediaViewportItems(in: cell).isEmpty)
+        cell.configureWithLookbookShare(with: message(.season))
+        XCTAssertEqual(cell.mediaViewportItems(in: cell).map(\.path), ["old-logo"])
     }
 }

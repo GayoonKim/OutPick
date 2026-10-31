@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "runTimeoutMs": 120000,
+  "inputs": ["tools/brand-operations", "tools/verification-gate", "verification/brand-operations-publication-preparation.json"],
+  "checks": [{
+    "id": "publication-runner-guards", "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/brand-operations/local-sdk-selection.test.mjs"],
+    "cwd": ".", "timeoutMs": 60000, "kind": "node", "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/brand-operations/local-sdk-selection.test.mjs::L154-S01 겹치는 단계는 접속과 Xcode 실행 전에 거절한다",
+      "tools/brand-operations/local-sdk-selection.test.mjs::L154-S02 게시 전달 입력이 빠지면 접속 전에 거절한다",
+      "tools/brand-operations/local-sdk-selection.test.mjs::L154-S03 빈 근거와 디렉터리는 게시 완료 근거로 쓰지 않는다",
+      "tools/brand-operations/local-sdk-selection.test.mjs::L154-S04 근거 메타데이터가 있어도 대상 없이는 Xcode를 시작하지 않는다"
+    ]
+  }]
+}

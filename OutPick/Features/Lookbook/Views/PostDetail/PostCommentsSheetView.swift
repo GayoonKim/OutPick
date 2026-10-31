@@ -20,7 +20,6 @@ struct PostCommentsSheetView: View {
     private let userBlockVisibilityStore: any UserBlockVisibilityChecking
     @ObservedObject private var coordinator: PostCommentCoordinator
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
     @State private var avatarRefreshID = 0
     @State private var pendingDeleteItem: CommentDisplayItem?
     @State private var pendingReportItem: CommentDisplayItem?
@@ -90,7 +89,6 @@ struct PostCommentsSheetView: View {
         }
         .task {
             await viewModel.loadIfNeeded()
-            await brandAdminSessionStore.ensureWritableBrandsLoaded()
         }
         .sheet(item: $pendingDeleteItem) { item in
             deleteConfirmationSheet(for: item)
@@ -188,10 +186,7 @@ struct PostCommentsSheetView: View {
     }
 
     private func deleteAction(for item: CommentDisplayItem) -> (() -> Void)? {
-        guard viewModel.canDelete(
-            item.comment,
-            isBrandWritable: brandAdminSessionStore.canWrite(brandID: brandID)
-        ) else {
+        guard viewModel.canDelete(item.comment) else {
             return nil
         }
 

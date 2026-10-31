@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "runTimeoutMs": 120000,
+  "inputs": ["OutPick", "tools/development-consumer", "tools/verification-gate", "contracts/brand-operations", "verification/development-brand-history-followup.json"],
+  "checks": [{
+    "id": "history-followup-validator-selftests", "kind": "node", "command": "node",
+    "args": ["tools/verification-gate/run-node-tests.mjs", "tools/development-consumer/history-followup.test.mjs"],
+    "cwd": ".", "timeoutMs": 30000, "nodeMajor": 24, "reportNames": ["main"],
+    "requiredTests": [
+      "tools/development-consumer/history-followup.test.mjs::DHF-P01 이전 실패 원본을 유지하고 같은 요청의 두 범위 후속 조회만 수락한다",
+      "tools/development-consumer/history-followup.test.mjs::DHF-P02 원본 변조 재접수 조회0건 누락 실패와 다른 세션을 거절한다",
+      "tools/development-consumer/history-followup.test.mjs::DHF-P03 다른 요청 손상 mapper 누락 커서 잘못된 상태와 한 범위 미실행을 거절한다",
+      "tools/development-consumer/history-followup.test.mjs::DHF-P04 승인된 같은 설치 앱 재실행은 기존 요청 대조를 유지하고 새 접수를 거절한다"
+    ]
+  }, {
+    "id": "actual-sdk-history-followup", "kind": "command", "command": "node",
+    "args": ["tools/development-consumer/check-history-followup.mjs"], "cwd": ".", "timeoutMs": 30000
+  }]
+}

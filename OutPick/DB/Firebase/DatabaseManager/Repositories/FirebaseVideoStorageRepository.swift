@@ -13,9 +13,12 @@ final class FirebaseVideoStorageRepository: FirebaseVideoStorageRepositoryProtoc
     static let shared = FirebaseVideoStorageRepository()
 
     private let transferService: FirebaseStorageTransferRepositoryProtocol
+    private let storage: Storage
 
-    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared) {
+    init(transferService: FirebaseStorageTransferRepositoryProtocol = FirebaseStorageTransferRepository.shared,
+         storage: Storage = Storage.storage()) {
         self.transferService = transferService
+        self.storage = storage
     }
 
     // Storage 업로드 유틸(putFile) — streaming upload with retry + safe putData fallback
@@ -53,7 +56,7 @@ final class FirebaseVideoStorageRepository: FirebaseVideoStorageRepositoryProtoc
     }
 
     func deleteVideoFromStorage(path: String) {
-        let fileRef = Storage.storage().reference().child(path)
+        let fileRef = storage.reference().child(path)
         fileRef.delete { error in
             if let error {
                 print("🚫 비디오 삭제 실패: \(error.localizedDescription)")

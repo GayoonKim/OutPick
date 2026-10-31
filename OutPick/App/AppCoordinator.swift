@@ -20,7 +20,6 @@ final class AppCoordinator {
     private var lookbookContainer: LookbookContainer?
     private var chatContainer: ChatContainer?
     private let joinedRoomsStore: JoinedRoomsSessionStore
-    private let brandAdminSessionStore: BrandAdminSessionStore
     private let socialAuthRepository: SocialAuthRepositoryProtocol
     private let currentUserSessionStore: CurrentUserSessionStore
     private let currentUserStylePreferenceStore: CurrentUserStylePreferenceStore
@@ -74,7 +73,6 @@ final class AppCoordinator {
         accountDeletionLocalDataScrubber: AccountDeletionLocalDataScrubbing,
         accountRepository: CurrentUserAccountRepositoryProtocol,
         joinedRoomsStore: JoinedRoomsSessionStore,
-        brandAdminSessionStore: BrandAdminSessionStore,
         socialAuthRepository: SocialAuthRepositoryProtocol,
         currentUserSessionStore: CurrentUserSessionStore,
         currentUserStylePreferenceStore: CurrentUserStylePreferenceStore,
@@ -105,7 +103,6 @@ final class AppCoordinator {
         self.accountDeletionLocalDataScrubber = accountDeletionLocalDataScrubber
         self.accountRepository = accountRepository
         self.joinedRoomsStore = joinedRoomsStore
-        self.brandAdminSessionStore = brandAdminSessionStore
         self.socialAuthRepository = socialAuthRepository
         self.currentUserSessionStore = currentUserSessionStore
         self.currentUserStylePreferenceStore = currentUserStylePreferenceStore
@@ -225,7 +222,6 @@ final class AppCoordinator {
                 try await LoginManager.shared.bootstrapAfterLogin(
                     joinedRoomsStore: joinedRoomsStore,
                     joinedRoomsRuntime: appSessionRuntime,
-                    brandAdminSessionStore: brandAdminSessionStore
                 )
             } catch {
                 print("bootstrapAfterLogin 실패: \(error)")
@@ -318,7 +314,6 @@ final class AppCoordinator {
         self.chatContainer?.invalidateMessageCacheSession()
         self.chatContainer = nil
         self.mainTabController = nil
-        self.brandAdminSessionStore.reset()
         // 로그인 화면으로 들어갈 땐 강제로그아웃 콜백을 해제해도 됨(이미 로그아웃 상태/또는 루트가 로그인)
         // 중복 라우팅(콜백 재호출) 방지 목적
         LoginManager.shared.onForceLogout = nil
@@ -376,7 +371,6 @@ final class AppCoordinator {
             guard let self else { return }
             await self.appSessionRuntime.startAuthenticatedSession(
                 joinedRoomsStore: self.joinedRoomsStore,
-                brandAdminSessionStore: self.brandAdminSessionStore
             )
             self.consumePendingNotificationRouteIfPossible()
         }
@@ -413,7 +407,6 @@ final class AppCoordinator {
                         try await LoginManager.shared.bootstrapAfterLogin(
                             joinedRoomsStore: self.joinedRoomsStore,
                             joinedRoomsRuntime: self.appSessionRuntime,
-                            brandAdminSessionStore: self.brandAdminSessionStore
                         )
                     } catch {
                         print("bootstrapAfterLogin 실패(프로필 완료): \(error)")
@@ -533,7 +526,6 @@ final class AppCoordinator {
         currentUserSessionStore.clear()
         currentUserStylePreferenceStore.clear()
         userBlockSessionController.stop()
-        brandAdminSessionStore.reset()
         profileCoordinator = nil
         lookbookContainer = nil
         chatContainer?.invalidateMessageCacheSession()
@@ -599,7 +591,6 @@ final class AppCoordinator {
 
         let created = LookbookContainer(
             provider: lookbookProvider,
-            brandAdminSessionStore: brandAdminSessionStore,
             currentUserProvider: currentUserProvider,
             stylePreferenceStore: currentUserStylePreferenceStore,
             publicProfileRepository: publicProfileRepository,
@@ -767,20 +758,18 @@ final class AppCoordinator {
                 updatedAt: Date()
             )
         )
-        currentUserStylePreferenceStore.replace(selectedMoodIDs: ["minimal"])
+        let hasNoStylePreference = shouldUseFixture &&
+            processInfo.arguments.contains("--uitest-lookbook-no-style-preference")
+        currentUserStylePreferenceStore.replace(selectedMoodIDs: hasNoStylePreference ? [] : ["minimal"])
 
         if shouldUseFixture {
             let fixtureProvider = LookbookUITestFixtureRepositoryProviderFactory.makeProvider()
             lookbookContainer = LookbookContainer(
                 provider: fixtureProvider,
-                brandAdminSessionStore: brandAdminSessionStore,
                 currentUserProvider: currentUserProvider,
                 stylePreferenceStore: currentUserStylePreferenceStore,
                 avatarImageManager: avatarImageManager
             )
-            brandAdminSessionStore.applyUITestWritableBrands([
-                LookbookUITestFixtureRepositoryProviderFactory.brandID
-            ])
         }
 
         prewarmLookbookHome()

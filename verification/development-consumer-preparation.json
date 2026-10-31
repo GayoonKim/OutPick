@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "runTimeoutMs": 900000,
+  "inputs": [
+    "OutPick",
+    "OutPickTests",
+    "OutPick.xcodeproj",
+    "Configurations",
+    "scripts/build",
+    "contracts/brand-operations",
+    "tools/brand-operations",
+    "tools/development-consumer",
+    "tools/verification-gate",
+    "verification/development-consumer-preparation.json"
+  ],
+  "checks": [
+    {
+      "id": "development-evidence-validator-selftests",
+      "command": "node",
+      "args": ["tools/verification-gate/run-node-tests.mjs", "tools/development-consumer/evidence.test.mjs"],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": ["main"],
+      "requiredTests": [
+        "tools/development-consumer/evidence.test.mjs::DVE-P01 모의 원본 검사기는 단일 접수와 같은 내역 및 수집 지문을 대조한다",
+        "tools/development-consumer/evidence.test.mjs::DVE-P02 누락 중복 실패 mapper 오류와 잘못된 수집 근거는 통과하지 않는다",
+        "tools/development-consumer/evidence.test.mjs::DVE-P03 명시 null과 유효 커서는 수락하고 손상 커서 및 다른 요청은 거절한다"
+      ]
+    },
+    {
+      "id": "development-composition-source",
+      "command": "node",
+      "args": [
+        "tools/verification-gate/run-node-tests.mjs",
+        "tools/brand-operations/ios-development-preparation.test.mjs"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "kind": "node",
+      "nodeMajor": 24,
+      "reportNames": [
+        "main"
+      ],
+      "requiredTests": [
+        "tools/brand-operations/ios-development-preparation.test.mjs::DVP-S01 일반 조립의 공유 transport는 공개 요청 두 호출만 원본 오류를 보존한다",
+        "tools/brand-operations/ios-development-preparation.test.mjs::DVP-S02 정상 DEBUG 관측은 브랜드 요청 Repository에만 주입하고 기본 transport를 보존한다"
+      ]
+    },
+    {
+      "id": "development-consumer-offline-swift",
+      "command": "xcodebuild",
+      "args": [
+        "test",
+        "-project",
+        "OutPick.xcodeproj",
+        "-scheme",
+        "OutPick-Development",
+        "-destination",
+        "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
+        "-parallel-testing-enabled",
+        "NO",
+        "-derivedDataPath",
+        "output/verification-derived-data",
+        "CODE_SIGNING_ALLOWED=YES",
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) OUTPICK_BRAND_LOCAL_INTEGRATION",
+        "-only-testing:OutPickTests/BrandOperationsL151Tests",
+        "-only-testing:OutPickTests/DevelopmentBrandRequestEvidenceTests",
+        "-only-testing:OutPickTests/AppRuntimeConfigurationTests/developmentConfigurationAcceptsOnlyDevelopmentBoundaries()",
+        "-only-testing:OutPickTests/AppRuntimeConfigurationTests/developmentRejectsProductionFirebaseProject()"
+      ],
+      "cwd": ".",
+      "timeoutMs": 800000,
+      "kind": "xcresult",
+      "requiredTests": [
+        "DevelopmentBrandRequestEvidenceTests/optInRequiresNormalDevelopmentAndRejectsTestsLocalAndProduction()",
+        "DevelopmentBrandRequestEvidenceTests/receiptObservesSafeFieldsAndForwardsOriginalInputAndResponseOnce()",
+        "DevelopmentBrandRequestEvidenceTests/damagedReceiptRecordsMapperFailureAndRepositoryStillRejectsWithoutRetry()",
+        "DevelopmentBrandRequestEvidenceTests/historyProjectionDistinguishesNullMissingAndDamagedCursorWithoutLeakingNames()",
+        "DevelopmentBrandRequestEvidenceTests/errorsPreserveIdentityAndKnownReasonButExcludeSensitiveDetails()",
+        "DevelopmentBrandRequestEvidenceTests/unrelatedCallsAreNotObservedAndAreForwardedOnce()",
+        "DevelopmentBrandRequestEvidenceTests/evidenceWriteFailureNeverRetriesOrChangesResult()",
+        "DevelopmentBrandRequestEvidenceTests/fileEvidenceIsPrivateAndOtherSessionRemainsUnchanged()",
+        "DevelopmentBrandRequestEvidenceTests/concurrentRecordsHaveUniqueOrderedSequenceAndNoLoss()",
+        "BrandOperationsL151Tests/publicResponseFixtures42PassThroughRepositoryAndRejectDamage()",
+        "BrandOperationsL151Tests/requiredTypesDatesReasonsAndScopeAreStrict()",
+        "BrandOperationsL151Tests/publicErrorFixtures9UseCodeAndOptionalReasonWithoutLosingDraft()",
+        "BrandOperationsL151Tests/originalResourceExhaustedDetailsAreOptInAndOtherCallsKeepLegacyError()",
+        "BrandOperationsL151Tests/emptyContinuationFailureKeepsRowsAndLastConsumedCursorForRetry()",
+        "BrandOperationsL151Tests/initialEmptyPagesContinueAndRepeatedCursorFailsWithoutEnding()",
+        "BrandOperationsL151Tests/malformedNextPageRetainsRowsAndSuccessfulCursor()",
+        "BrandOperationsL151Tests/typedPageInputsForwardValuesAndServerValidationErrors()",
+        "AppRuntimeConfigurationTests/developmentConfigurationAcceptsOnlyDevelopmentBoundaries()",
+        "AppRuntimeConfigurationTests/developmentRejectsProductionFirebaseProject()"
+      ]
+    }
+  ]
+}

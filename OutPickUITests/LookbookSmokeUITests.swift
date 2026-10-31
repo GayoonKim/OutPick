@@ -51,10 +51,7 @@ final class LookbookSmokeUITests: XCTestCase {
         let app = LookbookUITestSupport.launchApp(failureArgument: "--uitest-lookbook-image-fail-once")
         let retry = app.buttons["이미지 다시 시도"].firstMatch
 
-        XCTAssertTrue(retry.waitForExistence(timeout: 10), "브랜드 이미지 재시도가 표시되지 않았습니다.")
-        retry.tap()
-        XCTAssertFalse(LookbookUITestSupport.firstElement(in: app, identifier: "lookbook.season.card").exists)
-        assertRetryCompletes(retry)
+        XCTAssertFalse(retry.exists, "이름 중심 브랜드 카드는 이미지를 요청하지 않습니다.")
 
         let brandCard = LookbookUITestSupport.firstElement(in: app, identifier: "lookbook.brand.card")
         brandCard.tap()

@@ -112,6 +112,10 @@ struct LookbookImageViewerView: UIViewControllerRepresentable {
     }
 
     private func loadRemoteOriginalImage(maxBytes: Int) async -> UIImage? {
+        #if DEBUG && (targetEnvironment(simulator) || OUTPICK_BRAND_LOCAL_DEVICE)
+        // 기존 로컬 검사 격리 규칙은 뷰어의 별도 HTTP 대체 경로에도 적용한다.
+        if BrandLocalIntegrationMode.isEnabled { return nil }
+        #endif
         guard let remoteURL else { return nil }
 
         var request = URLRequest(url: remoteURL)

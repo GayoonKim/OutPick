@@ -15,7 +15,6 @@ struct LookbookHomeView: View {
     @State private var viewportFrames: [String: CGRect] = [:]
     @State private var viewportHeight: CGFloat = 0
 
-    @EnvironmentObject private var brandAdminSessionStore: BrandAdminSessionStore
 
     private let coordinator: LookbookCoordinator
 
@@ -28,20 +27,7 @@ struct LookbookHomeView: View {
 
     var body: some View {
         mainContent
-            .lookbookNavigationBar(title: "OutPick") {
-                if brandAdminSessionStore.isTotalAdmin {
-                    LookbookNavigationTextButton(
-                        title: "관리자",
-                        accessibilityLabel: "Lookbook 관리자"
-                    ) {
-                        coordinator.pushAdminHome { createdBrandID in
-                            Task {
-                                await handleCreatedBrand(createdBrandID)
-                            }
-                        }
-                    }
-                }
-            }
+            .lookbookNavigationBar(title: "OutPick")
             .tint(OutPickTheme.SwiftUIColor.accent)
             .outpickDismissKeyboardOnTap()
             .task {
@@ -135,12 +121,10 @@ struct LookbookHomeView: View {
 
     private var brandListContent: some View {
         List {
-            if viewModel.shouldShowInterestedStyleSection {
-                interestSection
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
-            }
+            interestSection
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(OutPickTheme.SwiftUIColor.backgroundBase)
 
             overallBrandSectionHeader
                 .listRowInsets(EdgeInsets())
@@ -221,6 +205,7 @@ struct LookbookHomeView: View {
                     brandRow(brand)
                         .lookbookItemFrame(brand.id.value, in: "lookbook.home")
                 }
+                brandRequestButton
             }
             .listStyle(.plain)
             .outpickHiddenScrollContentBackground()
@@ -245,9 +230,7 @@ struct LookbookHomeView: View {
                     .multilineTextAlignment(.center)
 
                 Button {
-                    coordinator.pushBrandRequest(
-                        initialBrandName: viewModel.normalizedSearchText
-                    )
+                    viewModel.requestBrand(using: coordinator)
                 } label: {
                     Text("브랜드 요청하기")
                         .font(.system(size: 14, weight: .bold))
@@ -258,6 +241,7 @@ struct LookbookHomeView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("lookbook.brandRequest.entry")
             }
             .padding(.horizontal, 32)
             Spacer()
@@ -276,6 +260,19 @@ struct LookbookHomeView: View {
             .padding(.horizontal, 32)
             Spacer()
         }
+    }
+
+    private var brandRequestButton: some View {
+        Button {
+            viewModel.requestBrand(using: coordinator)
+        } label: {
+            Text("찾는 브랜드가 없나요? 등록 요청")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OutPickTheme.SwiftUIColor.accent)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("lookbook.brandRequest.entry")
     }
 
     private func brandRow(_ brand: Brand) -> some View {
@@ -332,15 +329,7 @@ struct LookbookHomeView: View {
         try? await Task.sleep(nanoseconds: remainingNanoseconds)
     }
 
-    private func handleCreatedBrand(_ createdBrandID: Brand.ID) async {
-        await brandAdminSessionStore.refreshWritableBrands(force: true)
-        await viewModel.retry()
-        await viewModel.syncCreatedBrand(brandID: createdBrandID)
 
-        if let createdBrand = viewModel.brands.first(where: { $0.id == createdBrandID }) {
-            coordinator.pushBrandDetail(brand: createdBrand)
-        }
-    }
 }
 
 private extension View {
@@ -362,25 +351,11 @@ private final class PreviewAvatarImageManager: AvatarImageManaging {
     func removeCachedAvatar(for path: String) async {}
 }
 
-private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCalling {
-    func getBrandAdminCapabilities() async throws -> BrandAdminCapabilitiesResponse {
-        BrandAdminCapabilitiesResponse(
-            isTotalAdmin: false,
-            roles: [],
-            ownedBrandIDs: [],
-            adminBrandIDs: []
-        )
-    }
-}
 
 #Preview {
     let provider = LookbookRepositoryProvider.shared
-    let brandAdminSessionStore = BrandAdminSessionStore(
-        capabilitiesClient: PreviewBrandAdminCapabilitiesClient()
-    )
     let container = LookbookContainer(
         provider: provider,
-        brandAdminSessionStore: brandAdminSessionStore,
         stylePreferenceStore: CurrentUserStylePreferenceStore(),
         avatarImageManager: PreviewAvatarImageManager()
     )
@@ -394,11 +369,8 @@ private struct PreviewBrandAdminCapabilitiesClient: BrandAdminCapabilitiesCallin
             repository: provider.brandRepository
         ),
         stylePreferenceStore: CurrentUserStylePreferenceStore(),
-        brandAdminSessionStore: brandAdminSessionStore,
         brandImageCache: provider.brandImageCache,
-        initialBrandLimit: 12,
-        prefetchLogoCount: 4
+        initialBrandLimit: 12
     )
     LookbookHomeView(viewModel: vm, coordinator: coordinator)
-        .environmentObject(brandAdminSessionStore)
 }
